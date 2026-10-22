@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Portal — EduTrack</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">🎓 EduTrack</div>
+    <div class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</div>
+    <div class="nav-item" onclick="showView('atrisk', this)">🚨 At-Risk Students</div>
+    <div class="nav-item" onclick="showView('compliance', this)">✅ Teacher Compliance</div>
+    <div class="nav-item" onclick="showView('reports', this)">📄 Reports</div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <h2>Administrator Dashboard</h2>
+      <div class="user-chip" id="userChip"></div>
+    </div>
+
+    <div class="view" id="view-dashboard">
+      <div class="stats-grid" id="stats"></div>
+    </div>
+
+    <div class="view" id="view-atrisk" style="display:none">
+      <div class="card">
+        <h3>🚨 All Flagged Students</h3>
+        <table>
+          <thead><tr><th>Student</th><th>Section</th><th>Avg Grade</th><th>Absences</th></tr></thead>
+          <tbody id="atRiskBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="view" id="view-compliance" style="display:none">
+      <div class="card">
+        <h3>✅ Teacher Compliance</h3>
+        <table>
+          <thead><tr><th>Teacher</th><th>Last Update</th><th>Status</th></tr></thead>
+          <tbody id="complianceBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="view" id="view-reports" style="display:none">
+      <div class="card">
+        <h3>📄 Report Generator</h3>
+        <button class="btn" onclick="exportCSV()">⬇ Download CSV</button>
+        <button class="btn btn-secondary" onclick="window.print()">🖨 Print</button>
+      </div>
+    </div>
+  </main>
+  <button class="logout-btn" onclick="logout()">↩ Logout</button>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

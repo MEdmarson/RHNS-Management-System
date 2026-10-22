@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Portal — EduTrack</title>
+  <link rel="stylesheet" href="css/style.css">
+  
+  <style>
+    /* ... (Keep all existing CSS styles from previous step) ... */
+    .excel-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 10px;
+      table-layout: fixed;
+    }
+    .excel-table th, .excel-table td {
+      border: 1px solid #d1d5db;
+      padding: 6px 2px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .excel-table th { background: #f3f4f6; font-weight: 600; color: #374151; }
+    .excel-table input {
+      width: 100%; max-width: 45px; box-sizing: border-box; padding: 4px;
+      text-align: center; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 13px; -moz-appearance: textfield; appearance: textfield;
+    }
+    .excel-table input::-webkit-outer-spin-button, .excel-table input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .excel-table input:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
+    .term-grade-cell { font-weight: bold; background: #f9fafb; font-size: 14px; }
+    .hps-input { background: #fffbeb; color: #92400e; border-color: #d97706 !important; font-weight: bold; }
+    .excel-table td:first-child, .excel-table th:first-child {
+      position: sticky; left: 0; background: #fff; text-align: left;
+      z-index: 1; border-right: 2px solid #d1d5db; padding-left: 10px;
+    }
+    .excel-table th:first-child { background: #f3f4f6; }
+
+    .subject-card {
+      background: #fff; padding: 20px; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-left: 4px solid var(--primary);
+      cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .subject-card:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); border-left-color: var(--primary-dark); }
+    .subject-card h3 { margin: 0 0 8px 0; font-size: 18px; }
+    .subject-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    
+    /* History Grid specific */
+    .history-grid th { min-width: 30px; font-size: 11px; padding: 4px 2px; }
+    .history-grid td { padding: 4px 2px; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">🎓 EduTrack</div>
+    <div class="nav-item active" onclick="showView('subjects', this)">📚 My Classes</div>
+    <div class="nav-item" onclick="showView('attendance', this)">📋 Attendance</div>
+    <div class="nav-item" onclick="showView('warning', this)">⚠️ Early Warning</div>
+    <div class="nav-item" onclick="showView('sf2', this)">🏫 SF2 Report</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h2 id="pageTitle">My Classes</h2>
+      <div class="user-chip" id="userChip"></div>
+    </div>
+
+    <!-- 1. SUBJECT DASHBOARD -->
+    <div class="view active" id="view-subjects">
+      <div class="stats-grid" id="subjectsGrid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));"></div>
+    </div>
+
+    <!-- 2. CLASS RECORD -->
+    <div class="view" id="view-gradebook" style="display: none;">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="btn btn-secondary" onclick="showView('subjects', document.querySelector('.nav-item'))">← Back</button>
+            <h3 style="margin: 0;" id="gradebookTitle">Class Record</h3>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-weight: 600; font-size: 14px;">Term: </label>
+            <select id="termSelect" class="input" style="width: 100px; font-weight: bold;" onchange="loadGradebook()">
+              <option value="1">Term 1</option>
+              <option value="2">Term 2</option>
+              <option value="3">Term 3</option>
+            </select>
+            <button class="btn" onclick="saveAllGrades()">💾 Save All Changes</button>
+          </div>
+        </div>
+        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Weights: Written Works (20%) | Performance Tasks (50%) | Exams (30%)</p>
+        <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+          <table class="excel-table" id="gradebookTable">
+            <colgroup>
+              <col style="width: 200px;"> 
+              <col style="width: 55px;"><col style="width: 55px;"><col style="width: 55px;"><col style="width: 55px;"><col style="width: 55px;">
+              <col style="width: 55px;"><col style="width: 55px;"><col style="width: 55px;">
+              <col style="width: 55px;"><col style="width: 55px;"><col style="width: 55px;">
+              <col style="width: 90px;"><col style="width: 90px;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th></th> 
+                <th colspan="5" style="background:#e0e7ff;">WRITTEN WORKS (20%)</th>
+                <th colspan="3" style="background:#dcfce7;">PERFORMANCE TASKS (50%)</th>
+                <th colspan="3" style="background:#fef3c7;">EXAMS (30%)</th>
+                <th rowspan="2">Term Grade</th>
+                <th rowspan="2">Status</th>
+              </tr>
+              <tr>
+                <th style="text-align:left;">Student Name</th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">1</div><input type="number" class="hps-input" id="hps-ww1" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">2</div><input type="number" class="hps-input" id="hps-ww2" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">3</div><input type="number" class="hps-input" id="hps-ww3" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">4</div><input type="number" class="hps-input" id="hps-ww4" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">5</div><input type="number" class="hps-input" id="hps-ww5" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">1</div><input type="number" class="hps-input" id="hps-pt1" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">2</div><input type="number" class="hps-input" id="hps-pt2" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">3</div><input type="number" class="hps-input" id="hps-pt3" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">1</div><input type="number" class="hps-input" id="hps-ex1" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">2</div><input type="number" class="hps-input" id="hps-ex2" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+                <th style="padding:0;"><div style="padding:4px 0; font-size:12px;">3</div><input type="number" class="hps-input" id="hps-ex3" value="100" style="width: 80%; margin-bottom: 4px;"></th>
+              </tr>
+            </thead>
+            <tbody id="gradebookBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. ATTENDANCE DASHBOARD -->
+    <div class="view" id="view-attendance" style="display:none">
+      <div class="stats-grid" id="attendanceGrid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));"></div>
+    </div>
+
+    <!-- 4. ATTENDANCE SHEET -->
+    <div class="view" id="view-attendance-sheet" style="display: none;">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="btn btn-secondary" onclick="showView('attendance', document.querySelectorAll('.nav-item')[1])">← Back</button>
+            <h3 style="margin: 0;" id="attendanceTitle">Attendance</h3>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-weight: 600; font-size: 14px;">Date: </label>
+            <input type="date" id="attDate" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceSheet()">
+            <!-- HISTORY BUTTON -->
+            <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 View Monthly History</button>
+          </div>
+        </div>
+        <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+          <table class="excel-table">
+            <colgroup>
+              <col style="width: 300px;"><col style="width: 150px;"><col style="width: 150px;"><col style="width: 250px;">
+            </colgroup>
+            <thead>
+              <tr><th style="text-align:left;">Student Name</th><th>Total Days Present</th><th>Total Days Absent</th><th>Today's Status</th></tr>
+            </thead>
+            <tbody id="attendanceBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. ATTENDANCE HISTORY (MONTHLY GRID) -->
+    <div class="view" id="view-attendance-history" style="display: none;">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <button class="btn btn-secondary" onclick="showView('attendance-sheet')">← Back to Today</button>
+            <h3 style="margin: 0;" id="historyTitle">Monthly Attendance History</h3>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-weight: 600; font-size: 14px;">Month: </label>
+            <input type="month" id="historyMonth" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceHistory()">
+          </div>
+        </div>
+        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">✅ = Present | ❌ = Absent | Blank = No class / Not recorded</p>
+        <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+          <table class="excel-table history-grid" id="historyTable">
+            <thead>
+              <tr id="historyHeaderRow">
+                <th style="text-align:left; position: sticky; left:0; background:#f3f4f6; z-index:2;">Student Name</th>
+                <th style="background: #dcfce7; min-width: 60px;">Present</th>
+                <th style="background: #fee2e2; min-width: 60px;">Absent</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. EARLY WARNING -->
+    <div class="view" id="view-warning" style="display:none">
+      <div class="card">
+        <h3>⚠️ At-Risk Students</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Flagged if Term Grade falls below 75 or absences exceed 4.</p>
+        <table>
+          <thead><tr><th>Student</th><th>Avg Term Grade</th><th>Absences</th></tr></thead>
+          <tbody id="warningBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 7. SF2 REPORT -->
+    <div class="view" id="view-sf2" style="display:none">
+      <div class="card">
+        <h3>🏫 School Form 2 (SF2)</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Auto-generated from recorded attendance data.</p>
+        <table>
+          <thead><tr><th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Days Absent</th><th>Remarks</th></tr></thead>
+          <tbody id="sf2Body"></tbody>
+        </table>
+        <button class="btn" style="margin-top:20px;" onclick="window.print()">🖨 Print / Export PDF</button>
+      </div>
+    </div>
+
+  </main>
+  
+  <button class="logout-btn" onclick="logout()">↩ Logout</button>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/teacher.js"></script>
+</body>
+</html>
