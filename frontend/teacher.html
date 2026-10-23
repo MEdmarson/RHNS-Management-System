@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="css/style.css">
   
   <style>
-    /* ... (Keep all existing CSS styles from previous step) ... */
     .excel-table {
       width: 100%;
       border-collapse: collapse;
@@ -22,34 +21,91 @@
       white-space: nowrap;
       overflow: hidden;
     }
-    .excel-table th { background: #f3f4f6; font-weight: 600; color: #374151; }
+    .excel-table th { 
+      background: #f3f4f6; 
+      font-weight: 600; 
+      color: #374151; 
+    }
     .excel-table input {
-      width: 100%; max-width: 45px; box-sizing: border-box; padding: 4px;
-      text-align: center; border: 1px solid #ccc; border-radius: 4px;
-      font-size: 13px; -moz-appearance: textfield; appearance: textfield;
+      width: 100%; 
+      max-width: 45px; 
+      box-sizing: border-box; 
+      padding: 4px;
+      text-align: center; 
+      border: 1px solid #ccc; 
+      border-radius: 4px;
+      font-size: 13px; 
+      -moz-appearance: textfield; 
+      appearance: textfield;
     }
-    .excel-table input::-webkit-outer-spin-button, .excel-table input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .excel-table input:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
-    .term-grade-cell { font-weight: bold; background: #f9fafb; font-size: 14px; }
-    .hps-input { background: #fffbeb; color: #92400e; border-color: #d97706 !important; font-weight: bold; }
-    .excel-table td:first-child, .excel-table th:first-child {
-      position: sticky; left: 0; background: #fff; text-align: left;
-      z-index: 1; border-right: 2px solid #d1d5db; padding-left: 10px;
+    .excel-table input::-webkit-outer-spin-button, 
+    .excel-table input::-webkit-inner-spin-button { 
+      -webkit-appearance: none; 
+      margin: 0; 
     }
-    .excel-table th:first-child { background: #f3f4f6; }
+    .excel-table input:focus { 
+      outline: 2px solid var(--primary); 
+      background: #fdf4ff; 
+    }
+    .term-grade-cell { 
+      font-weight: bold; 
+      background: #f9fafb; 
+      font-size: 14px; 
+    }
+    .hps-input { 
+      background: #fffbeb; 
+      color: #92400e; 
+      border-color: #d97706 !important; 
+      font-weight: bold; 
+    }
+    
+    .excel-table td:first-child, 
+    .excel-table th:first-child {
+      position: sticky; 
+      left: 0; 
+      background: #fff; 
+      text-align: left;
+      z-index: 1; 
+      border-right: 2px solid #d1d5db; 
+      padding-left: 10px;
+    }
+    .excel-table th:first-child { 
+      background: #f3f4f6; 
+    }
 
     .subject-card {
-      background: #fff; padding: 20px; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-left: 4px solid var(--primary);
-      cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+      background: #fff; 
+      padding: 20px; 
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04); 
+      border-left: 4px solid var(--primary);
+      cursor: pointer; 
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    .subject-card:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(0,0,0,0.1); border-left-color: var(--primary-dark); }
-    .subject-card h3 { margin: 0 0 8px 0; font-size: 18px; }
-    .subject-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .subject-card:hover { 
+      transform: translateY(-4px); 
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1); 
+      border-left-color: var(--primary-dark); 
+    }
+    .subject-card h3 { 
+      margin: 0 0 8px 0; 
+      font-size: 18px; 
+    }
+    .subject-card p { 
+      margin: 0; 
+      color: var(--muted); 
+      font-size: 13px; 
+    }
     
-    /* History Grid specific */
-    .history-grid th { min-width: 30px; font-size: 11px; padding: 4px 2px; }
-    .history-grid td { padding: 4px 2px; font-size: 14px; }
+    .history-grid th { 
+      min-width: 30px; 
+      font-size: 11px; 
+      padding: 4px 2px; 
+    }
+    .history-grid td { 
+      padding: 4px 2px; 
+      font-size: 14px; 
+    }
   </style>
 </head>
 <body>
@@ -148,7 +204,6 @@
           <div style="display: flex; align-items: center; gap: 10px;">
             <label style="font-weight: 600; font-size: 14px;">Date: </label>
             <input type="date" id="attDate" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceSheet()">
-            <!-- HISTORY BUTTON -->
             <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 View Monthly History</button>
           </div>
         </div>
