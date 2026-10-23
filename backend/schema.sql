@@ -1,0 +1,82 @@
+-- USERS TABLE
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(120) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  full_name VARCHAR(120) NOT NULL,
+  role ENUM('teacher','student','admin') NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SECTIONS TABLE (No Foreign Keys for TiDB)
+CREATE TABLE sections (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(50) NOT NULL UNIQUE,
+  adviser_id INT
+);
+
+-- STUDENTS TABLE
+CREATE TABLE students (
+  user_id INT PRIMARY KEY,
+  lrn VARCHAR(20) UNIQUE,
+  section_id INT,
+  grade_level INT
+);
+
+-- SUBJECTS TABLE
+CREATE TABLE subjects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL,
+  teacher_id INT,
+  section_id INT
+);
+
+-- GRADES TABLE
+CREATE TABLE grades (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id INT NOT NULL,
+  subject_id INT NOT NULL,
+  term INT NOT NULL,
+  ww1 INT DEFAULT NULL, ww2 INT DEFAULT NULL, ww3 INT DEFAULT NULL, ww4 INT DEFAULT NULL, ww5 INT DEFAULT NULL,
+  pt1 INT DEFAULT NULL, pt2 INT DEFAULT NULL, pt3 INT DEFAULT NULL,
+  ex1 INT DEFAULT NULL, ex2 INT DEFAULT NULL, ex3 INT DEFAULT NULL,
+  term_grade INT DEFAULT NULL,
+  ww1_hps INT DEFAULT 100, ww2_hps INT DEFAULT 100, ww3_hps INT DEFAULT 100, ww4_hps INT DEFAULT 100, ww5_hps INT DEFAULT 100,
+  pt1_hps INT DEFAULT 100, pt2_hps INT DEFAULT 100, pt3_hps INT DEFAULT 100,
+  ex1_hps INT DEFAULT 100, ex2_hps INT DEFAULT 100, ex3_hps INT DEFAULT 100,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_student_subject_term (student_id, subject_id, term)
+);
+
+-- ATTENDANCE TABLE
+CREATE TABLE attendance (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id INT NOT NULL,
+  section_id INT NOT NULL,
+  date DATE NOT NULL,
+  status ENUM('present','absent','late') NOT NULL,
+  recorded_by INT,
+  recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_student_date (student_id, date)
+);
+
+-- NOTIFICATIONS TABLE
+CREATE TABLE notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  type ENUM('info','warning','danger') DEFAULT 'info',
+  title VARCHAR(200) NOT NULL,
+  body TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ACTIVITY LOG TABLE
+CREATE TABLE activity_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  detail TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
