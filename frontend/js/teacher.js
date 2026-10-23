@@ -6,6 +6,7 @@ let currentSubjectId = null;
 let currentAttendanceSubjectId = null;
 let currentSectionId = null;
 let currentHistorySubjectId = null;
+let mySubjectsData = []; // Global storage for subject data
 
 function showView(name, el) {
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
@@ -35,6 +36,8 @@ function showView(name, el) {
 // --- CLASS RECORD DASHBOARD ---
 async function initDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
+  mySubjectsData = subjects; // Save for later lookups
+  
   const grid = document.getElementById('subjectsGrid');
   
   if (subjects.length === 0) {
@@ -42,8 +45,9 @@ async function initDashboard() {
     return;
   }
 
+  // Pass ONLY the subjectId to avoid HTML string errors
   grid.innerHTML = subjects.map(s => `
-    <div class="subject-card" onclick="openClassRecord(${s.id}, '${s.name}', '${s.section}')">
+    <div class="subject-card" onclick="openClassRecord(${s.id})">
       <h3>📚 ${s.name}</h3>
       <p>Section: ${s.section}</p>
       <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">
@@ -53,9 +57,13 @@ async function initDashboard() {
   `).join('');
 }
 
-function openClassRecord(subjectId, subjectName, sectionName) {
+function openClassRecord(subjectId) {
+  const subj = mySubjectsData.find(s => s.id === subjectId);
+  if (!subj) return;
+
   currentSubjectId = subjectId;
-  document.getElementById('gradebookTitle').textContent = `${subjectName} — ${sectionName}`;
+  document.getElementById('gradebookTitle').textContent = `${subj.name} — ${subj.section}`;
+  
   showView('gradebook');
   loadGradebook();
 }
@@ -63,6 +71,8 @@ function openClassRecord(subjectId, subjectName, sectionName) {
 // --- ATTENDANCE DASHBOARD ---
 async function loadAttendanceDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
+  mySubjectsData = subjects;
+  
   const grid = document.getElementById('attendanceGrid');
   
   if (subjects.length === 0) {
@@ -70,8 +80,9 @@ async function loadAttendanceDashboard() {
     return;
   }
 
+  // Pass ONLY the subjectId
   grid.innerHTML = subjects.map(s => `
-    <div class="subject-card" onclick="openAttendanceSheet(${s.id}, ${s.section_id}, '${s.name}', '${s.section}')">
+    <div class="subject-card" onclick="openAttendanceSheet(${s.id})">
       <h3>📋 ${s.name}</h3>
       <p>Section: ${s.section}</p>
       <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">
@@ -81,10 +92,13 @@ async function loadAttendanceDashboard() {
   `).join('');
 }
 
-function openAttendanceSheet(subjectId, sectionId, subjectName, sectionName) {
+function openAttendanceSheet(subjectId) {
+  const subj = mySubjectsData.find(s => s.id === subjectId);
+  if (!subj) return;
+
   currentAttendanceSubjectId = subjectId;
-  currentSectionId = sectionId;
-  document.getElementById('attendanceTitle').textContent = `${subjectName} — ${sectionName}`;
+  currentSectionId = subj.section_id; // Make sure your backend sends section_id in /my-subjects
+  document.getElementById('attendanceTitle').textContent = `${subj.name} — ${subj.section}`;
   
   document.getElementById('attDate').valueAsDate = new Date();
   
