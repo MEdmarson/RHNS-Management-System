@@ -8,24 +8,37 @@
 </head>
 <body>
 
-<div id="loadingOverlay"><div class="spinner"></div><div style="font-weight: 600; color: var(--primary);">Loading...</div></div>
+<!-- Global Loading Spinner -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="font-weight: 600; color: var(--primary);">Loading...</div>
+</div>
 
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">🎓 Admin</div>
-    <div class="nav-item active" onclick="showView('users', this)">👥 Manage Users</div>
+    <div class="brand">🎓 EduTrack</div>
+    <div class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</div>
+    <div class="nav-item" onclick="showView('users', this)">👥 Manage Users</div>
     <div class="nav-item" onclick="showView('subjects', this)">📚 Manage Subjects</div>
+    <div class="nav-item" onclick="showView('atrisk', this)">🚨 At-Risk Students</div>
+    <div class="nav-item" onclick="showView('compliance', this)">✅ Teacher Compliance</div>
+    <div class="nav-item" onclick="showView('reports', this)">📄 Reports</div>
   </aside>
-
+  
   <main class="main">
     <div class="topbar">
-      <h2 id="pageTitle">Manage Users</h2>
+      <h2 id="pageTitle">Administrator Dashboard</h2>
       <div class="user-chip" id="userChip"></div>
     </div>
 
-    <!-- MANAGE USERS VIEW -->
-    <div class="view active" id="view-users">
-      <div class="card" style="max-width: 600px; margin-bottom: 20px;">
+    <!-- 1. DASHBOARD -->
+    <div class="view active" id="view-dashboard">
+      <div class="stats-grid" id="stats"></div>
+    </div>
+
+    <!-- 2. MANAGE USERS (NEW) -->
+    <div class="view" id="view-users" style="display:none">
+      <div class="card" style="max-width: 700px; margin-bottom: 20px;">
         <h3>➕ Add New User</h3>
         <form id="addUserForm">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -70,9 +83,9 @@
       </div>
     </div>
 
-    <!-- MANAGE SUBJECTS VIEW -->
-    <div class="view" id="view-subjects" style="display: none;">
-      <div class="card" style="max-width: 600px; margin-bottom: 20px;">
+    <!-- 3. MANAGE SUBJECTS (NEW) -->
+    <div class="view" id="view-subjects" style="display:none">
+      <div class="card" style="max-width: 700px; margin-bottom: 20px;">
         <h3>➕ Add New Subject</h3>
         <form id="addSubjectForm">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -99,93 +112,42 @@
       </div>
     </div>
 
+    <!-- 4. AT-RISK STUDENTS -->
+    <div class="view" id="view-atrisk" style="display:none">
+      <div class="card">
+        <h3>🚨 All Flagged Students</h3>
+        <table>
+          <thead><tr><th>Student</th><th>Section</th><th>Avg Grade</th><th>Absences</th></tr></thead>
+          <tbody id="atRiskBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 5. TEACHER COMPLIANCE -->
+    <div class="view" id="view-compliance" style="display:none">
+      <div class="card">
+        <h3>✅ Teacher Compliance</h3>
+        <table>
+          <thead><tr><th>Teacher</th><th>Last Update</th><th>Status</th></tr></thead>
+          <tbody id="complianceBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 6. REPORTS -->
+    <div class="view" id="view-reports" style="display:none">
+      <div class="card">
+        <h3>📄 Report Generator</h3>
+        <button class="btn" onclick="exportCSV()">⬇ Download CSV</button>
+        <button class="btn btn-secondary" onclick="window.print()">🖨 Print</button>
+      </div>
+    </div>
   </main>
+  
   <button class="logout-btn" onclick="logout()">↩ Logout</button>
 </div>
 
 <script src="js/api.js"></script>
-<script>
-  requireAuth('admin');
-  document.getElementById('userChip').textContent = '🛡️ ' + getUser().name;
-
-  function showView(name, el) {
-    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-    document.getElementById(`view-${name}`).style.display = 'block';
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    el.classList.add('active');
-    document.getElementById('pageTitle').textContent = name === 'users' ? 'Manage Users' : 'Manage Subjects';
-  }
-
-  function toggleStudentFields() {
-    const role = document.getElementById('userRole').value;
-    document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
-  }
-
-  // Load dropdowns when page loads
-  async function loadDropdowns() {
-    const teachers = await apiFetch('/admin/teachers');
-    const sections = await apiFetch('/admin/sections');
-
-    document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${t.full_name}</option>`).join('');
-    document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  }
-
-  // Handle Add User Form
-  document.getElementById('addUserForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msgDiv = document.getElementById('userMsg');
-    msgDiv.textContent = 'Creating...';
-    msgDiv.style.color = 'var(--muted)';
-
-    const payload = {
-      full_name: document.getElementById('userFullName').value,
-      email: document.getElementById('userEmail').value,
-      role: document.getElementById('userRole').value,
-      password: document.getElementById('userPassword').value,
-      lrn: document.getElementById('studentLRN').value,
-      section_id: document.getElementById('studentSection').value
-    };
-
-    try {
-      await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) });
-      msgDiv.textContent = '✅ User created successfully!';
-      msgDiv.style.color = 'var(--success)';
-      document.getElementById('addUserForm').reset();
-      toggleStudentFields();
-      loadDropdowns(); // Refresh teacher list if a teacher was added
-    } catch (err) {
-      msgDiv.textContent = '❌ ' + err.message;
-      msgDiv.style.color = 'var(--danger)';
-    }
-  });
-
-  // Handle Add Subject Form
-  document.getElementById('addSubjectForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msgDiv = document.getElementById('subjMsg');
-    msgDiv.textContent = 'Creating...';
-    msgDiv.style.color = 'var(--muted)';
-
-    const payload = {
-      code: document.getElementById('subjCode').value,
-      name: document.getElementById('subjName').value,
-      teacher_id: document.getElementById('subjTeacher').value,
-      section_id: document.getElementById('subjSection').value
-    };
-
-    try {
-      await apiFetch('/admin/subjects', { method: 'POST', body: JSON.stringify(payload) });
-      msgDiv.textContent = '✅ Subject created and assigned!';
-      msgDiv.style.color = 'var(--success)';
-      document.getElementById('addSubjectForm').reset();
-    } catch (err) {
-      msgDiv.textContent = '❌ ' + err.message;
-      msgDiv.style.color = 'var(--danger)';
-    }
-  });
-
-  loadDropdowns();
-</script>
+<script src="js/admin.js"></script>
 </body>
 </html>
