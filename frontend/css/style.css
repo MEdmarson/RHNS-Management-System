@@ -1,5 +1,5 @@
 :root {
-  --primary: #ff0000;
+  --primary: #1e3a8a;
   --primary-dark: #172554;
   --success: #10b981;
   --danger: #ef4444;
@@ -16,7 +16,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
 /* LOGIN PAGE */
 .login-page { display: flex; height: 100vh; overflow: hidden; }
-.login-left { flex: 1; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 40px; text-align: center; }
+.login-left { flex: 1; background: linear-gradient(135deg, #ff0000 0%, #3b82f6 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; padding: 40px; text-align: center; }
 .login-left img { width: 220px; height: 220px; object-fit: contain; margin-bottom: 30px; background: white; border-radius: 50%; padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
 .login-left h1 { font-size: 32px; margin: 0 0 10px 0; font-weight: 700; }
 .login-left p { font-size: 16px; opacity: 0.9; max-width: 400px; line-height: 1.5; }
@@ -41,7 +41,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
 /* APP LAYOUT */
 .app { display: flex; min-height: 100vh; }
-.sidebar { width: 260px; background: var(--primary); color: #fff; padding: 24px 0; flex-shrink: 0; }
+.sidebar { width: 260px; background: #b82626; color: #fff; padding: 24px 0; flex-shrink: 0; }
 .brand { padding: 0 24px 24px; font-size: 20px; font-weight: 800; border-bottom: 1px solid rgba(255,255,255,0.1); }
 .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 24px; color: #d1d5db; cursor: pointer; font-size: 14px; font-weight: 600; transition: background 0.2s; }
 .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.1); color: #ffffff; border-left: 4px solid var(--warning); font-weight: 700; }
