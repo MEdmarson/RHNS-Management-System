@@ -89,7 +89,7 @@ router.get('/export', async (req, res) => {
 router.get('/all-users', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id, u.full_name, u.email, u.role, s.lrn, sec.name AS section 
+      SELECT u.id, u.full_name, u.email, u.role, s.lrn, s.section_id, sec.name AS section 
       FROM users u
       LEFT JOIN students s ON s.user_id = u.id
       LEFT JOIN sections sec ON sec.id = s.section_id
@@ -119,6 +119,34 @@ router.post('/users', async (req, res) => {
       );
     }
     res.json({ ok: true, message: 'User created successfully' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email or LRN already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/users/:id', async (req, res) => {
+  const userId = req.params.id;
+  const { full_name, email, lrn, section_id, password } = req.body;
+  try {
+    await pool.query(
+      'UPDATE users SET full_name = ?, email = ? WHERE id = ?',
+      [full_name, email, userId]
+    );
+
+    if (password && password.trim() !== '') {
+      const password_hash = await bcrypt.hash(password, 10);
+      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, userId]);
+    }
+
+    const [user] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
+    if (user[0].role === 'student') {
+      await pool.query(
+        'UPDATE students SET lrn = ?, section_id = ? WHERE user_id = ?',
+        [lrn, section_id || null, userId]
+      );
+    }
+    res.json({ ok: true, message: 'User updated successfully' });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email or LRN already exists' });
     res.status(500).json({ error: err.message });
@@ -160,6 +188,20 @@ router.post('/subjects', async (req, res) => {
       [code, name, teacher_id, section_id]
     );
     res.json({ ok: true, message: 'Subject created and assigned' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/subjects/:id', async (req, res) => {
+  const { code, name, teacher_id, section_id } = req.body;
+  try {
+    await pool.query(
+      'UPDATE subjects SET code = ?, name = ?, teacher_id = ?, section_id = ? WHERE id = ?',
+      [code, name, teacher_id, section_id, req.params.id]
+    );
+    res.json({ ok: true, message: 'Subject updated successfully' });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
     res.status(500).json({ error: err.message });

@@ -42,7 +42,66 @@ function toggleStudentFields() {
   document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
 }
 
-// --- FETCH AND RENDER USERS ---
+// --- OPEN MODAL FOR ADD ---
+function openUserModal() {
+  document.getElementById('userForm').reset();
+  document.getElementById('editUserId').value = ''; 
+  document.getElementById('userModalTitle').textContent = '➕ Add New User';
+  document.getElementById('userPassword').required = true;
+  document.getElementById('userMsg').textContent = '';
+  document.getElementById('studentFields').style.display = 'none';
+  openModal('userModal');
+}
+
+function openSubjectModal() {
+  document.getElementById('subjectForm').reset();
+  document.getElementById('editSubjectId').value = ''; 
+  document.getElementById('subjectModalTitle').textContent = '➕ Add New Subject';
+  document.getElementById('subjMsg').textContent = '';
+  openModal('subjectModal');
+}
+
+// --- OPEN MODAL FOR EDIT ---
+function editUser(id) {
+  const user = allUsersData.find(u => u.id === id);
+  if (!user) return;
+
+  document.getElementById('editUserId').value = user.id;
+  document.getElementById('userFullName').value = user.full_name;
+  document.getElementById('userEmail').value = user.email;
+  document.getElementById('userRole').value = user.role;
+  document.getElementById('userPassword').value = ''; 
+  document.getElementById('userPassword').required = false; 
+  
+  if (user.role === 'student') {
+    document.getElementById('studentLRN').value = user.lrn || '';
+    document.getElementById('studentSection').value = user.section_id || '';
+    document.getElementById('studentFields').style.display = 'grid';
+  } else {
+    document.getElementById('studentFields').style.display = 'none';
+  }
+
+  document.getElementById('userModalTitle').textContent = '✏️ Edit User';
+  document.getElementById('userMsg').textContent = '';
+  openModal('userModal');
+}
+
+function editSubject(id) {
+  const subj = allSubjectsData.find(s => s.id === id);
+  if (!subj) return;
+
+  document.getElementById('editSubjectId').value = subj.id;
+  document.getElementById('subjCode').value = subj.code;
+  document.getElementById('subjName').value = subj.name;
+  document.getElementById('subjTeacher').value = subj.teacher_id || '';
+  document.getElementById('subjSection').value = subj.section_id || '';
+  
+  document.getElementById('subjectModalTitle').textContent = '✏️ Edit Subject';
+  document.getElementById('subjMsg').textContent = '';
+  openModal('subjectModal');
+}
+
+// --- FETCH AND RENDER ---
 async function loadUsersList() {
   allUsersData = await apiFetch('/admin/all-users');
   renderUsers();
@@ -74,7 +133,10 @@ function renderUsers() {
       <td>${u.email}</td>
       <td>${u.role === 'teacher' ? '<span class="badge ok">Teacher</span>' : '<span class="badge warn">Student</span>'}</td>
       <td>${u.role === 'student' ? `${u.section || 'No Section'} / ${u.lrn}` : '—'}</td>
-      <td><button class="btn-delete" onclick="deleteUser(${u.id}, '${u.full_name}')">Delete</button></td>
+      <td>
+        <button class="btn-edit" onclick="editUser(${u.id})">Edit</button>
+        <button class="btn-delete" onclick="deleteUser(${u.id}, '${u.full_name}')">Delete</button>
+      </td>
     </tr>
   `).join('');
 }
@@ -86,7 +148,6 @@ function filterUsers(role, el) {
   renderUsers();
 }
 
-// --- FETCH AND RENDER SUBJECTS ---
 async function loadSubjectsList() {
   allSubjectsData = await apiFetch('/admin/subjects');
   renderSubjects();
@@ -115,7 +176,10 @@ function renderSubjects() {
       <td>${s.name}</td>
       <td>${s.teacher_name || '<span style="color:red;">Unassigned</span>'}</td>
       <td>${s.section_name || '<span style="color:red;">Unassigned</span>'}</td>
-      <td><button class="btn-delete" onclick="deleteSubject(${s.id}, '${s.name}')">Delete</button></td>
+      <td>
+        <button class="btn-edit" onclick="editSubject(${s.id})">Edit</button>
+        <button class="btn-delete" onclick="deleteSubject(${s.id}, '${s.name}')">Delete</button>
+      </td>
     </tr>
   `).join('');
 }
@@ -134,11 +198,12 @@ async function loadDropdowns() {
   }
 }
 
-// --- HANDLE FORMS ---
-document.getElementById('addUserForm')?.addEventListener('submit', async (e) => {
+// --- SUBMIT FORMS (HANDLES BOTH ADD AND EDIT) ---
+document.getElementById('userForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const msgDiv = document.getElementById('userMsg');
-  msgDiv.textContent = 'Creating...';
+  const editId = document.getElementById('editUserId').value;
+  msgDiv.textContent = 'Saving...';
   msgDiv.style.color = 'var(--muted)';
 
   const payload = {
@@ -151,11 +216,14 @@ document.getElementById('addUserForm')?.addEventListener('submit', async (e) => 
   };
 
   try {
-    await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) });
-    msgDiv.textContent = '✅ User created successfully!';
+    if (editId) {
+      await apiFetch(`/admin/users/${editId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      msgDiv.textContent = '✅ User updated successfully!';
+    } else {
+      await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) });
+      msgDiv.textContent = '✅ User created successfully!';
+    }
     msgDiv.style.color = 'var(--success)';
-    document.getElementById('addUserForm').reset();
-    toggleStudentFields();
     loadUsersList(); 
     loadDropdowns();
     setTimeout(() => closeModal('userModal'), 1000);
@@ -165,10 +233,11 @@ document.getElementById('addUserForm')?.addEventListener('submit', async (e) => 
   }
 });
 
-document.getElementById('addSubjectForm')?.addEventListener('submit', async (e) => {
+document.getElementById('subjectForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const msgDiv = document.getElementById('subjMsg');
-  msgDiv.textContent = 'Creating...';
+  const editId = document.getElementById('editSubjectId').value;
+  msgDiv.textContent = 'Saving...';
   msgDiv.style.color = 'var(--muted)';
 
   const payload = {
@@ -179,10 +248,14 @@ document.getElementById('addSubjectForm')?.addEventListener('submit', async (e) 
   };
 
   try {
-    await apiFetch('/admin/subjects', { method: 'POST', body: JSON.stringify(payload) });
-    msgDiv.textContent = '✅ Subject created and assigned!';
+    if (editId) {
+      await apiFetch(`/admin/subjects/${editId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      msgDiv.textContent = '✅ Subject updated successfully!';
+    } else {
+      await apiFetch('/admin/subjects', { method: 'POST', body: JSON.stringify(payload) });
+      msgDiv.textContent = '✅ Subject created successfully!';
+    }
     msgDiv.style.color = 'var(--success)';
-    document.getElementById('addSubjectForm').reset();
     loadSubjectsList();
     setTimeout(() => closeModal('subjectModal'), 1000);
   } catch (err) {

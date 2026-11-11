@@ -30,6 +30,13 @@
     }
     .table-header h3 { margin: 0; }
     
+    /* Action Buttons */
+    .btn-edit {
+      background: #e0e7ff; color: #3730a3; border: none;
+      padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600;
+      margin-right: 5px;
+    }
+    .btn-edit:hover { background: #c7d2fe; }
     .btn-delete {
       background: #fee2e2; color: #991b1b; border: none;
       padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600;
@@ -80,7 +87,7 @@
       <div class="card">
         <div class="table-header">
           <h3>👥 Manage Users</h3>
-          <button class="btn" onclick="openModal('userModal')">+ Add User</button>
+          <button class="btn" onclick="openUserModal()">+ Add User</button>
         </div>
         
         <div style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid var(--border);">
@@ -111,7 +118,7 @@
       <div class="card">
         <div class="table-header">
           <h3>📚 Manage Subjects</h3>
-          <button class="btn" onclick="openModal('subjectModal')">+ Add Subject</button>
+          <button class="btn" onclick="openSubjectModal()">+ Add Subject</button>
         </div>
 
         <div class="form-group" style="margin-bottom: 15px;">
@@ -168,12 +175,13 @@
 
 <!-- ================= MODALS ================= -->
 
-<!-- Add User Modal -->
+<!-- User Modal (Used for both Add and Edit) -->
 <div class="modal" id="userModal">
   <div class="modal-content">
     <span class="close-btn" onclick="closeModal('userModal')">&times;</span>
-    <h3 style="margin-bottom: 20px;">➕ Add New User</h3>
-    <form id="addUserForm">
+    <h3 id="userModalTitle" style="margin-bottom: 20px;">➕ Add New User</h3>
+    <form id="userForm">
+      <input type="hidden" id="editUserId">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
         <div class="form-group">
           <label>Full Name</label>
@@ -191,8 +199,8 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="userPassword" required placeholder="Set a password">
+          <label>Password (leave blank to keep current)</label>
+          <input type="password" id="userPassword" placeholder="Set a password">
         </div>
       </div>
 
@@ -207,18 +215,19 @@
         </div>
       </div>
 
-      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Create Account</button>
+      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Save User</button>
       <div id="userMsg" class="error-msg" style="margin-top: 10px;"></div>
     </form>
   </div>
 </div>
 
-<!-- Add Subject Modal -->
+<!-- Subject Modal (Used for both Add and Edit) -->
 <div class="modal" id="subjectModal">
   <div class="modal-content">
     <span class="close-btn" onclick="closeModal('subjectModal')">&times;</span>
-    <h3 style="margin-bottom: 20px;">➕ Add New Subject</h3>
-    <form id="addSubjectForm">
+    <h3 id="subjectModalTitle" style="margin-bottom: 20px;">➕ Add New Subject</h3>
+    <form id="subjectForm">
+      <input type="hidden" id="editSubjectId">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
         <div class="form-group">
           <label>Subject Code</label>
@@ -237,7 +246,7 @@
           <select id="subjSection"></select>
         </div>
       </div>
-      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Create Subject</button>
+      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Save Subject</button>
       <div id="subjMsg" class="error-msg" style="margin-top: 10px;"></div>
     </form>
   </div>
