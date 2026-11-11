@@ -5,10 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Portal — EduTrack</title>
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Modal Styles */
+    .modal {
+      display: none; position: fixed; z-index: 2000;
+      left: 0; top: 0; width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      align-items: center; justify-content: center;
+    }
+    .modal-content {
+      background: #fff; padding: 24px; border-radius: 12px;
+      width: 100%; max-width: 600px; position: relative;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .close-btn {
+      position: absolute; top: 15px; right: 20px;
+      font-size: 24px; cursor: pointer; color: var(--muted);
+    }
+    .close-btn:hover { color: var(--danger); }
+    
+    /* Header with Add Button */
+    .table-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 15px;
+    }
+    .table-header h3 { margin: 0; }
+    
+    /* Delete Button in Table */
+    .btn-delete {
+      background: #fee2e2; color: #991b1b; border: none;
+      padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    .btn-delete:hover { background: #fca5a5; }
+  </style>
 </head>
 <body>
 
-<!-- Global Loading Spinner -->
 <div id="loadingOverlay">
   <div class="spinner"></div>
   <div style="font-weight: 600; color: var(--primary);">Loading...</div>
@@ -36,79 +68,43 @@
       <div class="stats-grid" id="stats"></div>
     </div>
 
-    <!-- 2. MANAGE USERS (NEW) -->
+    <!-- 2. MANAGE USERS -->
     <div class="view" id="view-users" style="display:none">
-      <div class="card" style="max-width: 700px; margin-bottom: 20px;">
-        <h3>➕ Add New User</h3>
-        <form id="addUserForm">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div class="form-group">
-              <label>Full Name</label>
-              <input type="text" id="userFullName" required placeholder="e.g. Maria Santos">
-            </div>
-            <div class="form-group">
-              <label>Email Address</label>
-              <input type="email" id="userEmail" required placeholder="email@school.edu">
-            </div>
-            <div class="form-group">
-              <label>Role</label>
-              <select id="userRole" onchange="toggleStudentFields()">
-                <option value="teacher">Teacher</option>
-                <option value="student">Student</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Password</label>
-              <input type="password" id="userPassword" required placeholder="Set a password">
-            </div>
-          </div>
-
-          <!-- Student Only Fields -->
-          <div id="studentFields" style="display: none; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
-            <div class="form-group">
-              <label>LRN (12 digits)</label>
-              <input type="text" id="studentLRN" placeholder="136501230000">
-            </div>
-            <div class="form-group">
-              <label>Section</label>
-              <select id="studentSection">
-                <!-- Populated via JS -->
-              </select>
-            </div>
-          </div>
-
-          <button type="submit" class="btn" style="margin-top: 15px; width: 100%;">Create Account</button>
-        </form>
-        <div id="userMsg" class="error-msg" style="margin-top: 10px;"></div>
+      <div class="card">
+        <div class="table-header">
+          <h3>👥 All Users</h3>
+          <button class="btn" onclick="openModal('userModal')">+ Add User</button>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th><th>Email</th><th>Role</th><th>Section / LRN</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="usersListBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
-    <!-- 3. MANAGE SUBJECTS (NEW) -->
+    <!-- 3. MANAGE SUBJECTS -->
     <div class="view" id="view-subjects" style="display:none">
-      <div class="card" style="max-width: 700px; margin-bottom: 20px;">
-        <h3>➕ Add New Subject</h3>
-        <form id="addSubjectForm">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div class="form-group">
-              <label>Subject Code</label>
-              <input type="text" id="subjCode" required placeholder="e.g. MATH10">
-            </div>
-            <div class="form-group">
-              <label>Subject Name</label>
-              <input type="text" id="subjName" required placeholder="e.g. Mathematics 10">
-            </div>
-            <div class="form-group">
-              <label>Assign to Teacher</label>
-              <select id="subjTeacher"></select>
-            </div>
-            <div class="form-group">
-              <label>Assign to Section</label>
-              <select id="subjSection"></select>
-            </div>
-          </div>
-          <button type="submit" class="btn" style="margin-top: 15px; width: 100%;">Create Subject</button>
-        </form>
-        <div id="subjMsg" class="error-msg" style="margin-top: 10px;"></div>
+      <div class="card">
+        <div class="table-header">
+          <h3>📚 All Subjects</h3>
+          <button class="btn" onclick="openModal('subjectModal')">+ Add Subject</button>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th><th>Subject Name</th><th>Teacher</th><th>Section</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="subjectsListBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -145,6 +141,83 @@
   </main>
   
   <button class="logout-btn" onclick="logout()">↩ Logout</button>
+</div>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Add User Modal -->
+<div class="modal" id="userModal">
+  <div class="modal-content">
+    <span class="close-btn" onclick="closeModal('userModal')">&times;</span>
+    <h3 style="margin-bottom: 20px;">➕ Add New User</h3>
+    <form id="addUserForm">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="userFullName" required placeholder="e.g. Maria Santos">
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="userEmail" required placeholder="email@school.edu">
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="userRole" onchange="toggleStudentFields()">
+            <option value="teacher">Teacher</option>
+            <option value="student">Student</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="userPassword" required placeholder="Set a password">
+        </div>
+      </div>
+
+      <div id="studentFields" style="display: none; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+        <div class="form-group">
+          <label>LRN (12 digits)</label>
+          <input type="text" id="studentLRN" placeholder="136501230000">
+        </div>
+        <div class="form-group">
+          <label>Section</label>
+          <select id="studentSection"></select>
+        </div>
+      </div>
+
+      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Create Account</button>
+      <div id="userMsg" class="error-msg" style="margin-top: 10px;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Subject Modal -->
+<div class="modal" id="subjectModal">
+  <div class="modal-content">
+    <span class="close-btn" onclick="closeModal('subjectModal')">&times;</span>
+    <h3 style="margin-bottom: 20px;">➕ Add New Subject</h3>
+    <form id="addSubjectForm">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+        <div class="form-group">
+          <label>Subject Code</label>
+          <input type="text" id="subjCode" required placeholder="e.g. MATH10">
+        </div>
+        <div class="form-group">
+          <label>Subject Name</label>
+          <input type="text" id="subjName" required placeholder="e.g. Mathematics 10">
+        </div>
+        <div class="form-group">
+          <label>Assign to Teacher</label>
+          <select id="subjTeacher"></select>
+        </div>
+        <div class="form-group">
+          <label>Assign to Section</label>
+          <select id="subjSection"></select>
+        </div>
+      </div>
+      <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Create Subject</button>
+      <div id="subjMsg" class="error-msg" style="margin-top: 10px;"></div>
+    </form>
+  </div>
 </div>
 
 <script src="js/api.js"></script>

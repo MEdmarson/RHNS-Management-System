@@ -1,15 +1,13 @@
 const router = require('express').Router();
 const pool = require('../config/db');
-const bcrypt = require('bcryptjs'); // Added for password hashing
+const bcrypt = require('bcryptjs');
 const { authenticate, authorize } = require('../middleware/auth');
 
 router.use(authenticate, authorize('admin'));
 
 // ==========================================
-// EXISTING DASHBOARD ROUTES
+// 1. DASHBOARD & ANALYTICS
 // ==========================================
-
-// MACRO DASHBOARD
 router.get('/dashboard', async (req, res) => {
   try {
     const [[{ total_students }]] = await pool.query(
@@ -32,7 +30,6 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-// ALL AT-RISK SCHOOL-WIDE
 router.get('/at-risk', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -52,7 +49,6 @@ router.get('/at-risk', async (req, res) => {
   }
 });
 
-// TEACHER COMPLIANCE
 router.get('/compliance', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -70,7 +66,6 @@ router.get('/compliance', async (req, res) => {
   }
 });
 
-// CSV EXPORT — all students & grades
 router.get('/export', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -89,55 +84,74 @@ router.get('/export', async (req, res) => {
 });
 
 // ==========================================
-// NEW MANAGEMENT ROUTES (Users, Sections, Subjects)
+// 2. MANAGE USERS
 // ==========================================
+router.get('/all-users', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.id, u.full_name, u.email, u.role, s.lrn, sec.name AS section 
+      FROM users u
+      LEFT JOIN students s ON s.user_id = u.id
+      LEFT JOIN sections sec ON sec.id = s.section_id
+      WHERE u.role != 'admin'
+      ORDER BY u.role, u.full_name
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// CREATE a new User (Teacher or Student)
 router.post('/users', async (req, res) => {
   const { email, password, full_name, role, lrn, section_id, grade_level } = req.body;
-  
   try {
-    // 1. Hash the password
     const password_hash = await bcrypt.hash(password, 10);
-
-    // 2. Insert into users table
     const [result] = await pool.query(
       'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
       [email, password_hash, full_name, role]
     );
     const newUserId = result.insertId;
 
-    // 3. If role is student, insert into students table
     if (role === 'student') {
       await pool.query(
         'INSERT INTO students (user_id, lrn, section_id, grade_level) VALUES (?, ?, ?, ?)',
         [newUserId, lrn, section_id || null, grade_level || 10]
       );
     }
-
     res.json({ ok: true, message: 'User created successfully' });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({ error: 'Email or LRN already exists' });
-    }
-    console.error(err);
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email or LRN already exists' });
     res.status(500).json({ error: err.message });
   }
 });
 
-// CREATE a new Section
-router.post('/sections', async (req, res) => {
-  const { name, adviser_id } = req.body;
+router.delete('/users/:id', async (req, res) => {
   try {
-    await pool.query('INSERT INTO sections (name, adviser_id) VALUES (?, ?)', [name, adviser_id || null]);
-    res.json({ ok: true, message: 'Section created' });
+    await pool.query('DELETE FROM users WHERE id = ? AND role != "admin"', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Section name already exists' });
     res.status(500).json({ error: err.message });
   }
 });
 
-// CREATE a new Subject and assign to a Teacher
+// ==========================================
+// 3. MANAGE SUBJECTS
+// ==========================================
+router.get('/subjects', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT sub.id, sub.name, sub.code, sub.section_id, sub.teacher_id, 
+             u.full_name AS teacher_name, sec.name AS section_name
+      FROM subjects sub
+      LEFT JOIN users u ON u.id = sub.teacher_id
+      LEFT JOIN sections sec ON sec.id = sub.section_id
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/subjects', async (req, res) => {
   const { code, name, teacher_id, section_id } = req.body;
   try {
@@ -152,39 +166,26 @@ router.post('/subjects', async (req, res) => {
   }
 });
 
-// GET all teachers (for dropdowns)
+router.delete('/subjects/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM subjects WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 4. DROPDOWNS
+// ==========================================
 router.get('/teachers', async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT id, full_name FROM users WHERE role = 'teacher'");
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const [rows] = await pool.query("SELECT id, full_name FROM users WHERE role = 'teacher'");
+  res.json(rows);
 });
 
-// GET all sections (for dropdowns)
 router.get('/sections', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT id, name FROM sections');
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET all subjects (for dropdowns)
-router.get('/subjects', async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT sub.id, sub.name, sub.code, sub.section_id, sub.teacher_id, u.full_name AS teacher_name, sec.name AS section_name
-      FROM subjects sub
-      LEFT JOIN users u ON u.id = sub.teacher_id
-      LEFT JOIN sections sec ON sec.id = sub.section_id
-    `);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const [rows] = await pool.query('SELECT id, name FROM sections');
+  res.json(rows);
 });
 
 module.exports = router;

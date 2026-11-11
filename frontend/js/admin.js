@@ -17,9 +17,143 @@ function showView(name, el) {
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Admin Portal';
 
+  if (name === 'dashboard')  loadDashboard();
+  if (name === 'users')      { loadUsersList(); loadDropdowns(); }
+  if (name === 'subjects')   { loadSubjectsList(); loadDropdowns(); }
   if (name === 'atrisk')     loadAtRisk();
   if (name === 'compliance') loadCompliance();
-  if (name === 'users' || name === 'subjects') loadDropdowns();
+}
+
+// --- MODAL CONTROLS ---
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+window.onclick = function(event) {
+  if (event.target.classList.contains('modal')) {
+    event.target.style.display = 'none';
+  }
+}
+
+function toggleStudentFields() {
+  const role = document.getElementById('userRole').value;
+  document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
+}
+
+// --- LOAD DATA FOR TABLES ---
+async function loadUsersList() {
+  const rows = await apiFetch('/admin/all-users');
+  document.getElementById('usersListBody').innerHTML = rows.map(u => `
+    <tr>
+      <td><strong>${u.full_name}</strong></td>
+      <td>${u.email}</td>
+      <td>${u.role === 'teacher' ? '<span class="badge ok">Teacher</span>' : '<span class="badge warn">Student</span>'}</td>
+      <td>${u.role === 'student' ? `${u.section || 'No Section'} / ${u.lrn}` : '—'}</td>
+      <td><button class="btn-delete" onclick="deleteUser(${u.id}, '${u.full_name}')">Delete</button></td>
+    </tr>
+  `).join('');
+}
+
+async function loadSubjectsList() {
+  const rows = await apiFetch('/admin/subjects');
+  document.getElementById('subjectsListBody').innerHTML = rows.map(s => `
+    <tr>
+      <td><strong>${s.code}</strong></td>
+      <td>${s.name}</td>
+      <td>${s.teacher_name || 'Unassigned'}</td>
+      <td>${s.section_name || 'Unassigned'}</td>
+      <td><button class="btn-delete" onclick="deleteSubject(${s.id}, '${s.name}')">Delete</button></td>
+    </tr>
+  `).join('');
+}
+
+async function loadDropdowns() {
+  try {
+    const teachers = await apiFetch('/admin/teachers');
+    const sections = await apiFetch('/admin/sections');
+
+    document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${t.full_name}</option>`).join('');
+    document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  } catch (err) {
+    console.error("Failed to load dropdowns", err);
+  }
+}
+
+// --- HANDLE FORMS ---
+document.getElementById('addUserForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgDiv = document.getElementById('userMsg');
+  msgDiv.textContent = 'Creating...';
+  msgDiv.style.color = 'var(--muted)';
+
+  const payload = {
+    full_name: document.getElementById('userFullName').value,
+    email: document.getElementById('userEmail').value,
+    role: document.getElementById('userRole').value,
+    password: document.getElementById('userPassword').value,
+    lrn: document.getElementById('studentLRN').value,
+    section_id: document.getElementById('studentSection').value
+  };
+
+  try {
+    await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) });
+    msgDiv.textContent = '✅ User created successfully!';
+    msgDiv.style.color = 'var(--success)';
+    document.getElementById('addUserForm').reset();
+    toggleStudentFields();
+    loadUsersList(); 
+    loadDropdowns();
+    setTimeout(() => closeModal('userModal'), 1000);
+  } catch (err) {
+    msgDiv.textContent = '❌ ' + err.message;
+    msgDiv.style.color = 'var(--danger)';
+  }
+});
+
+document.getElementById('addSubjectForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgDiv = document.getElementById('subjMsg');
+  msgDiv.textContent = 'Creating...';
+  msgDiv.style.color = 'var(--muted)';
+
+  const payload = {
+    code: document.getElementById('subjCode').value,
+    name: document.getElementById('subjName').value,
+    teacher_id: document.getElementById('subjTeacher').value,
+    section_id: document.getElementById('subjSection').value
+  };
+
+  try {
+    await apiFetch('/admin/subjects', { method: 'POST', body: JSON.stringify(payload) });
+    msgDiv.textContent = '✅ Subject created and assigned!';
+    msgDiv.style.color = 'var(--success)';
+    document.getElementById('addSubjectForm').reset();
+    loadSubjectsList();
+    setTimeout(() => closeModal('subjectModal'), 1000);
+  } catch (err) {
+    msgDiv.textContent = '❌ ' + err.message;
+    msgDiv.style.color = 'var(--danger)';
+  }
+});
+
+// --- DELETE ACTIONS ---
+async function deleteUser(id, name) {
+  if (!confirm(`Are you sure you want to delete ${name}? This will also delete all their grades and attendance records.`)) return;
+  try {
+    await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
+    loadUsersList();
+  } catch (err) {
+    alert('Error deleting user: ' + err.message);
+  }
+}
+
+async function deleteSubject(id, name) {
+  if (!confirm(`Are you sure you want to delete the subject ${name}? This will delete all grades associated with it.`)) return;
+  try {
+    await apiFetch(`/admin/subjects/${id}`, { method: 'DELETE' });
+    loadSubjectsList();
+  } catch (err) {
+    alert('Error deleting subject: ' + err.message);
+  }
 }
 
 // --- EXISTING DASHBOARD LOGIC ---
@@ -70,79 +204,6 @@ async function exportCSV() {
   a.download = 'school_report.csv';
   a.click();
 }
-
-// --- NEW: MANAGE USERS & SUBJECTS LOGIC ---
-function toggleStudentFields() {
-  const role = document.getElementById('userRole').value;
-  document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
-}
-
-async function loadDropdowns() {
-  try {
-    const teachers = await apiFetch('/admin/teachers');
-    const sections = await apiFetch('/admin/sections');
-
-    document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${t.full_name}</option>`).join('');
-    document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  } catch (err) {
-    console.error("Failed to load dropdowns", err);
-  }
-}
-
-// Handle Add User Form
-document.getElementById('addUserForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msgDiv = document.getElementById('userMsg');
-  msgDiv.textContent = 'Creating...';
-  msgDiv.style.color = 'var(--muted)';
-
-  const payload = {
-    full_name: document.getElementById('userFullName').value,
-    email: document.getElementById('userEmail').value,
-    role: document.getElementById('userRole').value,
-    password: document.getElementById('userPassword').value,
-    lrn: document.getElementById('studentLRN').value,
-    section_id: document.getElementById('studentSection').value
-  };
-
-  try {
-    await apiFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) });
-    msgDiv.textContent = '✅ User created successfully!';
-    msgDiv.style.color = 'var(--success)';
-    document.getElementById('addUserForm').reset();
-    toggleStudentFields();
-    loadDropdowns(); 
-  } catch (err) {
-    msgDiv.textContent = '❌ ' + err.message;
-    msgDiv.style.color = 'var(--danger)';
-  }
-});
-
-// Handle Add Subject Form
-document.getElementById('addSubjectForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msgDiv = document.getElementById('subjMsg');
-  msgDiv.textContent = 'Creating...';
-  msgDiv.style.color = 'var(--muted)';
-
-  const payload = {
-    code: document.getElementById('subjCode').value,
-    name: document.getElementById('subjName').value,
-    teacher_id: document.getElementById('subjTeacher').value,
-    section_id: document.getElementById('subjSection').value
-  };
-
-  try {
-    await apiFetch('/admin/subjects', { method: 'POST', body: JSON.stringify(payload) });
-    msgDiv.textContent = '✅ Subject created and assigned!';
-    msgDiv.style.color = 'var(--success)';
-    document.getElementById('addSubjectForm').reset();
-  } catch (err) {
-    msgDiv.textContent = '❌ ' + err.message;
-    msgDiv.style.color = 'var(--danger)';
-  }
-});
 
 // Init
 loadDashboard();
