@@ -85,7 +85,7 @@ async function loadGradebook() {
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   currentGradebookData = rows; 
 
-  // Load HPS values
+  // Load HPS values into the header
   if (rows.length > 0 && rows[0].ww1_hps !== null) {
     const r = rows[0];
     ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].forEach(f => {
@@ -133,31 +133,36 @@ function renderGradebook() {
       <!-- WW Inputs -->
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
-      <!-- WW Computed -->
-      <td class="computed-cell" id="ww-total-${r.student_id}">${r.ww_total || 0}</td>
-      <td class="computed-cell" id="ww-ps-${r.student_id}">${r.ww_ps || 0}</td>
-      <td class="computed-cell" id="ww-ws-${r.student_id}">${r.ww_ws || 0}</td>
+      <!-- WW Computed (Calculated below) -->
+      <td class="computed-cell" id="ww-total-${r.student_id}">0</td>
+      <td class="computed-cell" id="ww-ps-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="ww-ws-${r.student_id}">0.00</td>
       
       <!-- PT Inputs -->
       <td>${makeInput('pt1')}</td><td>${makeInput('pt2')}</td><td>${makeInput('pt3')}</td>
       <!-- PT Computed -->
-      <td class="computed-cell" id="pt-total-${r.student_id}">${r.pt_total || 0}</td>
-      <td class="computed-cell" id="pt-ps-${r.student_id}">${r.pt_ps || 0}</td>
-      <td class="computed-cell" id="pt-ws-${r.student_id}">${r.pt_ws || 0}</td>
+      <td class="computed-cell" id="pt-total-${r.student_id}">0</td>
+      <td class="computed-cell" id="pt-ps-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="pt-ws-${r.student_id}">0.00</td>
 
       <!-- EX Inputs -->
       <td>${makeInput('ex1')}</td><td>${makeInput('ex2')}</td><td>${makeInput('ex3')}</td>
       <!-- EX Computed -->
-      <td class="computed-cell" id="ex-total-${r.student_id}">${r.ex_total || 0}</td>
-      <td class="computed-cell" id="ex-ps-${r.student_id}">${r.ex_ps || 0}</td>
-      <td class="computed-cell" id="ex-ws-${r.student_id}">${r.ex_ws || 0}</td>
+      <td class="computed-cell" id="ex-total-${r.student_id}">0</td>
+      <td class="computed-cell" id="ex-ps-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="ex-ws-${r.student_id}">0.00</td>
 
       <!-- Final Computed -->
-      <td class="initial-cell" id="initial-${r.student_id}">${r.initial_grade ?? '—'}</td>
-      <td class="term-grade-cell" id="term-${r.student_id}">${r.term_grade ?? '—'}</td>
-      <td class="descriptor-cell" id="desc-${r.student_id}">${r.descriptor ?? '—'}</td>
+      <td class="initial-cell" id="initial-${r.student_id}">0.00</td>
+      <td class="term-grade-cell" id="term-${r.student_id}">0</td>
+      <td class="descriptor-cell" id="desc-${r.student_id}">Emerging</td>
     </tr>`;
   }).join('');
+
+  // *** THE FIX: Force calculation for every row immediately after rendering ***
+  document.querySelectorAll('#gradebookBody input').forEach(input => {
+    calculateRow(input);
+  });
 }
 
 // Live calculation as teacher types
@@ -169,7 +174,7 @@ function calculateRow(input) {
     const el = tr.querySelector(`input[data-field="${field}"]`);
     return el ? (parseInt(el.value) || 0) : 0;
   };
-  const getHps = (id) => parseInt(document.getElementById(id).value) || 100; // Default 100 to avoid divide by zero
+  const getHps = (id) => parseInt(document.getElementById(id).value) || 100; 
 
   // 1. Calculate Totals
   const wwTotal = getVal('ww1')+getVal('ww2')+getVal('ww3')+getVal('ww4')+getVal('ww5');

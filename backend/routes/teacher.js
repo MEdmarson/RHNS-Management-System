@@ -116,7 +116,7 @@ router.post('/grades', async (req, res) => {
   }
 });
 
-// --- ATTENDANCE ROUTES ---
+// --- ATTENDANCE, WARNINGS, SF2 logic remains the same ---
 router.get('/attendance/:subjectId/:date', async (req, res) => {
   const { subjectId, date } = req.params;
   try {
@@ -124,13 +124,11 @@ router.get('/attendance/:subjectId/:date', async (req, res) => {
       SELECT u.id AS student_id, u.full_name, a.status,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
-      FROM subjects sub
-      JOIN students s ON s.section_id = sub.section_id
+      FROM subjects sub JOIN students s ON s.section_id = sub.section_id
       JOIN users u ON u.id = s.user_id
       LEFT JOIN attendance a ON a.student_id = u.id AND a.date = ? AND a.section_id = sub.section_id
       WHERE sub.teacher_id = ? AND sub.id = ?
-      GROUP BY u.id, u.full_name, a.status
-      ORDER BY u.full_name`, [date, req.user.id, subjectId]);
+      GROUP BY u.id, u.full_name, a.status ORDER BY u.full_name`, [date, req.user.id, subjectId]);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -140,8 +138,7 @@ router.post('/attendance', async (req, res) => {
   try {
     await pool.query(`
       INSERT INTO attendance (student_id, section_id, date, status, recorded_by)
-      VALUES (?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE status = VALUES(status)`,
+      VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`,
       [student_id, section_id, date, status, req.user.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -153,12 +150,10 @@ router.get('/attendance-history/:subjectId', async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT u.id AS student_id, u.full_name, a.date, a.status
-      FROM subjects sub
-      JOIN students s ON s.section_id = sub.section_id
+      FROM subjects sub JOIN students s ON s.section_id = sub.section_id
       JOIN users u ON u.id = s.user_id
       JOIN attendance a ON a.student_id = u.id AND a.section_id = sub.section_id
-      WHERE sub.teacher_id = ? AND sub.id = ? 
-      AND MONTH(a.date) = ? AND YEAR(a.date) = ?
+      WHERE sub.teacher_id = ? AND sub.id = ? AND MONTH(a.date) = ? AND YEAR(a.date) = ?
       ORDER BY u.full_name, a.date`, [req.user.id, subjectId, month, year]);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -166,29 +161,21 @@ router.get('/attendance-history/:subjectId', async (req, res) => {
 
 router.get('/at-risk', async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT u.id, u.full_name,
-           ROUND(AVG(g.term_grade), 2) AS avg_grade,
+    SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
            (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS absences
-    FROM users u
-    JOIN students s ON s.user_id = u.id
+    FROM users u JOIN students s ON s.user_id = u.id
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-    GROUP BY u.id, u.full_name
-    HAVING avg_grade < 75 OR absences > 4`, [req.user.id]);
+    GROUP BY u.id, u.full_name HAVING avg_grade < 75 OR absences > 4`, [req.user.id]);
   res.json(rows);
 });
 
 router.get('/sf2/:sectionId', async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT s.lrn, u.full_name,
-           SUM(a.status = 'present') AS days_present,
-           SUM(a.status = 'absent')  AS days_absent
-    FROM users u
-    JOIN students s ON s.user_id = u.id
+    SELECT s.lrn, u.full_name, SUM(a.status = 'present') AS days_present, SUM(a.status = 'absent') AS days_absent
+    FROM users u JOIN students s ON s.user_id = u.id
     LEFT JOIN attendance a ON a.student_id = u.id
-    WHERE s.section_id = ?
-    GROUP BY u.id, s.lrn, u.full_name
-    ORDER BY u.full_name`, [req.params.sectionId]);
+    WHERE s.section_id = ? GROUP BY u.id, s.lrn, u.full_name ORDER BY u.full_name`, [req.params.sectionId]);
   res.json(rows);
 });
 
