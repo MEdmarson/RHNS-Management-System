@@ -2,11 +2,12 @@ requireAuth('teacher');
 document.getElementById('userChip').textContent = '👩‍🏫 ' + getUser().name;
 
 let currentGradebookData = []; 
+let currentAttendanceData = [];
 let currentSubjectId = null;
 let currentAttendanceSubjectId = null;
 let currentSectionId = null;
 let currentHistorySubjectId = null;
-let mySubjectsData = []; // Global storage for subject data
+let mySubjectsData = []; 
 
 function showView(name, el) {
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
@@ -36,7 +37,7 @@ function showView(name, el) {
 // --- CLASS RECORD DASHBOARD ---
 async function initDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
-  mySubjectsData = subjects; // Save for later lookups
+  mySubjectsData = subjects; 
   
   const grid = document.getElementById('subjectsGrid');
   
@@ -45,7 +46,6 @@ async function initDashboard() {
     return;
   }
 
-  // Pass ONLY the subjectId to avoid HTML string errors
   grid.innerHTML = subjects.map(s => `
     <div class="subject-card" onclick="openClassRecord(${s.id})">
       <h3>📚 ${s.name}</h3>
@@ -80,7 +80,6 @@ async function loadAttendanceDashboard() {
     return;
   }
 
-  // Pass ONLY the subjectId
   grid.innerHTML = subjects.map(s => `
     <div class="subject-card" onclick="openAttendanceSheet(${s.id})">
       <h3>📋 ${s.name}</h3>
@@ -97,22 +96,149 @@ function openAttendanceSheet(subjectId) {
   if (!subj) return;
 
   currentAttendanceSubjectId = subjectId;
-  currentSectionId = subj.section_id; // Make sure your backend sends section_id in /my-subjects
+  currentSectionId = subj.section_id; 
   document.getElementById('attendanceTitle').textContent = `${subj.name} — ${subj.section}`;
   
   document.getElementById('attDate').valueAsDate = new Date();
+  document.getElementById('attendanceSearch').value = ''; 
   
   showView('attendance-sheet');
   loadAttendanceSheet();
 }
 
+// --- GRADEBOOK LOGIC WITH SEARCH ---
+async function loadGradebook() {
+  if (!currentSubjectId) return;
+  const term = document.getElementById('termSelect').value;
+  const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
+  currentGradebookData = rows; 
+
+  if (rows.length > 0 && rows[0].ww1_hps !== null) {
+    const r = rows[0];
+    document.getElementById('hps-ww1').value = r.ww1_hps;
+    document.getElementById('hps-ww2').value = r.ww2_hps;
+    document.getElementById('hps-ww3').value = r.ww3_hps;
+    document.getElementById('hps-ww4').value = r.ww4_hps;
+    document.getElementById('hps-ww5').value = r.ww5_hps;
+    document.getElementById('hps-pt1').value = r.pt1_hps;
+    document.getElementById('hps-pt2').value = r.pt2_hps;
+    document.getElementById('hps-pt3').value = r.pt3_hps;
+    document.getElementById('hps-ex1').value = r.ex1_hps;
+    document.getElementById('hps-ex2').value = r.ex2_hps;
+    document.getElementById('hps-ex3').value = r.ex3_hps;
+  } else {
+    document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
+  }
+  
+  document.getElementById('gradebookSearch').value = ''; 
+  renderGradebook();
+}
+
+function renderGradebook() {
+  const searchQuery = document.getElementById('gradebookSearch').value.toLowerCase();
+  
+  let filtered = currentGradebookData;
+  if (searchQuery) {
+    filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
+  }
+
+  if (filtered.length === 0) {
+    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="14" style="text-align:center;">No students found.</td></tr>';
+    return;
+  }
+
+  document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
+    const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
+    
+    return `
+    <tr>
+      <td style="text-align:left;">${r.full_name}</td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ww1" value="${r.ww1 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ww2" value="${r.ww2 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ww3" value="${r.ww3 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ww4" value="${r.ww4 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ww5" value="${r.ww5 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="pt1" value="${r.pt1 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="pt2" value="${r.pt2 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="pt3" value="${r.pt3 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ex1" value="${r.ex1 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ex2" value="${r.ex2 ?? ''}"></td>
+      <td><input type="number" data-idx="${originalIndex}" data-field="ex3" value="${r.ex3 ?? ''}"></td>
+      <td class="term-grade-cell">${r.term_grade ?? '—'}</td>
+      <td>${r.term_grade >= 75 ? '<span class="badge ok">Passed</span>' : r.term_grade ? '<span class="badge danger">Failed</span>' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveAllGrades() {
+  const term = document.getElementById('termSelect').value;
+  const inputs = document.querySelectorAll('#gradebookBody input');
+  
+  const hpsValues = {
+    ww1_hps: parseInt(document.getElementById('hps-ww1').value) || 0,
+    ww2_hps: parseInt(document.getElementById('hps-ww2').value) || 0,
+    ww3_hps: parseInt(document.getElementById('hps-ww3').value) || 0,
+    ww4_hps: parseInt(document.getElementById('hps-ww4').value) || 0,
+    ww5_hps: parseInt(document.getElementById('hps-ww5').value) || 0,
+    pt1_hps: parseInt(document.getElementById('hps-pt1').value) || 0,
+    pt2_hps: parseInt(document.getElementById('hps-pt2').value) || 0,
+    pt3_hps: parseInt(document.getElementById('hps-pt3').value) || 0,
+    ex1_hps: parseInt(document.getElementById('hps-ex1').value) || 0,
+    ex2_hps: parseInt(document.getElementById('hps-ex2').value) || 0,
+    ex3_hps: parseInt(document.getElementById('hps-ex3').value) || 0,
+  };
+
+  const payload = {};
+  
+  inputs.forEach(input => {
+    const idx = input.getAttribute('data-idx');
+    const field = input.getAttribute('data-field');
+    
+    if (!payload[idx]) {
+      payload[idx] = {
+        student_id: currentGradebookData[idx].student_id,
+        subject_id: currentSubjectId,
+        term: term,
+        ...hpsValues
+      };
+    }
+    payload[idx][field] = input.value ? parseInt(input.value) : 0;
+  });
+
+  const promises = Object.values(payload).map(data => 
+    apiFetch('/teacher/grades', { method: 'POST', body: JSON.stringify(data) })
+  );
+
+  await Promise.all(promises);
+  alert('All grades saved successfully!');
+  loadGradebook(); 
+}
+
+// --- ATTENDANCE LOGIC WITH SEARCH ---
 async function loadAttendanceSheet() {
   if (!currentAttendanceSubjectId) return;
   
   const date = document.getElementById('attDate').value || new Date().toISOString().slice(0, 10);
   const rows = await apiFetch(`/teacher/attendance/${currentAttendanceSubjectId}/${date}`);
+  currentAttendanceData = rows;
   
-  document.getElementById('attendanceBody').innerHTML = rows.map(r => `
+  renderAttendance();
+}
+
+function renderAttendance() {
+  const searchQuery = document.getElementById('attendanceSearch').value.toLowerCase();
+  
+  let filtered = currentAttendanceData;
+  if (searchQuery) {
+    filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
+  }
+
+  if (filtered.length === 0) {
+    document.getElementById('attendanceBody').innerHTML = '<tr><td colspan="4" style="text-align:center;">No students found.</td></tr>';
+    return;
+  }
+
+  document.getElementById('attendanceBody').innerHTML = filtered.map(r => `
     <tr>
       <td style="text-align:left;">${r.full_name}</td>
       <td><span class="badge ok" style="font-size: 13px;">${r.days_present || 0} Days</span></td>
@@ -158,7 +284,6 @@ async function loadAttendanceHistory() {
   const records = await apiFetch(`/teacher/attendance-history/${currentHistorySubjectId}?month=${month}&year=${year}`);
   const students = await apiFetch(`/teacher/gradebook?term=1&subject=${currentHistorySubjectId}`);
 
-  // Build Header
   let headerHtml = `<th style="text-align:left; position: sticky; left:0; background:#f3f4f6; z-index:2;">Student Name</th>`;
   for (let i = 1; i <= daysInMonth; i++) {
     headerHtml += `<th style="min-width: 30px; font-size: 11px;">${i}</th>`;
@@ -167,7 +292,6 @@ async function loadAttendanceHistory() {
   headerHtml += `<th style="background: #fee2e2; min-width: 60px;">Absent</th>`;
   document.getElementById('historyHeaderRow').innerHTML = headerHtml;
 
-  // Group Records
   const studentMap = {};
   students.forEach(s => {
     studentMap[s.student_id] = {
@@ -187,7 +311,6 @@ async function loadAttendanceHistory() {
     }
   });
 
-  // Render Table Body
   document.getElementById('historyBody').innerHTML = Object.values(studentMap).map(s => {
     let rowHtml = `<tr><td style="text-align:left;">${s.name}</td>`;
     
@@ -208,93 +331,6 @@ async function loadAttendanceHistory() {
     
     return rowHtml;
   }).join('');
-}
-
-// --- CLASS RECORD LOGIC ---
-async function loadGradebook() {
-  if (!currentSubjectId) return;
-  const term = document.getElementById('termSelect').value;
-  const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
-  currentGradebookData = rows; 
-
-  if (rows.length > 0 && rows[0].ww1_hps !== null) {
-    const r = rows[0];
-    document.getElementById('hps-ww1').value = r.ww1_hps;
-    document.getElementById('hps-ww2').value = r.ww2_hps;
-    document.getElementById('hps-ww3').value = r.ww3_hps;
-    document.getElementById('hps-ww4').value = r.ww4_hps;
-    document.getElementById('hps-ww5').value = r.ww5_hps;
-    document.getElementById('hps-pt1').value = r.pt1_hps;
-    document.getElementById('hps-pt2').value = r.pt2_hps;
-    document.getElementById('hps-pt3').value = r.pt3_hps;
-    document.getElementById('hps-ex1').value = r.ex1_hps;
-    document.getElementById('hps-ex2').value = r.ex2_hps;
-    document.getElementById('hps-ex3').value = r.ex3_hps;
-  } else {
-    document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
-  }
-  
-  document.getElementById('gradebookBody').innerHTML = rows.map((r, index) => `
-    <tr>
-      <td style="text-align:left;">${r.full_name}</td>
-      <td><input type="number" data-idx="${index}" data-field="ww1" value="${r.ww1 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ww2" value="${r.ww2 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ww3" value="${r.ww3 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ww4" value="${r.ww4 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ww5" value="${r.ww5 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="pt1" value="${r.pt1 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="pt2" value="${r.pt2 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="pt3" value="${r.pt3 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ex1" value="${r.ex1 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ex2" value="${r.ex2 ?? ''}"></td>
-      <td><input type="number" data-idx="${index}" data-field="ex3" value="${r.ex3 ?? ''}"></td>
-      <td class="term-grade-cell">${r.term_grade ?? '—'}</td>
-      <td>${r.term_grade >= 75 ? '<span class="badge ok">Passed</span>' : r.term_grade ? '<span class="badge danger">Failed</span>' : '—'}</td>
-    </tr>`).join('');
-}
-
-async function saveAllGrades() {
-  const term = document.getElementById('termSelect').value;
-  const inputs = document.querySelectorAll('#gradebookBody input');
-  
-  const hpsValues = {
-    ww1_hps: parseInt(document.getElementById('hps-ww1').value) || 0,
-    ww2_hps: parseInt(document.getElementById('hps-ww2').value) || 0,
-    ww3_hps: parseInt(document.getElementById('hps-ww3').value) || 0,
-    ww4_hps: parseInt(document.getElementById('hps-ww4').value) || 0,
-    ww5_hps: parseInt(document.getElementById('hps-ww5').value) || 0,
-    pt1_hps: parseInt(document.getElementById('hps-pt1').value) || 0,
-    pt2_hps: parseInt(document.getElementById('hps-pt2').value) || 0,
-    pt3_hps: parseInt(document.getElementById('hps-pt3').value) || 0,
-    ex1_hps: parseInt(document.getElementById('hps-ex1').value) || 0,
-    ex2_hps: parseInt(document.getElementById('hps-ex2').value) || 0,
-    ex3_hps: parseInt(document.getElementById('hps-ex3').value) || 0,
-  };
-
-  const payload = {};
-  
-  inputs.forEach(input => {
-    const idx = input.getAttribute('data-idx');
-    const field = input.getAttribute('data-field');
-    
-    if (!payload[idx]) {
-      payload[idx] = {
-        student_id: currentGradebookData[idx].student_id,
-        subject_id: currentSubjectId,
-        term: term,
-        ...hpsValues
-      };
-    }
-    payload[idx][field] = input.value ? parseInt(input.value) : 0;
-  });
-
-  const promises = Object.values(payload).map(data => 
-    apiFetch('/teacher/grades', { method: 'POST', body: JSON.stringify(data) })
-  );
-
-  await Promise.all(promises);
-  alert('All grades saved successfully!');
-  loadGradebook(); 
 }
 
 // --- WARNINGS & SF2 ---

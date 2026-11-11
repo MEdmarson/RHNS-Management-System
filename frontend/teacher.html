@@ -52,6 +52,12 @@
             <button class="btn" onclick="saveAllGrades()">💾 Save All Changes</button>
           </div>
         </div>
+        
+        <!-- SEARCH BAR FOR GRADEBOOK -->
+        <div style="margin-bottom: 10px;">
+          <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
+        </div>
+
         <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Weights: Written Works (20%) | Performance Tasks (50%) | Exams (30%)</p>
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
           <table class="excel-table" id="gradebookTable">
@@ -111,6 +117,12 @@
             <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 View Monthly History</button>
           </div>
         </div>
+
+        <!-- SEARCH BAR FOR ATTENDANCE -->
+        <div style="margin-bottom: 10px;">
+          <input type="text" id="attendanceSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderAttendance()">
+        </div>
+
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
           <table class="excel-table">
             <colgroup>
