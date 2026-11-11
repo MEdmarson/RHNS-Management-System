@@ -24,19 +24,26 @@
     }
     .close-btn:hover { color: var(--danger); }
     
-    /* Header with Add Button */
     .table-header {
       display: flex; justify-content: space-between; align-items: center;
       margin-bottom: 15px;
     }
     .table-header h3 { margin: 0; }
     
-    /* Delete Button in Table */
     .btn-delete {
       background: #fee2e2; color: #991b1b; border: none;
       padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600;
     }
     .btn-delete:hover { background: #fca5a5; }
+
+    /* Tabs */
+    .user-tab {
+      padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 14px;
+      color: var(--muted); border-bottom: 3px solid transparent;
+    }
+    .user-tab.active {
+      color: var(--primary); border-bottom-color: var(--primary);
+    }
   </style>
 </head>
 <body>
@@ -72,9 +79,20 @@
     <div class="view" id="view-users" style="display:none">
       <div class="card">
         <div class="table-header">
-          <h3>👥 All Users</h3>
+          <h3>👥 Manage Users</h3>
           <button class="btn" onclick="openModal('userModal')">+ Add User</button>
         </div>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid var(--border);">
+          <div class="user-tab active" onclick="filterUsers('all', this)">All Users</div>
+          <div class="user-tab" onclick="filterUsers('teacher', this)">Teachers</div>
+          <div class="user-tab" onclick="filterUsers('student', this)">Students</div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 15px;">
+          <input type="text" id="userSearch" placeholder="🔍 Search by name, email, or LRN..." oninput="renderUsers()">
+        </div>
+
         <div style="overflow-x: auto;">
           <table>
             <thead>
@@ -92,9 +110,14 @@
     <div class="view" id="view-subjects" style="display:none">
       <div class="card">
         <div class="table-header">
-          <h3>📚 All Subjects</h3>
+          <h3>📚 Manage Subjects</h3>
           <button class="btn" onclick="openModal('subjectModal')">+ Add Subject</button>
         </div>
+
+        <div class="form-group" style="margin-bottom: 15px;">
+          <input type="text" id="subjSearch" placeholder="🔍 Search by subject code, name, or teacher..." oninput="renderSubjects()">
+        </div>
+
         <div style="overflow-x: auto;">
           <table>
             <thead>

@@ -1,6 +1,10 @@
 requireAuth('admin');
 document.getElementById('userChip').textContent = '🛡️ ' + getUser().name;
 
+let allUsersData = []; 
+let allSubjectsData = []; 
+let currentUserFilter = 'all'; 
+
 function showView(name, el) {
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
   document.getElementById(`view-${name}`).style.display = 'block';
@@ -38,10 +42,33 @@ function toggleStudentFields() {
   document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
 }
 
-// --- LOAD DATA FOR TABLES ---
+// --- FETCH AND RENDER USERS ---
 async function loadUsersList() {
-  const rows = await apiFetch('/admin/all-users');
-  document.getElementById('usersListBody').innerHTML = rows.map(u => `
+  allUsersData = await apiFetch('/admin/all-users');
+  renderUsers();
+}
+
+function renderUsers() {
+  const searchQuery = document.getElementById('userSearch').value.toLowerCase();
+  let filtered = allUsersData;
+
+  if (currentUserFilter !== 'all') {
+    filtered = filtered.filter(u => u.role === currentUserFilter);
+  }
+  if (searchQuery) {
+    filtered = filtered.filter(u => 
+      u.full_name.toLowerCase().includes(searchQuery) || 
+      u.email.toLowerCase().includes(searchQuery) ||
+      (u.lrn && u.lrn.includes(searchQuery))
+    );
+  }
+
+  if (filtered.length === 0) {
+    document.getElementById('usersListBody').innerHTML = '<tr><td colspan="5" style="text-align:center;">No users found.</td></tr>';
+    return;
+  }
+
+  document.getElementById('usersListBody').innerHTML = filtered.map(u => `
     <tr>
       <td><strong>${u.full_name}</strong></td>
       <td>${u.email}</td>
@@ -52,19 +79,48 @@ async function loadUsersList() {
   `).join('');
 }
 
+function filterUsers(role, el) {
+  currentUserFilter = role;
+  document.querySelectorAll('.user-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderUsers();
+}
+
+// --- FETCH AND RENDER SUBJECTS ---
 async function loadSubjectsList() {
-  const rows = await apiFetch('/admin/subjects');
-  document.getElementById('subjectsListBody').innerHTML = rows.map(s => `
+  allSubjectsData = await apiFetch('/admin/subjects');
+  renderSubjects();
+}
+
+function renderSubjects() {
+  const searchQuery = document.getElementById('subjSearch').value.toLowerCase();
+  let filtered = allSubjectsData;
+
+  if (searchQuery) {
+    filtered = filtered.filter(s => 
+      s.name.toLowerCase().includes(searchQuery) || 
+      s.code.toLowerCase().includes(searchQuery) ||
+      (s.teacher_name && s.teacher_name.toLowerCase().includes(searchQuery))
+    );
+  }
+
+  if (filtered.length === 0) {
+    document.getElementById('subjectsListBody').innerHTML = '<tr><td colspan="5" style="text-align:center;">No subjects found.</td></tr>';
+    return;
+  }
+
+  document.getElementById('subjectsListBody').innerHTML = filtered.map(s => `
     <tr>
       <td><strong>${s.code}</strong></td>
       <td>${s.name}</td>
-      <td>${s.teacher_name || 'Unassigned'}</td>
-      <td>${s.section_name || 'Unassigned'}</td>
+      <td>${s.teacher_name || '<span style="color:red;">Unassigned</span>'}</td>
+      <td>${s.section_name || '<span style="color:red;">Unassigned</span>'}</td>
       <td><button class="btn-delete" onclick="deleteSubject(${s.id}, '${s.name}')">Delete</button></td>
     </tr>
   `).join('');
 }
 
+// --- DROPDOWNS ---
 async function loadDropdowns() {
   try {
     const teachers = await apiFetch('/admin/teachers');
