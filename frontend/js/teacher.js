@@ -10,7 +10,6 @@ let currentHistorySubjectId = null;
 let mySubjectsData = []; 
 let hasUnsavedChanges = false;
 
-// --- IMPROVEMENT 4: Toast Notifications ---
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -20,7 +19,6 @@ function showToast(message, type = 'success') {
   setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-// --- IMPROVEMENT 5: Unsaved Changes Warning ---
 function markUnsaved() {
   hasUnsavedChanges = true;
   document.getElementById('unsavedIndicator').style.display = 'inline';
@@ -60,18 +58,13 @@ async function initDashboard() {
   mySubjectsData = subjects; 
   const grid = document.getElementById('subjectsGrid');
   
-  if (subjects.length === 0) {
-    grid.innerHTML = '<p>No subjects assigned yet.</p>';
-    return;
-  }
+  if (subjects.length === 0) { grid.innerHTML = '<p>No subjects assigned yet.</p>'; return; }
 
   grid.innerHTML = subjects.map(s => `
     <div class="subject-card" onclick="openClassRecord(${s.id})">
       <h3>📚 ${s.name}</h3>
       <p>Section: ${s.section}</p>
-      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">
-        Open Class Record →
-      </div>
+      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">Open Class Record →</div>
     </div>
   `).join('');
 }
@@ -85,44 +78,14 @@ function openClassRecord(subjectId) {
   loadGradebook();
 }
 
-// --- ATTENDANCE DASHBOARD ---
-async function loadAttendanceDashboard() {
-  const subjects = await apiFetch('/teacher/my-subjects');
-  mySubjectsData = subjects;
-  const grid = document.getElementById('attendanceGrid');
-  
-  if (subjects.length === 0) { grid.innerHTML = '<p>No subjects assigned yet.</p>'; return; }
-
-  grid.innerHTML = subjects.map(s => `
-    <div class="subject-card" onclick="openAttendanceSheet(${s.id})">
-      <h3>📋 ${s.name}</h3>
-      <p>Section: ${s.section}</p>
-      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">
-        Take Attendance →
-      </div>
-    </div>
-  `).join('');
-}
-
-function openAttendanceSheet(subjectId) {
-  const subj = mySubjectsData.find(s => s.id === subjectId);
-  if (!subj) return;
-  currentAttendanceSubjectId = subjectId;
-  currentSectionId = subj.section_id; 
-  document.getElementById('attendanceTitle').textContent = `${subj.name} — ${subj.section}`;
-  document.getElementById('attDate').valueAsDate = new Date();
-  document.getElementById('attendanceSearch').value = ''; 
-  showView('attendance-sheet');
-  loadAttendanceSheet();
-}
-
-// --- GRADEBOOK LOGIC WITH VALIDATION & KEYBOARD NAV ---
+// --- GRADEBOOK LOGIC ---
 async function loadGradebook() {
   if (!currentSubjectId) return;
   const term = document.getElementById('termSelect').value;
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   currentGradebookData = rows; 
 
+  // Load HPS values
   if (rows.length > 0 && rows[0].ww1_hps !== null) {
     const r = rows[0];
     ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].forEach(f => {
@@ -131,10 +94,19 @@ async function loadGradebook() {
   } else {
     document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
   }
+  updateHpsTotals();
   
   document.getElementById('gradebookSearch').value = ''; 
   renderGradebook();
 }
+
+function updateHpsTotals() {
+  const getVal = id => parseInt(document.getElementById(id).value) || 0;
+  document.getElementById('hps-ww-total').textContent = getVal('hps-ww1') + getVal('hps-ww2') + getVal('hps-ww3') + getVal('hps-ww4') + getVal('hps-ww5');
+  document.getElementById('hps-pt-total').textContent = getVal('hps-pt1') + getVal('hps-pt2') + getVal('hps-pt3');
+  document.getElementById('hps-ex-total').textContent = getVal('hps-ex1') + getVal('hps-ex2') + getVal('hps-ex3');
+}
+document.querySelectorAll('.hps-input').forEach(el => el.addEventListener('input', updateHpsTotals));
 
 function renderGradebook() {
   const searchQuery = document.getElementById('gradebookSearch').value.toLowerCase();
@@ -142,75 +114,113 @@ function renderGradebook() {
   if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
-    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="14" style="text-align:center; padding: 20px;">No students found.</td></tr>';
+    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="25" style="text-align:center; padding: 20px;">No students found.</td></tr>';
     return;
   }
 
   document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
     
+    // Helper to generate input
     const makeInput = (field) => {
       const val = r[field] ?? '';
-      return `<input type="number" min="0" data-idx="${originalIndex}" data-field="${field}" data-hps="hps-${field}" value="${val}" oninput="validateInput(this)" onchange="markUnsaved()" onkeydown="handleKeyNav(event, this)">`;
+      return `<input type="number" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
     return `
-    <tr>
+    <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
+      <!-- WW Inputs -->
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
+      <!-- WW Computed -->
+      <td class="computed-cell" id="ww-total-${r.student_id}">${r.ww_total || 0}</td>
+      <td class="computed-cell" id="ww-ps-${r.student_id}">${r.ww_ps || 0}</td>
+      <td class="computed-cell" id="ww-ws-${r.student_id}">${r.ww_ws || 0}</td>
+      
+      <!-- PT Inputs -->
       <td>${makeInput('pt1')}</td><td>${makeInput('pt2')}</td><td>${makeInput('pt3')}</td>
+      <!-- PT Computed -->
+      <td class="computed-cell" id="pt-total-${r.student_id}">${r.pt_total || 0}</td>
+      <td class="computed-cell" id="pt-ps-${r.student_id}">${r.pt_ps || 0}</td>
+      <td class="computed-cell" id="pt-ws-${r.student_id}">${r.pt_ws || 0}</td>
+
+      <!-- EX Inputs -->
       <td>${makeInput('ex1')}</td><td>${makeInput('ex2')}</td><td>${makeInput('ex3')}</td>
-      <td class="term-grade-cell">${r.term_grade ?? '—'}</td>
-      <td>${r.term_grade >= 75 ? '<span class="badge ok">Passed</span>' : r.term_grade ? '<span class="badge danger">Failed</span>' : '—'}</td>
+      <!-- EX Computed -->
+      <td class="computed-cell" id="ex-total-${r.student_id}">${r.ex_total || 0}</td>
+      <td class="computed-cell" id="ex-ps-${r.student_id}">${r.ex_ps || 0}</td>
+      <td class="computed-cell" id="ex-ws-${r.student_id}">${r.ex_ws || 0}</td>
+
+      <!-- Final Computed -->
+      <td class="initial-cell" id="initial-${r.student_id}">${r.initial_grade ?? '—'}</td>
+      <td class="term-grade-cell" id="term-${r.student_id}">${r.term_grade ?? '—'}</td>
+      <td class="descriptor-cell" id="desc-${r.student_id}">${r.descriptor ?? '—'}</td>
     </tr>`;
   }).join('');
 }
 
-// --- IMPROVEMENT 5: Highlight scores > HPS ---
-function validateInput(input) {
-  const hpsId = input.getAttribute('data-hps');
-  const hps = parseInt(document.getElementById(hpsId).value) || 100;
-  const val = parseInt(input.value);
-  if (val > hps) input.classList.add('invalid-input');
-  else input.classList.remove('invalid-input');
-}
+// Live calculation as teacher types
+function calculateRow(input) {
+  const tr = input.closest('tr');
+  const studentId = tr.id.replace('row-', '');
+  
+  const getVal = (field) => {
+    const el = tr.querySelector(`input[data-field="${field}"]`);
+    return el ? (parseInt(el.value) || 0) : 0;
+  };
+  const getHps = (id) => parseInt(document.getElementById(id).value) || 100; // Default 100 to avoid divide by zero
 
-// --- IMPROVEMENT 5: Arrow key navigation ---
-function handleKeyNav(e, input) {
-  if (e.key === 'ArrowRight' || e.key === 'Enter') {
-    const inputs = Array.from(document.querySelectorAll('#gradebookBody input'));
-    const idx = inputs.indexOf(input);
-    if (idx > -1 && inputs[idx + 1]) inputs[idx + 1].focus();
-    e.preventDefault();
-  } else if (e.key === 'ArrowLeft') {
-    const inputs = Array.from(document.querySelectorAll('#gradebookBody input'));
-    const idx = inputs.indexOf(input);
-    if (idx > 0 && inputs[idx - 1]) inputs[idx - 1].focus();
-    e.preventDefault();
-  } else if (e.key === 'ArrowDown') {
-    const idx = parseInt(input.getAttribute('data-idx'));
-    const field = input.getAttribute('data-field');
-    const nextRow = document.querySelector(`input[data-idx="${idx + 1}"][data-field="${field}"]`);
-    if (nextRow) nextRow.focus();
-    e.preventDefault();
-  } else if (e.key === 'ArrowUp') {
-    const idx = parseInt(input.getAttribute('data-idx'));
-    const field = input.getAttribute('data-field');
-    const prevRow = document.querySelector(`input[data-idx="${idx - 1}"][data-field="${field}"]`);
-    if (prevRow) prevRow.focus();
-    e.preventDefault();
-  }
+  // 1. Calculate Totals
+  const wwTotal = getVal('ww1')+getVal('ww2')+getVal('ww3')+getVal('ww4')+getVal('ww5');
+  const ptTotal = getVal('pt1')+getVal('pt2')+getVal('pt3');
+  const exTotal = getVal('ex1')+getVal('ex2')+getVal('ex3');
+
+  // 2. Calculate PS
+  const wwHps = getHps('hps-ww-total');
+  const ptHps = getHps('hps-pt-total');
+  const exHps = getHps('hps-ex-total');
+
+  const wwPs = wwHps > 0 ? (wwTotal / wwHps) * 100 : 0;
+  const ptPs = ptHps > 0 ? (ptTotal / ptHps) * 100 : 0;
+  const exPs = exHps > 0 ? (exTotal / exHps) * 100 : 0;
+
+  // 3. Calculate WS (20%, 50%, 30%)
+  const wwWs = wwPs * 0.20;
+  const ptWs = ptPs * 0.50;
+  const exWs = exPs * 0.30;
+
+  // 4. Calculate Initial & Term Grade
+  const initialGrade = wwWs + ptWs + exWs;
+  const termGrade = Math.round(initialGrade);
+
+  // 5. Descriptor
+  let desc = 'Emerging';
+  if (termGrade > 89) desc = 'Advancing';
+  else if (termGrade > 79) desc = 'Benchmarking';
+  else if (termGrade > 74) desc = 'Connecting';
+  else if (termGrade > 64) desc = 'Developing';
+
+  // Update UI
+  document.getElementById(`ww-total-${studentId}`).textContent = wwTotal;
+  document.getElementById(`ww-ps-${studentId}`).textContent = wwPs.toFixed(2);
+  document.getElementById(`ww-ws-${studentId}`).textContent = wwWs.toFixed(2);
+  
+  document.getElementById(`pt-total-${studentId}`).textContent = ptTotal;
+  document.getElementById(`pt-ps-${studentId}`).textContent = ptPs.toFixed(2);
+  document.getElementById(`pt-ws-${studentId}`).textContent = ptWs.toFixed(2);
+  
+  document.getElementById(`ex-total-${studentId}`).textContent = exTotal;
+  document.getElementById(`ex-ps-${studentId}`).textContent = exPs.toFixed(2);
+  document.getElementById(`ex-ws-${studentId}`).textContent = exWs.toFixed(2);
+
+  document.getElementById(`initial-${studentId}`).textContent = initialGrade.toFixed(2);
+  document.getElementById(`term-${studentId}`).textContent = termGrade;
+  document.getElementById(`desc-${studentId}`).textContent = desc;
 }
 
 async function saveAllGrades() {
   const btn = document.getElementById('saveBtn');
-  const invalidInputs = document.querySelectorAll('.invalid-input');
-  if (invalidInputs.length > 0) {
-    showToast('Cannot save. Some scores exceed the HPS.', 'error');
-    return;
-  }
-
   btn.textContent = 'Saving...';
   btn.disabled = true;
 
@@ -235,7 +245,6 @@ async function saveAllGrades() {
   try {
     const promises = Object.values(payload).map(data => apiFetch('/teacher/grades', { method: 'POST', body: JSON.stringify(data) }));
     await Promise.all(promises);
-    
     showToast('All grades saved successfully!');
     hasUnsavedChanges = false;
     document.getElementById('unsavedIndicator').style.display = 'none';
@@ -249,6 +258,33 @@ async function saveAllGrades() {
 }
 
 // --- ATTENDANCE LOGIC ---
+async function loadAttendanceDashboard() {
+  const subjects = await apiFetch('/teacher/my-subjects');
+  mySubjectsData = subjects;
+  const grid = document.getElementById('attendanceGrid');
+  if (subjects.length === 0) { grid.innerHTML = '<p>No subjects assigned yet.</p>'; return; }
+
+  grid.innerHTML = subjects.map(s => `
+    <div class="subject-card" onclick="openAttendanceSheet(${s.id})">
+      <h3>📋 ${s.name}</h3>
+      <p>Section: ${s.section}</p>
+      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">Take Attendance →</div>
+    </div>
+  `).join('');
+}
+
+function openAttendanceSheet(subjectId) {
+  const subj = mySubjectsData.find(s => s.id === subjectId);
+  if (!subj) return;
+  currentAttendanceSubjectId = subjectId;
+  currentSectionId = subj.section_id; 
+  document.getElementById('attendanceTitle').textContent = `${subj.name} — ${subj.section}`;
+  document.getElementById('attDate').valueAsDate = new Date();
+  document.getElementById('attendanceSearch').value = ''; 
+  showView('attendance-sheet');
+  loadAttendanceSheet();
+}
+
 async function loadAttendanceSheet() {
   if (!currentAttendanceSubjectId) return;
   const date = document.getElementById('attDate').value || new Date().toISOString().slice(0, 10);
@@ -293,21 +329,16 @@ async function mark(student_id, status) {
   loadAttendanceSheet();
 }
 
-// --- IMPROVEMENT 6: Mark all present ---
 async function markAllPresent() {
   if (!confirm('Mark all students as Present for today?')) return;
   const date = document.getElementById('attDate').value || new Date().toISOString().slice(0,10);
-  
-  const promises = currentAttendanceData.map(r => 
-    apiFetch('/teacher/attendance', { method: 'POST', body: JSON.stringify({ student_id: r.student_id, section_id: currentSectionId, date, status: 'present' }) })
-  );
-  
+  const promises = currentAttendanceData.map(r => apiFetch('/teacher/attendance', { method: 'POST', body: JSON.stringify({ student_id: r.student_id, section_id: currentSectionId, date, status: 'present' }) }));
   await Promise.all(promises);
   showToast('All students marked present.');
   loadAttendanceSheet();
 }
 
-// --- ATTENDANCE HISTORY (MONTHLY GRID) ---
+// --- HISTORY ---
 function openAttendanceHistory() {
   currentHistorySubjectId = currentAttendanceSubjectId;
   document.getElementById('historyTitle').textContent = document.getElementById('attendanceTitle').textContent + " — Monthly Log";
@@ -322,7 +353,6 @@ async function loadAttendanceHistory() {
   if (!currentHistorySubjectId) return;
   const monthVal = document.getElementById('historyMonth').value;
   if (!monthVal) return;
-  
   const [year, month] = monthVal.split('-');
   const daysInMonth = new Date(year, month, 0).getDate(); 
 

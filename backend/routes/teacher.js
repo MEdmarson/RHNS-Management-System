@@ -14,7 +14,7 @@ router.get('/my-subjects', async (req, res) => {
   res.json(rows);
 });
 
-// --- CLASS RECORD ROUTES ---
+// GET students and grades for a specific subject and term
 router.get('/gradebook', async (req, res) => {
   const term = req.query.term || 1; 
   const subjectId = req.query.subject;
@@ -24,7 +24,8 @@ router.get('/gradebook', async (req, res) => {
     SELECT u.id AS student_id, u.full_name, s.lrn, sec.name AS section,
            sub.id AS subject_id, sub.name AS subject,
            g.id AS grade_id, g.ww1, g.ww2, g.ww3, g.ww4, g.ww5,
-           g.pt1, g.pt2, g.pt3, g.ex1, g.ex2, g.ex3, g.term_grade,
+           g.pt1, g.pt2, g.pt3, g.ex1, g.ex2, g.ex3, 
+           g.term_grade, g.initial_grade, g.descriptor,
            g.ww1_hps, g.ww2_hps, g.ww3_hps, g.ww4_hps, g.ww5_hps,
            g.pt1_hps, g.pt2_hps, g.pt3_hps,
            g.ex1_hps, g.ex2_hps, g.ex3_hps
@@ -38,6 +39,7 @@ router.get('/gradebook', async (req, res) => {
   res.json(rows);
 });
 
+// UPDATE grades
 router.post('/grades', async (req, res) => {
   const { 
     student_id, subject_id, term, 
@@ -49,22 +51,36 @@ router.post('/grades', async (req, res) => {
     ex1_hps, ex2_hps, ex3_hps
   } = req.body;
 
+  // 1. Calculate Totals
   const wwTotal = [ww1, ww2, ww3, ww4, ww5].reduce((a, b) => a + (Number(b) || 0), 0);
   const ptTotal = [pt1, pt2, pt3].reduce((a, b) => a + (Number(b) || 0), 0);
   const exTotal = [ex1, ex2, ex3].reduce((a, b) => a + (Number(b) || 0), 0);
 
+  // 2. Calculate HPS Totals
   const wwHpsTotal = [ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
   const ptHpsTotal = [pt1_hps, pt2_hps, pt3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
   const exHpsTotal = [ex1_hps, ex2_hps, ex3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
 
-  const wwPercent = (wwTotal / wwHpsTotal) * 100;
-  const ptPercent = (ptTotal / ptHpsTotal) * 100;
-  const exPercent = (exTotal / exHpsTotal) * 100;
+  // 3. Calculate PS (Percentage Score)
+  const wwPs = (wwTotal / wwHpsTotal) * 100;
+  const ptPs = (ptTotal / ptHpsTotal) * 100;
+  const exPs = (exTotal / exHpsTotal) * 100;
 
-  const wwScore = wwPercent * 0.20; 
-  const ptScore = ptPercent * 0.50; 
-  const exScore = exPercent * 0.30; 
-  const termGrade = Math.round(wwScore + ptScore + exScore);
+  // 4. Calculate WS (Weighted Score) - Core Subjects: WW 20%, PT 50%, EX 30%
+  const wwWs = wwPs * 0.20; 
+  const ptWs = ptPs * 0.50; 
+  const exWs = exPs * 0.30; 
+
+  // 5. Calculate Initial Grade and Term Grade
+  const initialGrade = wwWs + ptWs + exWs;
+  const termGrade = Math.round(initialGrade);
+
+  // 6. Calculate Descriptor
+  let descriptor = 'Emerging';
+  if (termGrade > 89) descriptor = 'Advancing';
+  else if (termGrade > 79) descriptor = 'Benchmarking';
+  else if (termGrade > 74) descriptor = 'Connecting';
+  else if (termGrade > 64) descriptor = 'Developing';
 
   try {
     await pool.query(`
@@ -72,23 +88,23 @@ router.post('/grades', async (req, res) => {
         student_id, subject_id, term, 
         ww1, ww2, ww3, ww4, ww5, 
         pt1, pt2, pt3, 
-        ex1, ex2, ex3, term_grade,
+        ex1, ex2, ex3, initial_grade, term_grade, descriptor,
         ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
         pt1_hps, pt2_hps, pt3_hps,
         ex1_hps, ex2_hps, ex3_hps
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
         pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3),
         ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
-        term_grade=VALUES(term_grade),
+        initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
         ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
         pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps),
         ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)`,
       [student_id, subject_id, term, 
        ww1, ww2, ww3, ww4, ww5, 
        pt1, pt2, pt3, 
-       ex1, ex2, ex3, termGrade,
+       ex1, ex2, ex3, initialGrade, termGrade, descriptor,
        ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
        pt1_hps, pt2_hps, pt3_hps,
        ex1_hps, ex2_hps, ex3_hps]);
@@ -103,11 +119,9 @@ router.post('/grades', async (req, res) => {
 // --- ATTENDANCE ROUTES ---
 router.get('/attendance/:subjectId/:date', async (req, res) => {
   const { subjectId, date } = req.params;
-  
   try {
     const [rows] = await pool.query(`
-      SELECT u.id AS student_id, u.full_name, 
-             a.status,
+      SELECT u.id AS student_id, u.full_name, a.status,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
       FROM subjects sub
@@ -118,9 +132,7 @@ router.get('/attendance/:subjectId/:date', async (req, res) => {
       GROUP BY u.id, u.full_name, a.status
       ORDER BY u.full_name`, [date, req.user.id, subjectId]);
     res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/attendance', async (req, res) => {
@@ -132,41 +144,31 @@ router.post('/attendance', async (req, res) => {
       ON DUPLICATE KEY UPDATE status = VALUES(status)`,
       [student_id, section_id, date, status, req.user.id]);
     res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET monthly attendance records (NEW ROUTE)
 router.get('/attendance-history/:subjectId', async (req, res) => {
   const { subjectId } = req.params;
   const { month, year } = req.query;
-
   try {
     const [rows] = await pool.query(`
-      SELECT u.id AS student_id, u.full_name, 
-             a.date, a.status
+      SELECT u.id AS student_id, u.full_name, a.date, a.status
       FROM subjects sub
       JOIN students s ON s.section_id = sub.section_id
       JOIN users u ON u.id = s.user_id
       JOIN attendance a ON a.student_id = u.id AND a.section_id = sub.section_id
       WHERE sub.teacher_id = ? AND sub.id = ? 
       AND MONTH(a.date) = ? AND YEAR(a.date) = ?
-      ORDER BY u.full_name, a.date`, 
-      [req.user.id, subjectId, month, year]);
+      ORDER BY u.full_name, a.date`, [req.user.id, subjectId, month, year]);
     res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- WARNINGS & SF2 ---
 router.get('/at-risk', async (req, res) => {
   const [rows] = await pool.query(`
     SELECT u.id, u.full_name,
            ROUND(AVG(g.term_grade), 2) AS avg_grade,
-           (SELECT COUNT(*) FROM attendance a
-            WHERE a.student_id = u.id AND a.status = 'absent') AS absences
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS absences
     FROM users u
     JOIN students s ON s.user_id = u.id
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?

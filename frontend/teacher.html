@@ -6,6 +6,74 @@
   <title>Teacher Portal — RNHS</title>
   <link rel="icon" href="rnshs-logo.png">
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Specific styles for the Excel-like Class Record */
+    .excel-wrapper {
+      overflow-x: auto;
+      max-height: 600px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .excel-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      table-layout: auto;
+      white-space: nowrap;
+    }
+    .excel-table th, .excel-table td {
+      border: 1px solid #d1d5db;
+      padding: 4px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .excel-table th { background: #f3f4f6; font-weight: 600; color: #374151; }
+    
+    /* Sub-headers */
+    .excel-table thead tr:nth-child(1) th { background: #e5e7eb; }
+    .excel-table thead tr:nth-child(2) th { background: #f9fafb; font-size: 10px; }
+    
+    /* Inputs */
+    .excel-table input {
+      width: 100%;
+      max-width: 45px;
+      padding: 4px;
+      text-align: center;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .excel-table input::-webkit-outer-spin-button,
+    .excel-table input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .excel-table input:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
+    .hps-input { background: #fffbeb; color: #92400e; border-color: #d97706 !important; font-weight: bold; }
+    
+    /* Computed Columns */
+    .computed-cell { background: #f9fafb; font-weight: bold; }
+    .descriptor-cell { background: #ecfdf5; color: #065f46; font-weight: 600; }
+    .initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; }
+
+    /* Sticky Headers */
+    .excel-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    /* Sticky Student Name Column */
+    .excel-table td:first-child, .excel-table th:first-child {
+      position: sticky;
+      left: 0;
+      background: #fff;
+      text-align: left;
+      z-index: 1;
+      border-right: 2px solid #d1d5db;
+      padding-left: 10px;
+      min-width: 200px;
+    }
+    .excel-table th:first-child { background: #f3f4f6; z-index: 3; }
+  </style>
 </head>
 <body>
 
@@ -43,8 +111,9 @@
 
     <!-- 2. CLASS RECORD -->
     <div class="view" id="view-gradebook" style="display: none;">
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+      <div class="card" style="padding: 10px;">
+        <!-- Header Controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
           <div style="display: flex; align-items: center; gap: 15px;">
             <button class="btn btn-secondary" onclick="showView('subjects', document.querySelector('.nav-item'))">← Back</button>
             <h3 style="margin: 0;" id="gradebookTitle">Class Record</h3>
@@ -60,43 +129,70 @@
             <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
           </div>
         </div>
-        
+
+        <!-- Search -->
         <div style="margin-bottom: 10px;">
           <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
         </div>
 
-        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Weights: Written Works (20%) | Performance Tasks (50%) | Exams (30%)</p>
-        <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+        <div class="excel-wrapper">
           <table class="excel-table" id="gradebookTable">
-            <colgroup>
-              <col style="width: 200px;"> 
-              <col style="width: 60px;"><col style="width: 60px;"><col style="width: 60px;"><col style="width: 60px;"><col style="width: 60px;">
-              <col style="width: 60px;"><col style="width: 60px;"><col style="width: 60px;">
-              <col style="width: 60px;"><col style="width: 60px;"><col style="width: 60px;">
-              <col style="width: 90px;"><col style="width: 90px;">
-            </colgroup>
             <thead>
+              <!-- ROW 1: MAIN CATEGORIES -->
               <tr>
-                <th></th> 
-                <th colspan="5" style="background:#e0e7ff;">WRITTEN WORKS (20%)</th>
-                <th colspan="3" style="background:#dcfce7;">PERFORMANCE TASKS (50%)</th>
-                <th colspan="3" style="background:#fef3c7;">EXAMS (30%)</th>
-                <th rowspan="2">Term Grade</th>
-                <th rowspan="2">Status</th>
+                <th rowspan="3">LEARNERS' NAMES</th>
+                <th colspan="8" style="background:#e0e7ff;">WRITTEN/ORAL WORKS (WWs)</th>
+                <th colspan="6" style="background:#dcfce7;">PRODUCT/PERFORMANCE TASKS (PTs)</th>
+                <th colspan="6" style="background:#fef3c7;">EXAMINATIONS (EXs)</th>
+                <th colspan="3" style="background:#f3f4f6;">GRADES</th>
               </tr>
+              
+              <!-- ROW 2: WEIGHTS & SUB-HEADERS -->
               <tr>
-                <th style="text-align:left;">Student Name</th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ww3" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ww4" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ww5" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
-                <th style="padding:0; background:#fef3c7;"><div style="font-size:10px;">HPS</div><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
+                <th colspan="8" style="font-size: 10px; background:#e0e7ff;">20%</th>
+                <th colspan="6" style="font-size: 10px; background:#dcfce7;">50%</th>
+                <th colspan="6" style="font-size: 10px; background:#fef3c7;">30%</th>
+                <th rowspan="2" style="font-size: 10px;">Initial<br>Grade</th>
+                <th rowspan="2" style="font-size: 10px;">Term<br>Grade</th>
+                <th rowspan="2" style="font-size: 10px;">Descriptor</th>
+              </tr>
+              
+              <!-- ROW 3: COLUMN NUMBERS & HPS -->
+              <tr>
+                <!-- WW -->
+                <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>TOTAL</th><th>PS</th><th>WS</th>
+                <!-- PT -->
+                <th>1</th><th>2</th><th>3</th><th>TOTAL</th><th>PS</th><th>WS</th>
+                <!-- EX -->
+                <th>SA1</th><th>SA2</th><th>TE</th><th>TOTAL</th><th>PS</th><th>WS</th>
+              </tr>
+              
+              <!-- ROW 4: HIGHEST POSSIBLE SCORE (HPS) -->
+              <tr style="background:#fffbeb; font-size: 11px;">
+                <th style="text-align: right; padding-right: 10px;">HIGHEST POSSIBLE SCORE</th>
+                <!-- WW HPS -->
+                <th><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ww3" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ww4" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ww5" value="100"></th>
+                <th class="computed-cell" id="hps-ww-total">0</th>
+                <th>100</th>
+                <th>20</th>
+                <!-- PT HPS -->
+                <th><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
+                <th class="computed-cell" id="hps-pt-total">0</th>
+                <th>100</th>
+                <th>50</th>
+                <!-- EX HPS -->
+                <th><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
+                <th><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
+                <th class="computed-cell" id="hps-ex-total">0</th>
+                <th>100</th>
+                <th>30</th>
               </tr>
             </thead>
             <tbody id="gradebookBody"></tbody>
@@ -118,11 +214,10 @@
             <button class="btn btn-secondary" onclick="showView('attendance', document.querySelectorAll('.nav-item')[1])">← Back</button>
             <h3 style="margin: 0;" id="attendanceTitle">Attendance</h3>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 10px;">
             <label style="font-weight: 600; font-size: 14px;">Date: </label>
             <input type="date" id="attDate" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceSheet()">
             <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 View Monthly History</button>
-            <!-- IMPROVEMENT 6: Mark all present -->
             <button class="btn" style="background: var(--success);" onclick="markAllPresent()">✅ Mark All Present</button>
           </div>
         </div>
@@ -204,7 +299,6 @@
   </main>
 </div>
 
-<!-- TOAST CONTAINER -->
 <div id="toastContainer"></div>
 
 <script src="js/api.js"></script>
