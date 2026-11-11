@@ -74,28 +74,31 @@
     .descriptor-cell { background: #ecfdf5; color: #065f46; font-weight: 600; font-size: 11px; white-space: normal; }
     .initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; font-size: 12px; }
 
-    /* Sticky Headers */
+    /* Sticky Headers: each header row gets its own offset so they stack instead of overlapping */
     .excel-table thead th {
       position: sticky;
-      top: 0;
       z-index: 2;
+      height: 26px;
+      box-sizing: border-box;
     }
-    /* Sticky Student Name Column */
-    .excel-table td:first-child, .excel-table th:first-child {
+    .excel-table thead tr:nth-child(1) th { top: 0; }
+    .excel-table thead tr:nth-child(2) th { top: 26px; }
+    .excel-table thead tr:nth-child(3) th { top: 52px; }
+    .excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
+
+    /* Sticky Student Name Column (only the name cells, NOT the first th of every header row) */
+    .excel-table tbody td:first-child,
+    .excel-table thead th.name-col {
       position: sticky;
       left: 0;
-      background: #fff;
       text-align: left;
-      z-index: 1;
       border-right: 2px solid #d1d5db;
       padding-left: 8px;
       font-size: 12px;
       white-space: normal; /* Allow name to wrap */
     }
-    .excel-table th:first-child { 
-      background: #f3f4f6; 
-      z-index: 3; 
-    }
+    .excel-table tbody td:first-child { background: #fff; z-index: 1; }
+    .excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
   </style>
 </head>
 <body>
@@ -142,6 +145,8 @@
             <span id="unsavedIndicator" style="display:none; color: var(--danger); font-size: 12px; font-weight: bold;">● Unsaved changes</span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-weight: 600; font-size: 14px;">Subject Type: </label>
+            <select id="subjectTypeSelect" class="input" style="width: auto; max-width: 260px; font-weight: bold;" onchange="changeSubjectType()"></select>
             <label style="font-weight: 600; font-size: 14px;">Term: </label>
             <select id="termSelect" class="input" style="width: 100px; font-weight: bold;" onchange="loadGradebook()">
               <option value="1">Term 1</option>
@@ -183,7 +188,7 @@
             <thead>
               <!-- ROW 1: MAIN CATEGORIES -->
               <tr>
-                <th rowspan="3">LEARNERS' NAMES</th>
+                <th rowspan="3" class="name-col">LEARNERS' NAMES</th>
                 <th colspan="8" style="background:#e0e7ff;">WRITTEN/ORAL WORKS (WWs)</th>
                 <th colspan="6" style="background:#dcfce7;">PRODUCT/PERFORMANCE TASKS (PTs)</th>
                 <th colspan="6" style="background:#fef3c7;">EXAMINATIONS (EXs)</th>
@@ -192,12 +197,12 @@
               
               <!-- ROW 2: WEIGHTS -->
               <tr>
-                <th colspan="8" style="font-size: 10px; background:#e0e7ff;">20%</th>
-                <th colspan="6" style="font-size: 10px; background:#dcfce7;">50%</th>
-                <th colspan="6" style="font-size: 10px; background:#fef3c7;">30%</th>
-                <th rowspan="2" style="font-size: 10px;">INITIAL<br>GRADE</th>
-                <th rowspan="2" style="font-size: 10px;">TERM<br>GRADE</th>
-                <th rowspan="2" style="font-size: 10px;">DESCRIPTOR</th>
+                <th colspan="8" id="pct-ww" style="font-size: 10px; background:#e0e7ff;">20%</th>
+                <th colspan="6" id="pct-pt" style="font-size: 10px; background:#dcfce7;">50%</th>
+                <th colspan="6" id="pct-ex" style="font-size: 10px; background:#fef3c7;">30%</th>
+                <th rowspan="3" style="font-size: 10px;">INITIAL<br>GRADE</th>
+                <th rowspan="3" style="font-size: 10px;">TERM<br>GRADE</th>
+                <th rowspan="3" style="font-size: 10px;">DESCRIPTOR</th>
               </tr>
               
               <!-- ROW 3: COLUMN NUMBERS -->
@@ -212,7 +217,7 @@
               
               <!-- ROW 4: HPS INPUTS -->
               <tr style="background:#fffbeb; font-size: 11px;">
-                <th style="text-align: right; padding-right: 8px;">HIGHEST POSSIBLE SCORE</th>
+                <th class="name-col" style="text-align: right; padding-right: 8px;">HIGHEST POSSIBLE SCORE</th>
                 <!-- WW HPS -->
                 <th><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
@@ -221,21 +226,21 @@
                 <th><input type="number" class="hps-input" id="hps-ww5" value="100"></th>
                 <th class="computed-cell" id="hps-ww-total">0</th>
                 <th>100</th>
-                <th>20</th>
+                <th id="hps-ww-ws">20</th>
                 <!-- PT HPS -->
                 <th><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
                 <th class="computed-cell" id="hps-pt-total">0</th>
                 <th>100</th>
-                <th>50</th>
+                <th id="hps-pt-ws">50</th>
                 <!-- EX HPS -->
                 <th><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
                 <th class="computed-cell" id="hps-ex-total">0</th>
                 <th>100</th>
-                <th>30</th>
+                <th id="hps-ex-ws">30</th>
               </tr>
             </thead>
             <tbody id="gradebookBody"></tbody>

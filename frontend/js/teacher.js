@@ -10,6 +10,42 @@ let currentHistorySubjectId = null;
 let mySubjectsData = []; 
 let hasUnsavedChanges = false;
 
+// --- DEPED CLASS RECORD CONSTANTS (mirrors Sheet2 + TERM sheets of the Excel ECR) ---
+const SUBJECT_WEIGHTS = {            // [WW, PT, EX]  (Sheet2 lookup table)
+  'Academic Electives':                         [0.20, 0.50, 0.30],
+  'Arts Apprenticeship':                        [0.15, 0.70, 0.15],
+  'Arts, Sports, Health and Wellness Electives':[0.20, 0.60, 0.20],
+  'Core Subjects':                              [0.20, 0.50, 0.30],
+  'Creative Production and Innovation':         [0.15, 0.70, 0.15],
+  'Design and Innovation':                      [0.40, 0.60, 0],
+  'Field Exposure':                             [0.15, 0.70, 0.15],
+  'Research Electives':                         [0.40, 0.60, 0],
+  'TechPro Electives':                          [0.15, 0.65, 0.20],
+  'Work Immersion':                             [0.20, 0.80, 0]
+};
+let currentSubjectType = 'Core Subjects';
+
+// Transmutation table from the Excel "Term Grade" column: [initial grade must be > min, term grade]
+const TRANSMUTATION = [
+  [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
+  [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
+  [80.61,84],[79.43,83],[78.25,82],[77.07,81],[75.89,80],[74.71,79],[73.53,78],[72.35,77],
+  [71.17,76],[69.99,75],[65.33,74],[60.66,73],[56,72],[51.33,71],[46.66,70],[42,69],
+  [37.33,68],[32.67,67],[28,66],[23.34,65],[18.67,64],[14,63],[9.34,62],[4.67,61],[0,60]
+];
+function transmute(initial) {
+  for (const [min, grade] of TRANSMUTATION) if (initial > min) return grade;
+  return 0;
+}
+function getDescriptor(term) {
+  if (term > 89) return 'Advancing';
+  if (term > 79) return 'Benchmarking';
+  if (term > 74) return 'Connecting';
+  if (term > 64) return 'Developing';
+  if (term > 0)  return 'Emerging';
+  return '';
+}
+
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -73,6 +109,7 @@ function openClassRecord(subjectId) {
   const subj = mySubjectsData.find(s => s.id === subjectId);
   if (!subj) return;
   currentSubjectId = subjectId;
+  initSubjectType(subj);
   document.getElementById('gradebookTitle').textContent = `${subj.name} — ${subj.section}`;
   showView('gradebook');
   loadGradebook();
@@ -86,9 +123,9 @@ async function loadGradebook() {
   currentGradebookData = rows; 
 
   // Load HPS values into the header
-  if (rows.length > 0 && rows[0].ww1_hps !== null) {
+  if (rows.length > 0 && rows[0].ww1_hps !== null && rows[0].ww1_hps !== undefined) {
     const r = rows[0];
-    ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].forEach(f => {
+    HPS_FIELDS.forEach(f => {
       document.getElementById(`hps-${f}`).value = r[`${f}_hps`];
     });
   } else {
@@ -100,13 +137,50 @@ async function loadGradebook() {
   renderGradebook();
 }
 
+const HPS_FIELDS = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'];
+
+function initSubjectType(subj) {
+  const sel = document.getElementById('subjectTypeSelect');
+  if (!sel.options.length) {
+    sel.innerHTML = Object.keys(SUBJECT_WEIGHTS).map(k => `<option value="${k}">${k}</option>`).join('');
+  }
+  let type = subj.subject_type;
+  if (!SUBJECT_WEIGHTS[type]) { try { type = localStorage.getItem(`subjectType-${subj.id}`); } catch (e) {} }
+  if (!SUBJECT_WEIGHTS[type]) type = 'Core Subjects';
+  sel.value = type;
+  currentSubjectType = type;
+}
+
+function changeSubjectType() {
+  currentSubjectType = document.getElementById('subjectTypeSelect').value;
+  try { localStorage.setItem(`subjectType-${currentSubjectId}`, currentSubjectType); } catch (e) {}
+  updateHpsTotals();
+}
+
+// HPS header: totals, PS (always 100) and WS (= 100 x weight), then refresh every row
 function updateHpsTotals() {
   const getVal = id => parseInt(document.getElementById(id).value) || 0;
+  const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
+  const pct = v => Math.round(v * 10000) / 100;
+
   document.getElementById('hps-ww-total').textContent = getVal('hps-ww1') + getVal('hps-ww2') + getVal('hps-ww3') + getVal('hps-ww4') + getVal('hps-ww5');
   document.getElementById('hps-pt-total').textContent = getVal('hps-pt1') + getVal('hps-pt2') + getVal('hps-pt3');
   document.getElementById('hps-ex-total').textContent = getVal('hps-ex1') + getVal('hps-ex2') + getVal('hps-ex3');
+
+  document.getElementById('hps-ww-ws').textContent = pct(wWW);
+  document.getElementById('hps-pt-ws').textContent = pct(wPT);
+  document.getElementById('hps-ex-ws').textContent = pct(wEX);
+  document.getElementById('pct-ww').textContent = pct(wWW) + '%';
+  document.getElementById('pct-pt').textContent = pct(wPT) + '%';
+  document.getElementById('pct-ex').textContent = pct(wEX) + '%';
+
+  recalcAllRows();
 }
 document.querySelectorAll('.hps-input').forEach(el => el.addEventListener('input', updateHpsTotals));
+
+function recalcAllRows() {
+  document.querySelectorAll('#gradebookBody tr[id^="row-"]').forEach(tr => calculateRowEl(tr));
+}
 
 function renderGradebook() {
   const searchQuery = document.getElementById('gradebookSearch').value.toLowerCase();
@@ -114,7 +188,7 @@ function renderGradebook() {
   if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
-    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="25" style="text-align:center; padding: 20px;">No students found.</td></tr>';
+    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="24" style="text-align:center; padding: 20px;">No students found.</td></tr>';
     return;
   }
 
@@ -130,98 +204,88 @@ function renderGradebook() {
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
-      <!-- WW Inputs -->
+      <!-- WW -->
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
-      <!-- WW Computed (Calculated below) -->
-      <td class="computed-cell" id="ww-total-${r.student_id}">0</td>
-      <td class="computed-cell" id="ww-ps-${r.student_id}">0.00</td>
-      <td class="computed-cell" id="ww-ws-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="ww-total-${r.student_id}"></td>
+      <td class="computed-cell" id="ww-ps-${r.student_id}"></td>
+      <td class="computed-cell" id="ww-ws-${r.student_id}"></td>
       
-      <!-- PT Inputs -->
+      <!-- PT -->
       <td>${makeInput('pt1')}</td><td>${makeInput('pt2')}</td><td>${makeInput('pt3')}</td>
-      <!-- PT Computed -->
-      <td class="computed-cell" id="pt-total-${r.student_id}">0</td>
-      <td class="computed-cell" id="pt-ps-${r.student_id}">0.00</td>
-      <td class="computed-cell" id="pt-ws-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="pt-total-${r.student_id}"></td>
+      <td class="computed-cell" id="pt-ps-${r.student_id}"></td>
+      <td class="computed-cell" id="pt-ws-${r.student_id}"></td>
 
-      <!-- EX Inputs -->
+      <!-- EX (SA1, SA2, TE) -->
       <td>${makeInput('ex1')}</td><td>${makeInput('ex2')}</td><td>${makeInput('ex3')}</td>
-      <!-- EX Computed -->
-      <td class="computed-cell" id="ex-total-${r.student_id}">0</td>
-      <td class="computed-cell" id="ex-ps-${r.student_id}">0.00</td>
-      <td class="computed-cell" id="ex-ws-${r.student_id}">0.00</td>
+      <td class="computed-cell" id="ex-total-${r.student_id}"></td>
+      <td class="computed-cell" id="ex-ps-${r.student_id}"></td>
+      <td class="computed-cell" id="ex-ws-${r.student_id}"></td>
 
-      <!-- Final Computed -->
-      <td class="initial-cell" id="initial-${r.student_id}">0.00</td>
-      <td class="term-grade-cell" id="term-${r.student_id}">0</td>
-      <td class="descriptor-cell" id="desc-${r.student_id}">Emerging</td>
+      <!-- Final -->
+      <td class="initial-cell" id="initial-${r.student_id}"></td>
+      <td class="term-grade-cell" id="term-${r.student_id}"></td>
+      <td class="descriptor-cell" id="desc-${r.student_id}"></td>
     </tr>`;
   }).join('');
 
-  // *** THE FIX: Force calculation for every row immediately after rendering ***
-  document.querySelectorAll('#gradebookBody input').forEach(input => {
-    calculateRow(input);
-  });
+  recalcAllRows();
 }
 
 // Live calculation as teacher types
 function calculateRow(input) {
-  const tr = input.closest('tr');
+  calculateRowEl(input.closest('tr'));
+}
+
+/*
+ * Same computation as the Excel ECR (TERM sheets):
+ *   TOTAL = sum of scores
+ *   PS    = TOTAL / HPS total x 100                (blank when TOTAL = 0)
+ *   WS    = PS x weight (weight comes from the Subject Type, Sheet2)
+ *   Initial Grade = WW WS + PT WS + EX WS          (not rounded)
+ *   Term Grade    = Initial Grade run through the DepEd transmutation table
+ *   Descriptor    = from the Term Grade
+ */
+function calculateRowEl(tr) {
   const studentId = tr.id.replace('row-', '');
-  
-  const getVal = (field) => {
+  const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
+  const getVal = field => {
     const el = tr.querySelector(`input[data-field="${field}"]`);
-    return el ? (parseInt(el.value) || 0) : 0;
+    return el ? num(parseInt(el.value)) : 0;
   };
-  const getHps = (id) => parseInt(document.getElementById(id).value) || 100; 
+  const getHps = f => parseInt(document.getElementById(`hps-${f}`).value) || 0;
+  const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
 
-  // 1. Calculate Totals
-  const wwTotal = getVal('ww1')+getVal('ww2')+getVal('ww3')+getVal('ww4')+getVal('ww5');
-  const ptTotal = getVal('pt1')+getVal('pt2')+getVal('pt3');
-  const exTotal = getVal('ex1')+getVal('ex2')+getVal('ex3');
+  const group = (fields, weight) => {
+    const total = fields.reduce((s, f) => s + getVal(f), 0);
+    const hps   = fields.reduce((s, f) => s + getHps(f), 0);
+    const ps = (total === 0 || hps === 0) ? null : (total / hps) * 100;
+    const ws = ps === null ? null : ps * weight;
+    return { total, ps, ws };
+  };
 
-  // 2. Calculate PS
-  const wwHps = getHps('hps-ww-total');
-  const ptHps = getHps('hps-pt-total');
-  const exHps = getHps('hps-ex-total');
+  const ww = group(['ww1','ww2','ww3','ww4','ww5'], wWW);
+  const pt = group(['pt1','pt2','pt3'], wPT);
+  const ex = group(['ex1','ex2','ex3'], wEX);
 
-  const wwPs = wwHps > 0 ? (wwTotal / wwHps) * 100 : 0;
-  const ptPs = ptHps > 0 ? (ptTotal / ptHps) * 100 : 0;
-  const exPs = exHps > 0 ? (exTotal / exHps) * 100 : 0;
+  // Excel: IF(OR(J=0,P=0)," ",SUM(J,P,V)) -- SUM ignores blank (text) cells
+  let initial = null;
+  if (ww.ws !== 0 && pt.ws !== 0) initial = (ww.ws || 0) + (pt.ws || 0) + (ex.ws || 0);
 
-  // 3. Calculate WS (20%, 50%, 30%)
-  const wwWs = wwPs * 0.20;
-  const ptWs = ptPs * 0.50;
-  const exWs = exPs * 0.30;
+  const hasGrade = initial !== null && initial > 0;
+  const termGrade = initial === null ? null : transmute(initial);
 
-  // 4. Calculate Initial & Term Grade
-  const initialGrade = wwWs + ptWs + exWs;
-  const termGrade = Math.round(initialGrade);
+  const fmt2 = v => v === null ? '' : v.toFixed(2);
+  const set = (id, text) => { document.getElementById(`${id}-${studentId}`).textContent = text; };
 
-  // 5. Descriptor
-  let desc = 'Emerging';
-  if (termGrade > 89) desc = 'Advancing';
-  else if (termGrade > 79) desc = 'Benchmarking';
-  else if (termGrade > 74) desc = 'Connecting';
-  else if (termGrade > 64) desc = 'Developing';
+  set('ww-total', ww.total || '');  set('ww-ps', fmt2(ww.ps));  set('ww-ws', fmt2(ww.ws));
+  set('pt-total', pt.total || '');  set('pt-ps', fmt2(pt.ps));  set('pt-ws', fmt2(pt.ws));
+  set('ex-total', ex.total || '');  set('ex-ps', fmt2(ex.ps));  set('ex-ws', fmt2(ex.ws));
 
-  // Update UI
-  document.getElementById(`ww-total-${studentId}`).textContent = wwTotal;
-  document.getElementById(`ww-ps-${studentId}`).textContent = wwPs.toFixed(2);
-  document.getElementById(`ww-ws-${studentId}`).textContent = wwWs.toFixed(2);
-  
-  document.getElementById(`pt-total-${studentId}`).textContent = ptTotal;
-  document.getElementById(`pt-ps-${studentId}`).textContent = ptPs.toFixed(2);
-  document.getElementById(`pt-ws-${studentId}`).textContent = ptWs.toFixed(2);
-  
-  document.getElementById(`ex-total-${studentId}`).textContent = exTotal;
-  document.getElementById(`ex-ps-${studentId}`).textContent = exPs.toFixed(2);
-  document.getElementById(`ex-ws-${studentId}`).textContent = exWs.toFixed(2);
-
-  document.getElementById(`initial-${studentId}`).textContent = initialGrade.toFixed(2);
-  document.getElementById(`term-${studentId}`).textContent = termGrade;
-  document.getElementById(`desc-${studentId}`).textContent = desc;
+  set('initial', hasGrade ? initial.toFixed(2) : '');
+  set('term', hasGrade ? termGrade : '');
+  set('desc', hasGrade ? getDescriptor(termGrade) : '');
 }
 
 async function saveAllGrades() {
