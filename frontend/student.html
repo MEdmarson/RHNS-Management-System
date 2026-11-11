@@ -1,47 +1,168 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Student Portal — EduTrack</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Portal — RNHS</title>
+  <link rel="icon" href="rnshs-logo.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="font-weight: 600; color: var(--primary);">Loading...</div>
+</div>
+
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">🎓 EduTrack</div>
-    <div class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</div>
-    <div class="nav-item" onclick="showView('attendance', this)">📅 Attendance</div>
-    <div class="nav-item" onclick="showView('notifs', this)">🔔 Notifications</div>
+    <div class="brand">
+      <img src="rnshs-logo.png" alt="Logo">
+      <span>RNHS</span>
+    </div>
+    <button class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</button>
+    <button class="nav-item" onclick="showView('attendance', this)">📅 Attendance</button>
+    <button class="nav-item" onclick="showView('notifs', this)">🔔 Notifications</button>
+    
+    <div class="sidebar-logout">
+      <button onclick="logout()">↩ Logout</button>
+    </div>
   </aside>
+
   <main class="main">
     <div class="topbar">
-      <h2>Student Portal</h2>
+      <h2 id="pageTitle">Student Dashboard</h2>
       <div class="user-chip" id="userChip"></div>
     </div>
 
-    <div class="view" id="view-dashboard">
+    <!-- 1. DASHBOARD -->
+    <div class="view active" id="view-dashboard">
       <div class="stats-grid" id="stats"></div>
       <div class="card">
         <h3>📖 My Subjects</h3>
-        <table>
-          <thead><tr><th>Subject</th><th>Teacher</th><th>Grade</th><th>Status</th></tr></thead>
-          <tbody id="subjectsBody"></tbody>
-        </table>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead><tr><th>Subject</th><th>Teacher</th><th>Status</th></tr></thead>
+            <tbody id="subjectsBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
+    <!-- 2. ATTENDANCE -->
     <div class="view" id="view-attendance" style="display:none">
       <div class="stats-grid" id="attStats"></div>
+      
+      <!-- Progress Bar for Attendance -->
+      <div class="card">
+        <h3>📊 Attendance Progress</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Acceptable school limit: 20 absences per school year.</p>
+        <div style="background: #e5e7eb; border-radius: 8px; height: 20px; width: 100%; overflow: hidden;">
+          <div id="attProgressBar" style="height: 100%; width: 0%; background: var(--success); transition: width 0.5s ease-in-out;"></div>
+        </div>
+        <p style="text-align: right; font-size: 12px; margin-top: 5px;" id="attProgressText">0 / 20 Absences</p>
+      </div>
     </div>
 
+    <!-- 3. NOTIFICATIONS -->
     <div class="view" id="view-notifs" style="display:none">
-      <div class="card"><h3>🔔 Notifications</h3><div id="notifsList"></div></div>
+      <div class="card">
+        <h3>🔔 Notifications</h3>
+        <div id="notifsList"></div>
+      </div>
     </div>
+
   </main>
-  <button class="logout-btn" onclick="logout()">↩ Logout</button>
 </div>
 
+<div id="toastContainer"></div>
+
 <script src="js/api.js"></script>
-<script src="js/student.js"></script>
+<script>
+  requireAuth('student');
+  document.getElementById('userChip').textContent = '🎓 ' + getUser().name;
+
+  function showView(name, el) {
+    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+    document.getElementById(`view-${name}`).style.display = 'block';
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+    
+    const titles = { 'dashboard': 'Student Dashboard', 'attendance': 'My Attendance', 'notifs': 'Notifications' };
+    document.getElementById('pageTitle').textContent = titles[name];
+
+    if (name === 'attendance') loadAttendance();
+    if (name === 'notifs')     loadNotifs();
+  }
+
+  // IMPROVEMENT 4: Toast
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'}</span> ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
+  }
+
+  // IMPROVEMENT 8: Student View (Pass/Fail only)
+  async function loadDashboard() {
+    const subjects = await apiFetch('/student/subjects');
+    const valid = subjects.filter(s => s.term_grade != null);
+    const avg = valid.length ? Math.round(valid.reduce((a, b) => a + Number(b.term_grade), 0) / valid.length) : 0;
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat-card"><h4>General Average</h4><div class="value">${avg}</div></div>
+      <div class="stat-card success"><h4>Subjects Enrolled</h4><div class="value">${subjects.length}</div></div>
+    `;
+
+    document.getElementById('subjectsBody').innerHTML = subjects.map(s => {
+      let statusBadge = '<span class="badge warn">INC / Not Submitted</span>';
+      if (s.term_grade !== null && s.term_grade > 0) {
+        statusBadge = s.term_grade >= 75 ? '<span class="badge ok">Passed</span>' : '<span class="badge danger">Failed</span>';
+      }
+      return `<tr><td>${s.subject}</td><td>${s.teacher}</td><td>${statusBadge}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" style="text-align:center; padding: 20px;">No subjects enrolled yet.</td></tr>';
+  }
+
+  // IMPROVEMENT 8: Attendance Progress
+  async function loadAttendance() {
+    const a = await apiFetch('/student/attendance');
+    const absences = parseInt(a.absent) || 0;
+    const limit = 20;
+    const percentage = Math.min((absences / limit) * 100, 100);
+    
+    let color = 'var(--success)';
+    if (percentage > 50) color = 'var(--warning)';
+    if (percentage > 75) color = 'var(--danger)';
+
+    document.getElementById('attStats').innerHTML = `
+      <div class="stat-card success"><h4>Days Present</h4><div class="value">${a.present || 0}</div></div>
+      <div class="stat-card ${absences > 4 ? 'danger' : 'warn'}"><h4>Days Absent</h4><div class="value">${absences}</div></div>
+      <div class="stat-card"><h4>Days Late</h4><div class="value">${a.late || 0}</div></div>
+    `;
+
+    const bar = document.getElementById('attProgressBar');
+    bar.style.width = `${percentage}%`;
+    bar.style.background = color;
+    document.getElementById('attProgressText').textContent = `${absences} / ${limit} Absences`;
+  }
+
+  async function loadNotifs() {
+    const rows = await apiFetch('/student/notifications');
+    document.getElementById('notifsList').innerHTML = rows.map(n => `
+      <div class="notif ${n.type}">
+        <div>
+          <strong>${n.title}</strong>
+          <div style="font-size:12px;color:#6b7280;margin-top:4px">
+            ${new Date(n.created_at).toLocaleString()} ${n.is_read ? '' : ' · <b>unread</b>'}
+          </div>
+          <div style="margin-top:6px;font-size:13px">${n.body || ''}</div>
+        </div>
+      </div>`).join('') || '<p style="text-align: center; color: var(--muted); padding: 20px;">No notifications yet.</p>';
+  }
+
+  loadDashboard();
+</script>
 </body>
 </html>

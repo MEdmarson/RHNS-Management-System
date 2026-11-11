@@ -4,7 +4,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 router.use(authenticate, authorize('student'));
 
-// SUBJECTS + grades (Formatted for Student Portal)
+// SUBJECTS + grades
 router.get('/subjects', async (req, res) => {
   const [rows] = await pool.query(`
     SELECT sub.name AS subject, t.full_name AS teacher,
