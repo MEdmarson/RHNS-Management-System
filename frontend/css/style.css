@@ -197,4 +197,20 @@ tr:hover td { background: #f9fafb; }
   .history-grid td:nth-last-child(2), .history-grid th:nth-last-child(2) {
     right: 50px; /* Adjust right sticky position for smaller columns */
   }
+
+  /* --- NEW: Mobile Attendance Fixes --- */
+  .hide-mobile {
+    display: none !important;
+  }
+  
+  .mobile-stats {
+    display: flex !important;
+    gap: 5px;
+    margin-top: 5px;
+  }
+
+  .excel-table .btn-small {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
 }

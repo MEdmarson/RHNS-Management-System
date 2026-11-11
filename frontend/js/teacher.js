@@ -214,7 +214,7 @@ async function saveAllGrades() {
   loadGradebook(); 
 }
 
-// --- ATTENDANCE LOGIC WITH SEARCH ---
+// --- ATTENDANCE LOGIC WITH MOBILE BADGES ---
 async function loadAttendanceSheet() {
   if (!currentAttendanceSubjectId) return;
   
@@ -240,12 +240,22 @@ function renderAttendance() {
 
   document.getElementById('attendanceBody').innerHTML = filtered.map(r => `
     <tr>
-      <td style="text-align:left;">${r.full_name}</td>
-      <td><span class="badge ok" style="font-size: 13px;">${r.days_present || 0} Days</span></td>
-      <td><span class="badge danger" style="font-size: 13px;">${r.days_absent || 0} Days</span></td>
+      <td style="text-align:left;">
+        <strong>${r.full_name}</strong>
+        <!-- Shows only on mobile -->
+        <div class="mobile-stats" style="display: none;">
+          <span class="badge ok">Present: ${r.days_present || 0}</span>
+          <span class="badge danger">Absent: ${r.days_absent || 0}</span>
+        </div>
+      </td>
+      <!-- Hidden on mobile -->
+      <td class="hide-mobile"><span class="badge ok" style="font-size: 13px;">${r.days_present || 0} Days</span></td>
+      <td class="hide-mobile"><span class="badge danger" style="font-size: 13px;">${r.days_absent || 0} Days</span></td>
       <td>
-        <button class="btn btn-small ${r.status === 'present' ? 'btn-primary' : 'btn-secondary'}" onclick="mark(${r.student_id},'present')">Present</button>
-        <button class="btn btn-small ${r.status === 'absent' ? 'btn-danger' : 'btn-secondary'}" onclick="mark(${r.student_id},'absent')">Absent</button>
+        <div style="display: flex; gap: 4px; justify-content: center;">
+          <button class="btn btn-small ${r.status === 'present' ? 'btn-primary' : 'btn-secondary'}" onclick="mark(${r.student_id},'present')">Present</button>
+          <button class="btn btn-small ${r.status === 'absent' ? 'btn-danger' : 'btn-secondary'}" onclick="mark(${r.student_id},'absent')">Absent</button>
+        </div>
       </td>
     </tr>`).join('');
 }

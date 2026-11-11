@@ -8,7 +8,6 @@
 </head>
 <body>
 
-<!-- Global Loading Spinner -->
 <div id="loadingOverlay">
   <div class="spinner"></div>
   <div style="font-weight: 600; color: var(--primary);">Loading, please wait...</div>
@@ -53,7 +52,6 @@
           </div>
         </div>
         
-        <!-- SEARCH BAR FOR GRADEBOOK -->
         <div style="margin-bottom: 10px;">
           <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
         </div>
@@ -118,18 +116,20 @@
           </div>
         </div>
 
-        <!-- SEARCH BAR FOR ATTENDANCE -->
         <div style="margin-bottom: 10px;">
           <input type="text" id="attendanceSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderAttendance()">
         </div>
 
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
-          <table class="excel-table">
-            <colgroup>
-              <col style="width: 300px;"><col style="width: 150px;"><col style="width: 150px;"><col style="width: 250px;">
-            </colgroup>
+          <!-- UPDATED TABLE WITH MOBILE CLASSES -->
+          <table class="excel-table" style="table-layout: auto;">
             <thead>
-              <tr><th style="text-align:left;">Student Name</th><th>Total Days Present</th><th>Total Days Absent</th><th>Today's Status</th></tr>
+              <tr>
+                <th style="text-align:left; min-width: 150px;">Student Name</th>
+                <th class="hide-mobile">Total Days Present</th>
+                <th class="hide-mobile">Total Days Absent</th>
+                <th style="min-width: 160px;">Today's Status</th>
+              </tr>
             </thead>
             <tbody id="attendanceBody"></tbody>
           </table>
