@@ -10,7 +10,7 @@ let currentHistorySubjectId = null;
 let mySubjectsData = []; 
 let hasUnsavedChanges = false;
 
-// --- DEPED CLASS RECORD CONSTANTS (mirrors Sheet2 + TERM sheets of the Excel ECR) ---
+// --- DEPED CLASS RECORD CONSTANTS ---
 const SUBJECT_WEIGHTS = {            
   'Academic Electives':                         [0.20, 0.50, 0.30],
   'Arts Apprenticeship':                        [0.15, 0.70, 0.15],
@@ -25,7 +25,6 @@ const SUBJECT_WEIGHTS = {
 };
 let currentSubjectType = 'Core Subjects';
 
-// Transmutation table from the Excel "Term Grade" column
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
   [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
@@ -201,26 +200,22 @@ function renderGradebook() {
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
-      <!-- WW -->
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
       <td class="computed-cell" id="ww-total-${r.student_id}"></td>
       <td class="computed-cell" id="ww-ps-${r.student_id}"></td>
       <td class="computed-cell" id="ww-ws-${r.student_id}"></td>
       
-      <!-- PT -->
       <td>${makeInput('pt1')}</td><td>${makeInput('pt2')}</td><td>${makeInput('pt3')}</td>
       <td class="computed-cell" id="pt-total-${r.student_id}"></td>
       <td class="computed-cell" id="pt-ps-${r.student_id}"></td>
       <td class="computed-cell" id="pt-ws-${r.student_id}"></td>
 
-      <!-- EX (SA1, SA2, TE) -->
       <td>${makeInput('ex1')}</td><td>${makeInput('ex2')}</td><td>${makeInput('ex3')}</td>
       <td class="computed-cell" id="ex-total-${r.student_id}"></td>
       <td class="computed-cell" id="ex-ps-${r.student_id}"></td>
       <td class="computed-cell" id="ex-ws-${r.student_id}"></td>
 
-      <!-- Final -->
       <td class="initial-cell" id="initial-${r.student_id}"></td>
       <td class="term-grade-cell" id="term-${r.student_id}"></td>
       <td class="descriptor-cell" id="desc-${r.student_id}"></td>
@@ -269,7 +264,6 @@ function calculateRowEl(tr) {
   set('pt-total', pt.total || '');  set('pt-ps', fmt2(pt.ps));  set('pt-ws', fmt2(pt.ws));
   set('ex-total', ex.total || '');  set('ex-ps', fmt2(ex.ps));  set('ex-ws', fmt2(ex.ws));
 
-  // *** The UI displays the rounded integer, but `initial` is still a decimal for the term grade calculation ***
   set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
@@ -414,8 +408,12 @@ function renderAttendance() {
 
 async function mark(student_id, status) {
   const date = document.getElementById('attDate').value || new Date().toISOString().slice(0,10);
-  await apiFetch('/teacher/attendance', { method: 'POST', body: JSON.stringify({ student_id, section_id: currentSectionId, date, status }) });
-  loadAttendanceSheet();
+  try {
+    await apiFetch('/teacher/attendance', { method: 'POST', body: JSON.stringify({ student_id, section_id: currentSectionId, date, status }) });
+    loadAttendanceSheet();
+  } catch (err) {
+    showToast('Error saving attendance: ' + err.message, 'error');
+  }
 }
 
 async function markAllPresent() {

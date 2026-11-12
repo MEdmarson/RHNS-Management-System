@@ -67,6 +67,8 @@ router.post('/grades', async (req, res) => {
   const exPs = (exTotal / exHpsTotal) * 100;
 
   // 4. Calculate WS (Weighted Score) - Core Subjects: WW 20%, PT 50%, EX 30%
+  // Note: If you added the dynamic SUBJECT_WEIGHTS logic to the frontend, you might 
+  // want to pass the weights from the frontend to this backend route as well.
   const wwWs = wwPs * 0.20; 
   const ptWs = ptPs * 0.50; 
   const exWs = exPs * 0.30; 
@@ -116,21 +118,28 @@ router.post('/grades', async (req, res) => {
   }
 });
 
-// --- ATTENDANCE, WARNINGS, SF2 logic remains the same ---
+// --- ATTENDANCE ---
 router.get('/attendance/:subjectId/:date', async (req, res) => {
   const { subjectId, date } = req.params;
   try {
     const [rows] = await pool.query(`
       SELECT u.id AS student_id, u.full_name, a.status,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
+             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'late') AS days_late,
+             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'excused') AS days_excused,
              (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
-      FROM subjects sub JOIN students s ON s.section_id = sub.section_id
+      FROM subjects sub 
+      JOIN students s ON s.section_id = sub.section_id
       JOIN users u ON u.id = s.user_id
       LEFT JOIN attendance a ON a.student_id = u.id AND a.date = ? AND a.section_id = sub.section_id
       WHERE sub.teacher_id = ? AND sub.id = ?
-      GROUP BY u.id, u.full_name, a.status ORDER BY u.full_name`, [date, req.user.id, subjectId]);
+      GROUP BY u.id, u.full_name, a.status 
+      ORDER BY u.full_name`, [date, req.user.id, subjectId]);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 router.post('/attendance', async (req, res) => {
@@ -141,7 +150,10 @@ router.post('/attendance', async (req, res) => {
       VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`,
       [student_id, section_id, date, status, req.user.id]);
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 router.get('/attendance-history/:subjectId', async (req, res) => {
@@ -150,33 +162,55 @@ router.get('/attendance-history/:subjectId', async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT u.id AS student_id, u.full_name, a.date, a.status
-      FROM subjects sub JOIN students s ON s.section_id = sub.section_id
+      FROM subjects sub 
+      JOIN students s ON s.section_id = sub.section_id
       JOIN users u ON u.id = s.user_id
       JOIN attendance a ON a.student_id = u.id AND a.section_id = sub.section_id
       WHERE sub.teacher_id = ? AND sub.id = ? AND MONTH(a.date) = ? AND YEAR(a.date) = ?
       ORDER BY u.full_name, a.date`, [req.user.id, subjectId, month, year]);
     res.json(rows);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
+// --- WARNINGS & SF2 ---
 router.get('/at-risk', async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS absences
-    FROM users u JOIN students s ON s.user_id = u.id
-    JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
-    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-    GROUP BY u.id, u.full_name HAVING avg_grade < 75 OR absences > 4`, [req.user.id]);
-  res.json(rows);
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
+             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS absences
+      FROM users u 
+      JOIN students s ON s.user_id = u.id
+      JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
+      LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
+      GROUP BY u.id, u.full_name 
+      HAVING avg_grade < 75 OR absences > 4`, [req.user.id]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/sf2/:sectionId', async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT s.lrn, u.full_name, SUM(a.status = 'present') AS days_present, SUM(a.status = 'absent') AS days_absent
-    FROM users u JOIN students s ON s.user_id = u.id
-    LEFT JOIN attendance a ON a.student_id = u.id
-    WHERE s.section_id = ? GROUP BY u.id, s.lrn, u.full_name ORDER BY u.full_name`, [req.params.sectionId]);
-  res.json(rows);
+  try {
+    const [rows] = await pool.query(`
+      SELECT s.lrn, u.full_name, 
+             SUM(a.status = 'present') AS days_present, 
+             SUM(a.status = 'late') AS days_late,
+             SUM(a.status = 'excused') AS days_excused,
+             SUM(a.status = 'absent') AS days_absent
+      FROM users u 
+      JOIN students s ON s.user_id = u.id
+      LEFT JOIN attendance a ON a.student_id = u.id
+      WHERE s.section_id = ? 
+      GROUP BY u.id, s.lrn, u.full_name 
+      ORDER BY u.full_name`, [req.params.sectionId]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
