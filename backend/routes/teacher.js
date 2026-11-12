@@ -122,6 +122,7 @@ router.get('/final-grades', async (req, res) => {
   if (!subjectId) return res.status(400).json({ error: "Subject ID required" });
 
   try {
+    // Pivot using g.term_grade (Column X), NOT g.initial_grade (Column W)
     const [rows] = await pool.query(`
       SELECT u.id AS student_id, u.full_name,
              MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
@@ -141,9 +142,16 @@ router.get('/final-grades', async (req, res) => {
       const t1 = r.term1 === null ? null : Number(r.term1);
       const t2 = r.term2 === null ? null : Number(r.term2);
       const t3 = r.term3 === null ? null : Number(r.term3);
+      
+      // Get only the terms that have actual grades
       const present = [t1, t2, t3].filter(v => v !== null && v !== undefined);
-      const final_grade = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
+      
+      // Round the average exactly like Excel's =ROUND(AVERAGE(...),0)
+      const final_grade = present.length 
+        ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) 
+        : null;
 
+      // Use the same thresholds as the Term Grade descriptors in the ECR
       let descriptor = '';
       if (final_grade !== null) {
         if (final_grade > 89)      descriptor = 'Advancing';
