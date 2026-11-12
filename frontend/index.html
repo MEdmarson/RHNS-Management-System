@@ -3,26 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rosales National High School — EduTrack</title>
+  <title>Rosales National High School</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body class="login-page">
 
-  <!-- Global Loading Spinner -->
   <div id="loadingOverlay">
     <div class="spinner"></div>
     <div style="font-weight: 600; color: var(--primary);">Loading, please wait...</div>
   </div>
 
-  <!-- LEFT SIDE: BRANDING & LOGO -->
   <div class="login-left">
     <img src="rnshs-logo.png" alt="Rosales National High School Logo" onerror="this.src='https://via.placeholder.com/220?text=RNHS+Logo'">
-    <h1>EduTrack</h1>
-    <p>Rosales National High School<br>Web-Based School Management System</p>
+    <h1>Rosales National High School</h1>
+    <p>Web-Based School Management System</p>
   </div>
 
-  <!-- RIGHT SIDE: LOGIN & SIGNUP -->
   <div class="login-right">
     <div class="form-container">
       
@@ -35,43 +32,27 @@
       <div class="form-section active" id="section-login">
         <form id="loginForm">
           <div class="form-group">
-            <label>Email Address</label>
-            <input type="email" id="loginEmail" placeholder="Enter your email" required>
+            <label>LRN (Students) or Email (Teachers)</label>
+            <input type="text" id="loginEmail" placeholder="e.g. 101894140029 or teacher@rnshs.edu.ph" required>
           </div>
           <div class="form-group">
             <label>Password</label>
-            <input type="password" id="loginPassword" placeholder="Enter your password" required>
+            <input type="password" id="loginPassword" placeholder="Enter your LRN or Email" required>
           </div>
           <button type="submit" class="btn-submit">Log In</button>
           <div id="loginError" class="error-msg"></div>
         </form>
-        <div style="margin-top: 20px; font-size: 12px; color: var(--muted); text-align: center;">
-          <b>Demo Accounts (password: password123)</b><br>
-          admin@school.edu · teacher@school.edu · student@school.edu
+        <div style="margin-top: 20px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5;">
+          <b>First Time Login:</b><br>
+          Students: Use your LRN for both ID and Password.<br>
+          Teachers: Use your Email for both ID and Password.
         </div>
       </div>
 
-      <!-- SIGN UP FORM -->
+      <!-- SIGN UP FORM (Kept for later use) -->
       <div class="form-section" id="section-signup">
         <form id="signupForm">
-          <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" id="regName" placeholder="e.g. Juan Dela Cruz" required>
-          </div>
-          <div class="form-group">
-            <label>Email Address</label>
-            <input type="email" id="regEmail" placeholder="Enter your email" required>
-          </div>
-          <div class="form-group">
-            <label>LRN (Learner Reference Number)</label>
-            <input type="text" id="regLRN" placeholder="12-digit LRN" required>
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="regPassword" placeholder="Create a password" required>
-          </div>
-          <button type="submit" class="btn-submit" style="background: var(--success);">Create Student Account</button>
-          <div id="signupError" class="error-msg"></div>
+          <p style="text-align: center; font-size: 14px; margin-bottom: 20px;">Sign up is disabled. Please contact the administrator to create your account.</p>
         </form>
       </div>
 
@@ -91,30 +72,16 @@
 
     document.getElementById('loginForm').addEventListener('submit', async e => {
       e.preventDefault();
-      const email = document.getElementById('loginEmail').value;
+      const idInput = document.getElementById('loginEmail').value;
       const password = document.getElementById('loginPassword').value;
       const errorDiv = document.getElementById('loginError');
       
       errorDiv.textContent = '';
       try {
-        await login(email, password);
+        await login(idInput, password);
       } catch (err) {
         errorDiv.textContent = err.message || 'Invalid credentials';
       }
-    });
-
-    document.getElementById('signupForm').addEventListener('submit', async e => {
-      e.preventDefault();
-      const errorDiv = document.getElementById('signupError');
-      errorDiv.textContent = 'Creating account...';
-      errorDiv.style.color = 'var(--muted)';
-      
-      setTimeout(() => {
-        errorDiv.textContent = 'Account created successfully! You can now log in.';
-        errorDiv.style.color = 'var(--success)';
-        document.getElementById('loginEmail').value = document.getElementById('regEmail').value;
-        setTimeout(() => switchTab('login'), 1500);
-      }, 1000);
     });
   </script>
 </body>

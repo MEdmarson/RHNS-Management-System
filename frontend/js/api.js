@@ -17,17 +17,19 @@ async function apiFetch(path, options = {}) {
   try {
     const res = await fetch(`${API}${path}`, { ...options, headers });
     
+    // If unauthorized, force logout
     if (res.status === 401) { 
       logout(); 
       return; 
     }
     
+    // Handle standard errors
     if (!res.ok) {
       let errorMsg = 'Request failed';
       try {
         const errorData = await res.json();
         errorMsg = errorData.error || errorMsg;
-      } catch (e) { /* Ignore JSON parse error if backend crashes */ }
+      } catch (e) { /* Ignore JSON parse error */ }
       throw new Error(errorMsg);
     }
     
@@ -38,7 +40,7 @@ async function apiFetch(path, options = {}) {
   }
 }
 
-async function login(email, password) {
+async function login(emailOrLrn, password) {
   const loader = document.getElementById('loadingOverlay');
   if (loader) loader.style.display = 'flex';
 
@@ -46,16 +48,28 @@ async function login(email, password) {
     const res = await fetch(`${API}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email: emailOrLrn, password: password })
     });
     
     if (!res.ok) throw new Error('Invalid credentials');
     
     const data = await res.json();
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify({ role: data.role, name: data.name }));
     
-    window.location = `${data.role}.html`; 
+    // Store all user details (including email for the password change validation)
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify({ 
+      role: data.role, 
+      name: data.name, 
+      lrn: data.lrn,
+      email: data.email 
+    }));
+
+    // Redirect logic: First login goes to change password, otherwise to dashboard
+    if (data.is_first_login) {
+      window.location = 'change-password.html';
+    } else {
+      window.location = `${data.role}.html`; 
+    }
   } finally {
     if (loader) loader.style.display = 'none';
   }
