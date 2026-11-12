@@ -6,122 +6,140 @@
   <title>Teacher Portal — RNHS</title>
   <link rel="icon" href="rnshs-logo.png">
   <link rel="stylesheet" href="css/style.css">
-  
+
   <style>
-    /* --- Specific Styles for the Class Record --- */
-    .excel-wrapper {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      max-height: 70vh;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #fff;
-    }
-    
-    .excel-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-      table-layout: fixed;
-    }
-    
-    .excel-table th, .excel-table td {
-      border: 1px solid #d1d5db;
-      padding: 4px 2px;
-      text-align: center;
-      vertical-align: middle;
-      white-space: nowrap;
-      overflow: hidden;
-    }
-    
-    .excel-table th { 
-      background: #f3f4f6; 
-      font-weight: 600; 
-      color: #374151; 
-      font-size: 11px;
-    }
-    
-    .excel-table thead tr:nth-child(1) th { background: #e5e7eb; font-size: 12px; }
-    .excel-table thead tr:nth-child(2) th { background: #f9fafb; font-size: 10px; }
-    
-    .excel-table input[type="number"] {
-      width: 100%;
-      max-width: 45px;
-      padding: 4px 2px;
-      text-align: center;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
-      font-size: 12px;
-      box-sizing: border-box;
-      -moz-appearance: textfield;
-      appearance: textfield;
-    }
-    .excel-table input[type="number"]::-webkit-outer-spin-button,
-    .excel-table input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .excel-table input[type="number"]:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
-    
-    .hps-input { 
-      background: #fffbeb; 
-      color: #92400e; 
-      border-color: #d97706 !important; 
-      font-weight: bold; 
-    }
-    
-    .computed-cell { background: #f9fafb; font-weight: bold; font-size: 12px; }
-    .descriptor-cell { background: #ecfdf5; color: #065f46; font-weight: 600; font-size: 11px; white-space: normal; }
-    .initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; font-size: 12px; }
+    /* ===================== Class record ===================== */
+    .gb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .gb-top h3 { margin: 0; font-size: 17px; flex: 1; min-width: 0; }
+    .gb-top .gb-sub { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    .pill-unsaved { display: none; color: var(--danger); font-size: 12px; font-weight: 700; white-space: nowrap; }
 
-    /* Sticky Headers */
-    .excel-table thead th {
-      position: sticky;
-      z-index: 2;
-      height: 26px;
-      box-sizing: border-box;
-    }
-    .excel-table thead th:not(.name-col) { text-align: center; padding-left: 2px; left: auto; border-right: 1px solid #d1d5db; }
-    .excel-table thead tr:nth-child(1) th { top: 0; }
-    .excel-table thead tr:nth-child(2) th { top: 26px; }
-    .excel-table thead tr:nth-child(3) th { top: 52px; }
-    .excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
+    .gb-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .gb-stat { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: #fff; }
+    .gb-stat b { display: block; font-size: 20px; line-height: 1.2; }
+    .gb-stat span { font-size: 11px; color: var(--muted); }
+    .gb-stat.warn  b { color: #b45309; }
+    .gb-stat.bad   b { color: #b91c1c; }
 
-    /* Sticky Student Name Column */
-    .excel-table tbody td:first-child,
-    .excel-table thead th.name-col {
-      position: sticky;
-      left: 0;
-      text-align: left;
-      border-right: 2px solid #d1d5db;
-      padding-left: 8px;
-      font-size: 12px;
-      white-space: normal;
-    }
-    .excel-table tbody td:first-child { background: #fff; z-index: 1; }
-    .excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
+    .gb-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 8px; }
+    .gb-filters label { font-size: 12px; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .gb-filters .input { width: auto; font-weight: 600; }
+    .gb-filters .grow { flex: 1; min-width: 180px; }
+    .gb-filters .grow .input { width: 100%; max-width: 280px; font-weight: 400; }
 
-    /* Design polish */
-    .excel-table tbody tr:nth-child(even) td:not(.computed-cell):not(.initial-cell):not(.descriptor-cell) { background: #fafafa; }
-    .excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
-    .excel-table tbody td:first-child { font-weight: 500; box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
+    .gb-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .gb-legend i { display: inline-block; min-width: 24px; padding: 0 4px; border-radius: 3px; font-style: normal; font-weight: 700; text-align: center; margin-right: 4px; }
+    .lg-ns { background: #fee2e2; color: #991b1b; }
+    .lg-ex { background: #e5e7eb; color: #4b5563; }
+    .lg-bl { border: 1px dashed #9ca3af; }
+
+    .excel-wrapper { overflow: auto; -webkit-overflow-scrolling: touch; max-height: 68vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+    .excel-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+    .excel-table th, .excel-table td { border: 1px solid #d1d5db; padding: 3px 2px; text-align: center; vertical-align: middle; white-space: nowrap; overflow: hidden; }
+    .excel-table th { background: #f3f4f6; font-weight: 600; color: #374151; font-size: 11px; }
+
+    .excel-table col { width: 46px; }
+    .excel-table col.col-name { width: 170px; }
+    .excel-table col.col-desc { width: 90px; }
+    .excel-table col.col-miss { width: 150px; }
+
+    /* group colours */
+    .grp-ww { background: #e0e7ff !important; }
+    .grp-pt { background: #dcfce7 !important; }
+    .grp-ex { background: #fef3c7 !important; }
+
+    /* score cells */
+    .excel-table input.score {
+      width: 100%; max-width: 44px; padding: 4px 1px; text-align: center; border: 1px solid #d1d5db;
+      border-radius: 4px; font-size: 12px; box-sizing: border-box; background: #fff;
+    }
+    .excel-table input.score:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
+    .excel-table input.score.blank { border-style: dashed; border-color: #cbd5e1; }
+    .excel-table input.score.ns    { background: #fee2e2; border-color: #f87171; color: #991b1b; font-weight: 700; }
+    .excel-table input.score.ex    { background: #e5e7eb; border-color: #9ca3af; color: #4b5563; font-weight: 700; }
+    .excel-table input.score.over  { border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626 inset; }
+
+    .hps-input { width: 100%; max-width: 44px; padding: 3px 1px; text-align: center; background: #fffbeb; color: #92400e;
+      border: 1px solid #d97706 !important; border-radius: 4px; font-weight: 700; font-size: 12px; box-sizing: border-box; }
+    .hps-row th { background: #fffbeb !important; }
+    .hps-label { text-align: right !important; padding-right: 8px !important; }
+
+    .flag { cursor: pointer; font-size: 9px; color: #9ca3af; margin-left: 2px; user-select: none; }
+    .flag:hover { color: #dc2626; }
+
+    .calc { background: #f9fafb; font-weight: 600; }
+    .initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; }
     .term-grade-cell { font-weight: 800; font-size: 14px; }
-    
-    .descriptor-cell.desc-advancing   { background: #dcfce7; color: #166534; }
-    .descriptor-cell.desc-benchmarking{ background: #dbeafe; color: #1e40af; }
-    .descriptor-cell.desc-connecting  { background: #e0f2fe; color: #075985; }
-    .descriptor-cell.desc-developing  { background: #fef3c7; color: #92400e; }
-    .descriptor-cell.desc-emerging    { background: #fee2e2; color: #991b1b; }
+    .term-grade-cell.fail { color: #b91c1c; }
+    .term-grade-cell.prov { font-style: italic; opacity: .8; }
+    .term-grade-cell.prov::after { content: '*'; }
+    .descriptor-cell { font-weight: 600; font-size: 11px; white-space: normal; background: #f9fafb; }
+    .descriptor-cell.desc-advancing    { background: #dcfce7; color: #166534; }
+    .descriptor-cell.desc-benchmarking { background: #dbeafe; color: #1e40af; }
+    .descriptor-cell.desc-connecting   { background: #e0f2fe; color: #075985; }
+    .descriptor-cell.desc-developing   { background: #fef3c7; color: #92400e; }
+    .descriptor-cell.desc-emerging     { background: #fee2e2; color: #991b1b; }
+
+    .miss-cell { white-space: normal !important; text-align: left !important; padding: 3px 5px !important; }
+    .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; margin: 1px 3px 1px 0; }
+    .chip.ns   { background: #fee2e2; color: #991b1b; }
+    .chip.high { background: #fee2e2; color: #991b1b; }
+    .chip.medium { background: #fef3c7; color: #92400e; }
+    .chip.ok   { background: #dcfce7; color: #166534; }
+
+    /* sticky header + name column */
+    .excel-table thead th { position: sticky; z-index: 2; height: 26px; box-sizing: border-box; }
+    .excel-table thead tr:nth-child(1) th { top: 0; }
+    .excel-table thead tr:nth-child(2) th { top: 26px; font-size: 10px; }
+    .excel-table thead tr:nth-child(3) th { top: 52px; }
+    .excel-table thead tr:nth-child(4) th { top: 78px; height: 32px; }
+    .excel-table tbody td:first-child, .excel-table thead th.name-col {
+      position: sticky; left: 0; text-align: left; border-right: 2px solid #d1d5db;
+      padding-left: 8px; white-space: normal; font-size: 12px;
+    }
+    .excel-table tbody td:first-child { background: #fff; z-index: 1; font-weight: 500; box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
+    .excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
+    .excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
+    .excel-table tbody tr.row-missing td:first-child { box-shadow: inset 3px 0 0 #ef4444, 2px 0 4px -2px rgba(0,0,0,.15); }
     .swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
 
-    /* Attendance status buttons */
+    /* ===================== Attendance ===================== */
     .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
     .att-btn { background: #fff; color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
     .att-btn:hover { background: #f3f4f6; }
     .att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
     .att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
-    .att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
-    .att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+    .att-excused.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+    .att-absent.active  { background: var(--danger); border-color: var(--danger); color: #fff; }
     .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+    .toolbar .left, .toolbar .right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-    /* Mobile */
+    /* ===================== Class cards ===================== */
+    .class-card { cursor: pointer; }
+    .class-card .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .class-card .go { margin-top: 14px; font-size: 12px; font-weight: 700; color: var(--primary); }
+
+    /* ===================== At-risk ===================== */
+    .risk-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .risk-tile { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; font: inherit; }
+    .risk-tile b { display: block; font-size: 24px; line-height: 1.15; }
+    .risk-tile span { font-size: 12px; color: var(--muted); }
+    .risk-tile.active { outline: 2px solid var(--primary); }
+    .risk-tile.t-high b { color: #b91c1c; }
+    .risk-tile.t-medium b { color: #b45309; }
+
+    .risk-toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; }
+    .risk-toolbar .input { width: auto; }
+    .risk-rules { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.6; }
+    .risk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .risk-table th { text-align: left; font-size: 12px; padding: 8px; border-bottom: 2px solid var(--border); }
+    .risk-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; text-align: left; }
+    .risk-table td .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .risk-table tr.lvl-high td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+    .risk-table tr.lvl-medium td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+
+    /* ===================== Mobile ===================== */
     @media (max-width: 768px) {
       .att-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
       .att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
@@ -131,41 +149,36 @@
       .topbar h2 { font-size: 18px; }
       .user-chip { padding: 5px 10px; font-size: 12px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
       #toastContainer { bottom: 80px; right: 10px; left: 10px; }
-
       .nav-item .nav-icon { font-size: 20px; line-height: 1; }
       .nav-item .nav-label { font-size: 10.5px; line-height: 1.1; }
 
       #historyTable td:first-child, #historyTable th:first-child { min-width: 110px !important; max-width: 110px !important; font-size: 11px; padding-left: 6px; }
       #historyTable td, #historyTable th { min-width: 30px !important; padding: 5px 2px; font-size: 11px; }
-      #historyTable td:last-child, #historyTable th:last-child { min-width: 46px !important; right: 0; }
-      #historyTable td:nth-last-child(2), #historyTable th:nth-last-child(2) { min-width: 46px !important; right: 46px; }
-      #view-gradebook .card { padding: 8px !important; }
-      .gb-toolbar { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
-      .gb-title { gap: 10px !important; flex-wrap: wrap; }
-      .gb-title h3 { font-size: 15px; flex: 1; min-width: 0; }
-      .gb-controls { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-items: center; }
-      .gb-select { width: 100% !important; max-width: none !important; min-height: 38px; font-size: 14px; }
-      #gradebookSearch { max-width: none !important; min-height: 40px; font-size: 16px; }
 
-      #saveBtn {
-        position: fixed; right: 14px; bottom: 80px; z-index: 60;
-        padding: 12px 18px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.28);
-        grid-column: 1 / -1;
-      }
+      #view-gradebook .card { padding: 8px !important; }
+      .gb-filters .input { width: 100%; min-height: 38px; font-size: 14px; }
+      .gb-filters label { flex: 1 1 45%; }
+      .gb-filters .grow { flex-basis: 100%; }
+      .gb-filters .grow .input { max-width: none; font-size: 16px; }
+      #saveBtn { position: fixed; right: 14px; bottom: 80px; z-index: 60; padding: 12px 18px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.28); }
 
       .swipe-hint { display: block; }
-      .excel-wrapper { min-height: 280px; max-height: calc(100dvh - 330px); border-radius: 6px; overscroll-behavior: contain; }
-
-      .excel-table col:first-child { width: 112px !important; }
+      .excel-wrapper { min-height: 280px; max-height: calc(100dvh - 380px); border-radius: 6px; overscroll-behavior: contain; }
       .excel-table col { width: 42px !important; }
+      .excel-table col.col-name { width: 112px !important; }
+      .excel-table col.col-miss { width: 120px !important; }
+      .excel-table col.col-desc { width: 76px !important; }
       .excel-table thead th, .excel-table td { padding: 3px 1px; }
-      .excel-table tbody td:first-child,
-      .excel-table thead th.name-col { padding-left: 5px; font-size: 11px; line-height: 1.2; }
-      .excel-table th { font-size: 10px; }
-      .excel-table input[type="number"] { max-width: 38px; min-height: 34px; font-size: 16px; padding: 2px 0; }
-      .excel-table .hps-input { min-height: 30px; font-size: 14px; }
+      .excel-table tbody td:first-child, .excel-table thead th.name-col { padding-left: 5px; font-size: 11px; line-height: 1.2; }
+      .excel-table input.score { max-width: 38px; min-height: 34px; font-size: 16px; padding: 2px 0; }
+      .hps-input { min-height: 30px; font-size: 14px; }
       .excel-table thead tr:nth-child(4) th { height: 40px; }
-      .descriptor-cell { font-size: 10px; }
+
+      .risk-table thead { display: none; }
+      .risk-table, .risk-table tbody, .risk-table tr, .risk-table td { display: block; width: 100%; }
+      .risk-table tr { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; padding: 4px 0; }
+      .risk-table td { border: none; padding: 6px 10px; }
+      .risk-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
     }
   </style>
 </head>
@@ -186,7 +199,7 @@
     <button class="nav-item" onclick="showView('attendance', this)"><span class="nav-icon">📋</span><span class="nav-label">Attendance</span></button>
     <button class="nav-item" onclick="showView('warning', this)"><span class="nav-icon">🚨</span><span class="nav-label">At-Risk Students</span></button>
     <button class="nav-item" onclick="showView('sf2', this)"><span class="nav-icon">🏫</span><span class="nav-label">SF2 Report</span></button>
-    
+
     <div class="sidebar-logout">
       <button onclick="logout()">↩ Logout</button>
     </div>
@@ -205,96 +218,44 @@
 
     <!-- 2. CLASS RECORD -->
     <div class="view" id="view-gradebook" style="display: none;">
-      <div class="card" style="padding: 10px;">
-        <div class="gb-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
-          <div class="gb-title" style="display: flex; align-items: center; gap: 15px;">
-            <button class="btn btn-secondary" onclick="showView('subjects', document.querySelector('.nav-item'))">← Back</button>
-            <h3 style="margin: 0;" id="gradebookTitle">Class Record</h3>
-            <span id="unsavedIndicator" style="display:none; color: var(--danger); font-size: 12px; font-weight: bold;">● Unsaved changes</span>
-          </div>
-          <div class="gb-controls" style="display: flex; align-items: center; gap: 10px;">
-            <label style="font-weight: 600; font-size: 14px;">Subject Type: </label>
-            <select id="subjectTypeSelect" class="input gb-select" style="font-weight: bold;" onchange="changeSubjectType()"></select>
-            <label style="font-weight: 600; font-size: 14px;">Term: </label>
-            <select id="termSelect" class="input gb-select gb-term" style="font-weight: bold;" onchange="loadGradebook()">
-              <option value="1">Term 1</option>
-              <option value="2">Term 2</option>
-              <option value="3">Term 3</option>
-            </select>
-            <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
-          </div>
+      <div class="card" style="padding: 12px;">
+
+        <div class="gb-top">
+          <button class="btn btn-secondary" onclick="showView('subjects', document.querySelector('.nav-item'))">← Back</button>
+          <h3><div id="gradebookTitle">Class Record</div><div class="gb-sub" id="gradebookSub"></div></h3>
+          <span id="unsavedIndicator" class="pill-unsaved">● Unsaved changes</span>
+          <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save changes</button>
         </div>
 
-        <div style="margin-bottom: 10px;">
-          <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
+        <div class="gb-summary" id="gbSummary"></div>
+
+        <div class="gb-filters">
+          <div class="grow"><input type="text" id="gradebookSearch" class="input" placeholder="🔍 Search student name..." oninput="renderGradebook()"></div>
+          <label>Term
+            <select id="termSelect" class="input" onchange="onTermChange()">
+              <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
+            </select>
+          </label>
+          <label>Subject type
+            <select id="subjectTypeSelect" class="input" onchange="changeSubjectType()"></select>
+          </label>
+          <label style="font-weight:500;"><input type="checkbox" id="showCalc" onchange="toggleCalcColumns()"> Show Total &amp; WS columns</label>
+          <label style="font-weight:500;"><input type="checkbox" id="onlyMissing" onchange="renderGradebook()"> Only students with missing work</label>
+        </div>
+
+        <div class="gb-legend">
+          <span><i class="lg-bl">&nbsp;</i>blank = not yet recorded (left out of the grade)</span>
+          <span><i class="lg-ns">NS</i>not submitted — counts as 0 and is flagged</span>
+          <span><i class="lg-ex">EX</i>excused — left out of the grade</span>
+          <span>Type <b>0–999</b>, <b>m</b> = NS, <b>x</b> = EX, or double-tap / long-press a blank cell. <b>⚑</b> in a column header flags all blanks as NS.</span>
+          <span><b>*</b> provisional grade (a component has no scores yet)</span>
         </div>
 
         <div class="swipe-hint">⇆ Swipe sideways to see all columns — names stay pinned</div>
         <div class="excel-wrapper">
           <table class="excel-table" id="gradebookTable">
-            <colgroup>
-              <col style="width: 160px;">
-              <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
-              <col style="width: 60px;"><col style="width: 60px;"><col style="width: 80px;">
-              <col style="width: 160px;"> <!-- NEW: Missing Requirements -->
-            </colgroup>
-
-            <thead>
-              <tr>
-                <th rowspan="3" class="name-col">LEARNERS' NAMES</th>
-                <th colspan="8" style="background:#e0e7ff;">WRITTEN/ORAL WORKS (WWs)</th>
-                <th colspan="6" style="background:#dcfce7;">PRODUCT/PERFORMANCE TASKS (PTs)</th>
-                <th colspan="6" style="background:#fef3c7;">EXAMINATIONS (EXs)</th>
-                <th colspan="3" style="background:#f3f4f6;">GRADES</th>
-                <th rowspan="3" style="background:#fee2e2; color:#991b1b; font-size: 10px;">MISSING<br>REQUIREMENTS</th>
-              </tr>
-              
-              <tr>
-                <th colspan="8" id="pct-ww" style="font-size: 10px; background:#e0e7ff;">20%</th>
-                <th colspan="6" id="pct-pt" style="font-size: 10px; background:#dcfce7;">50%</th>
-                <th colspan="6" id="pct-ex" style="font-size: 10px; background:#fef3c7;">30%</th>
-                <th rowspan="2" style="font-size: 10px;">INITIAL</th>
-                <th rowspan="2" style="font-size: 10px;">TERM</th>
-                <th rowspan="2" style="font-size: 10px;">DESCRIPTOR</th>
-              </tr>
-              
-              <tr>
-                <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>TOTAL</th><th>PS</th><th>WS</th>
-                <th>1</th><th>2</th><th>3</th><th>TOTAL</th><th>PS</th><th>WS</th>
-                <th>SA1</th><th>SA2</th><th>TE</th><th>TOTAL</th><th>PS</th><th>WS</th>
-              </tr>
-              
-              <tr style="background:#fffbeb; font-size: 11px;">
-                <th class="name-col" style="text-align: right; padding-right: 8px;">HIGHEST POSSIBLE SCORE</th>
-                <th><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ww3" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ww4" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ww5" value="100"></th>
-                <th class="computed-cell" id="hps-ww-total">0</th>
-                <th>100</th>
-                <th id="hps-ww-ws">20</th>
-                
-                <th><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
-                <th class="computed-cell" id="hps-pt-total">0</th>
-                <th>100</th>
-                <th id="hps-pt-ws">50</th>
-                
-                <th><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
-                <th><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
-                <th class="computed-cell" id="hps-ex-total">0</th>
-                <th>100</th>
-                <th id="hps-ex-ws">30</th>
-              </tr>
-            </thead>
+            <colgroup id="gbCols"></colgroup>
+            <thead id="gbHead"></thead>
             <tbody id="gradebookBody"></tbody>
           </table>
         </div>
@@ -309,15 +270,15 @@
     <!-- 4. ATTENDANCE SHEET -->
     <div class="view" id="view-attendance-sheet" style="display: none;">
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 15px;">
+        <div class="toolbar">
+          <div class="left">
             <button class="btn btn-secondary" onclick="showView('attendance', document.querySelectorAll('.nav-item')[1])">← Back</button>
             <h3 style="margin: 0;" id="attendanceTitle">Attendance</h3>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div class="right">
             <label style="font-weight: 600; font-size: 14px;">Date: </label>
             <input type="date" id="attDate" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceSheet()">
-            <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 View Monthly History</button>
+            <button class="btn btn-secondary" onclick="openAttendanceHistory()">📅 Monthly History</button>
             <button class="btn" style="background: var(--success);" onclick="markAllPresent()">✅ Mark All Present</button>
           </div>
         </div>
@@ -353,12 +314,12 @@
     <!-- 5. ATTENDANCE HISTORY -->
     <div class="view" id="view-attendance-history" style="display: none;">
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 15px;">
+        <div class="toolbar">
+          <div class="left">
             <button class="btn btn-secondary" onclick="showView('attendance-sheet')">← Back to Today</button>
             <h3 style="margin: 0;" id="historyTitle">Monthly Attendance History</h3>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="right">
             <label style="font-weight: 600; font-size: 14px;">Month: </label>
             <input type="month" id="historyMonth" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceHistory()">
           </div>
@@ -366,39 +327,28 @@
         <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">✅ = Present | ⏰ = Late | 📝 = Excused | ❌ = Absent</p>
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
           <table class="excel-table history-grid" id="historyTable">
-            <thead>
-              <tr id="historyHeaderRow">
-                <th style="text-align:left; position: sticky; left:0; background:#f3f4f6; z-index:2;">Student Name</th>
-                <th style="background: #dcfce7; min-width: 60px;">Present</th>
-                <th style="background: #fee2e2; min-width: 60px;">Absent</th>
-              </tr>
-            </thead>
+            <thead><tr id="historyHeaderRow"></tr></thead>
             <tbody id="historyBody"></tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- 6. AT-RISK STUDENTS (NEW TWO-TABLE VIEW) -->
+    <!-- 6. AT-RISK STUDENTS -->
     <div class="view" id="view-warning" style="display:none">
-      <div class="card" style="margin-bottom: 20px;">
-        <h3 style="color: var(--danger); margin-bottom: 5px;">⚠️ At Risk of Failing</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Students whose current average falls below 78 or have missing requirements.</p>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead><tr><th>Student</th><th>Section</th><th>Current Avg</th><th>Reason</th></tr></thead>
-            <tbody id="atRiskFailingBody"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="risk-summary" id="riskSummary"></div>
 
       <div class="card">
-        <h3 style="color: var(--warning); margin-bottom: 5px;">🏃 At Risk of Dropping</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Students with high absences (5+) or low attendance rates (< 85%).</p>
+        <div class="risk-toolbar">
+          <select id="riskSection" class="input" onchange="renderRisk()"><option value="">All sections</option></select>
+          <input type="text" id="riskSearch" class="input" style="min-width:200px;" placeholder="🔍 Search student..." oninput="renderRisk()">
+          <button class="btn btn-secondary" id="riskClear" onclick="setRiskFilter('all')" style="display:none;">Clear filter ✕</button>
+        </div>
+        <div class="risk-rules" id="riskRules"></div>
         <div style="overflow-x: auto;">
-          <table>
-            <thead><tr><th>Student</th><th>Section</th><th>Absences</th><th>Reason</th></tr></thead>
-            <tbody id="atRiskDroppingBody"></tbody>
+          <table class="risk-table">
+            <thead><tr><th style="width:24%">Student</th><th style="width:9%">Risk</th><th style="width:36%">Grades &amp; missing work</th><th>Attendance</th></tr></thead>
+            <tbody id="riskBody"></tbody>
           </table>
         </div>
       </div>
@@ -407,7 +357,13 @@
     <!-- 7. SF2 REPORT -->
     <div class="view" id="view-sf2" style="display:none">
       <div class="card">
-        <h3>🏫 School Form 2 (SF2)</h3>
+        <div class="toolbar">
+          <div class="left"><h3 style="margin:0;">🏫 School Form 2 (SF2)</h3></div>
+          <div class="right">
+            <label style="font-weight: 600; font-size: 14px;">Section: </label>
+            <select id="sf2Section" class="input" style="width:auto;" onchange="loadSF2()"></select>
+          </div>
+        </div>
         <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Auto-generated from recorded attendance data.</p>
         <table>
           <thead><tr><th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th><th>Excused</th><th>Days Absent</th><th>Remarks</th></tr></thead>
