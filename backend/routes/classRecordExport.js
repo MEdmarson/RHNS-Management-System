@@ -7,7 +7,6 @@ const { authenticate, authorize } = require('../middleware/auth');
 const router = express.Router();
 router.use(authenticate, authorize('teacher'));
 
-// Same transmutation table as frontend
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
   [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
@@ -35,8 +34,8 @@ function normalizeGender(g) {
   return 'male';
 }
 
-// Helper to convert nulls to empty strings for Excel formulas
-const val = (v) => (v === null || v === undefined) ? '' : v;
+// FIXED: Return null instead of "" so Excel treats blank cells correctly
+const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
 
 async function fetchTermRows(pool, teacherId, subjectId, term) {
   const [rows] = await pool.query(`
@@ -70,7 +69,7 @@ async function fetchMeta(pool, teacherId, subjectId) {
 }
 
 // -----------------------------------------------------------------------------
-// Build one term sheet, WITH gender split and fixed columns
+// Build one term sheet
 // -----------------------------------------------------------------------------
 function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   const sheetName = `TERM ${term}`;
@@ -78,7 +77,6 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
     views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }]
   });
 
-  // Column widths - Fixed alignment (A=No, B=Name, C-J=WW, K-P=PT, Q-V=EX, W-Y=Grades)
   const widths = {
     A: 6, B: 32, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8,
     K: 6, L: 6, M: 6, N: 8, O: 8, P: 8, Q: 6, R: 6, S: 6, T: 8, U: 8, V: 8,
@@ -168,21 +166,21 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('B15').font = { bold: true };
   const hpsRef = rows[0] || {};
   ['ww1_hps', 'ww2_hps', 'ww3_hps', 'ww4_hps', 'ww5_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(3 + i).value = val(hpsRef[f]) || 100;
+    ws.getRow(15).getCell(3 + i).value = val(hpsRef[f]) ?? 100;
   });
   ws.getCell('H15').value = { formula: 'SUM(C15:G15)' };
   ws.getCell('I15').value = 100;
   ws.getCell('J15').value = { formula: 'I15*$C$13' };
 
   ['pt1_hps', 'pt2_hps', 'pt3_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(11 + i).value = val(hpsRef[f]) || 100;
+    ws.getRow(15).getCell(11 + i).value = val(hpsRef[f]) ?? 100;
   });
   ws.getCell('N15').value = { formula: 'SUM(K15:M15)' };
   ws.getCell('O15').value = 100;
   ws.getCell('P15').value = { formula: 'O15*$K$13' };
 
   ['ex1_hps', 'ex2_hps', 'ex3_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(17 + i).value = val(hpsRef[f]) || 100;
+    ws.getRow(15).getCell(17 + i).value = val(hpsRef[f]) ?? 100;
   });
   ws.getCell('T15').value = { formula: 'SUM(Q15:S15)' };
   ws.getCell('U15').value = 100;
@@ -206,14 +204,13 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   let cursor = 17;
 
   const writeBlock = (label, list) => {
-    // Section label row (e.g. "MALE")
     ws.getCell(`A${cursor}`).value = label;
     ws.getCell(`A${cursor}`).font = { bold: true, italic: true };
     cursor++;
 
     list.forEach((s, i) => {
       const row = ws.getRow(cursor);
-      row.getCell(1).value = i + 1;             // restart numbering
+      row.getCell(1).value = i + 1;
       row.getCell(2).value = s.full_name;
       
       // WWs (C through J)
@@ -291,7 +288,7 @@ function buildLookupSheet(wb) {
 }
 
 // -----------------------------------------------------------------------------
-// Build FINAL GRADE sheet, WITH gender split
+// Build FINAL GRADE sheet
 // -----------------------------------------------------------------------------
 function buildFinalSheet(wb, termRows, meta) {
   const studentMap = new Map();
@@ -366,9 +363,11 @@ function buildFinalSheet(wb, termRows, meta) {
       const row = ws.getRow(cursor);
       row.getCell(1).value = i + 1;
       row.getCell(2).value = s.full_name;
+      
       [1, 2, 3].forEach((t, idx) => {
         row.getCell(5 + idx).value = val(s.terms[t]?.term_grade);
       });
+      
       row.getCell(8).value = { formula: `IFERROR(ROUND(AVERAGE(E${cursor}:G${cursor}),0),"")` };
       row.getCell(9).value = {
         formula: `IF(H${cursor}="","",IF(H${cursor}>89,"Advancing",IF(H${cursor}>79,"Benchmarking",IF(H${cursor}>74,"Connecting",IF(H${cursor}>64,"Developing",IF(H${cursor}>0,"Emerging",0))))))`
