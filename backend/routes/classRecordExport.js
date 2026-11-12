@@ -29,14 +29,12 @@ const SUBJECT_WEIGHTS = {
   'Work Immersion':                              [0.20, 0.80, 0.00]
 };
 
-// Normalize a gender string to 'male' | 'female' (defaults to 'male')
 function normalizeGender(g) {
   const v = String(g || '').trim().toLowerCase();
   if (v === 'female' || v === 'f') return 'female';
   return 'male';
 }
 
-// Fetch helper: students + grades for one term, INCLUDING gender
 async function fetchTermRows(pool, teacherId, subjectId, term) {
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, s.lrn, s.gender,
@@ -69,19 +67,19 @@ async function fetchMeta(pool, teacherId, subjectId) {
 }
 
 // -----------------------------------------------------------------------------
-// Build one term sheet, WITH gender split
+// Build one term sheet, WITH gender split and fixed columns
 // -----------------------------------------------------------------------------
 function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   const sheetName = `TERM ${term}`;
   const ws = wb.addWorksheet(sheetName, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 15 }]
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }]
   });
 
-  // Column widths
+  // Column widths - Fixed alignment (A=No, B=Name, C-J=WW, K-P=PT, Q-V=EX, W-Y=Grades)
   const widths = {
-    A: 6, B: 30, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8,
+    A: 6, B: 32, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8,
     K: 6, L: 6, M: 6, N: 8, O: 8, P: 8, Q: 6, R: 6, S: 6, T: 8, U: 8, V: 8,
-    W: 10, X: 10, Y: 12
+    W: 12, X: 12, Y: 15
   };
   Object.entries(widths).forEach(([k, v]) => { ws.getColumn(k).width = v; });
 
@@ -95,29 +93,29 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF666666' } };
 
   ws.getCell('C5').value = 'REGION:';
-  ws.getCell('G5').value = 'I';
+  ws.getCell('H5').value = 'I';
   ws.getCell('N5').value = 'DIVISION';
-  ws.getCell('P5').value = 'PANGASINAN II';
-  ws.getCell('U5').value = 'SCHOOL ID';
+  ws.getCell('Q5').value = 'PANGASINAN II';
+  ws.getCell('T5').value = 'SCHOOL ID';
   ws.getCell('W5').value = '300341';
 
   ws.getCell('C7').value = 'SCHOOL NAME:';
-  ws.getCell('G7').value = 'ROSALES NATIONAL HIGH SCHOOL';
+  ws.getCell('H7').value = 'ROSALES NATIONAL HIGH SCHOOL';
   ws.getCell('S7').value = 'SCHOOL YEAR:';
   ws.getCell('W7').value = '2026-2027';
 
   ws.getCell('A10').value = `TERM ${term}`;
   ws.getCell('C10').value = 'GRADE LEVEL';
-  ws.getCell('H10').value = '11';
+  ws.getCell('I10').value = '11';
   ws.getCell('N10').value = 'TEACHER:';
-  ws.getCell('P10').value = meta.teacher_name;
+  ws.getCell('Q10').value = meta.teacher_name;
   ws.getCell('U10').value = 'SUBJECT:';
   ws.getCell('W10').value = meta.subject_name;
 
   ws.getCell('C11').value = 'SECTION';
-  ws.getCell('H11').value = meta.section;
+  ws.getCell('I11').value = meta.section;
   ws.getCell('N11').value = 'TRACK:';
-  ws.getCell('P11').value = 'ACADEMIC';
+  ws.getCell('Q11').value = 'ACADEMIC';
   ws.getCell('U11').value = 'SUBJECT TYPE:';
   ws.getCell('W11').value = subjectType;
 
@@ -127,22 +125,22 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('Q13').value = { formula: `VLOOKUP(W11,Sheet2!$A$2:$D$11,4,TRUE)` };
 
   // Category headers
-  ws.mergeCells('C12:H12');
+  ws.mergeCells('C12:J12');
   ws.getCell('C12').value = 'WRITTEN/ORAL WORKS (WWs)';
   ws.getCell('C12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } };
   ws.getCell('C12').font = { bold: true };
 
-  ws.mergeCells('K12:N12');
+  ws.mergeCells('K12:P12');
   ws.getCell('K12').value = 'PRODUCT/PERFORMANCE TASKS (PTs)';
   ws.getCell('K12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
   ws.getCell('K12').font = { bold: true };
 
-  ws.mergeCells('Q12:T12');
+  ws.mergeCells('Q12:V12');
   ws.getCell('Q12').value = 'EXAMINATIONS (EXs)';
   ws.getCell('Q12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
   ws.getCell('Q12').font = { bold: true };
 
-  // Sub-headers row 14
+  // Sub-headers row 14 (Aligned with columns C through V)
   ['1', '2', '3', '4', '5', 'TOTAL', 'PS', 'WS'].forEach((h, i) => {
     const cell = ws.getRow(14).getCell(3 + i);
     cell.value = h;
@@ -162,7 +160,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
     cell.alignment = { horizontal: 'center' };
   });
 
-  // HPS row
+  // HPS row 15
   ws.getCell('B15').value = 'HIGHEST POSSIBLE SCORE';
   ws.getCell('B15').font = { bold: true };
   const hpsRef = rows[0] || {};
@@ -195,7 +193,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('Y16').value = 'Descriptor';
   ws.getRow(16).font = { bold: true };
 
-  // ---- Split rows into MALE / FEMALE ----
+  // Split into MALE / FEMALE
   const male = [];
   const female = [];
   rows.forEach(r => {
@@ -204,18 +202,18 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
 
   let cursor = 17;
 
-  // Writes one gender block and returns the next available row
   const writeBlock = (label, list) => {
     // Section label row (e.g. "MALE")
     ws.getCell(`A${cursor}`).value = label;
     ws.getCell(`A${cursor}`).font = { bold: true, italic: true };
-    ws.mergeCells(`A${cursor}:B${cursor}`);
     cursor++;
 
     list.forEach((s, i) => {
       const row = ws.getRow(cursor);
-      row.getCell(1).value = i + 1;             // restart numbering per gender
+      row.getCell(1).value = i + 1;             // restart numbering
       row.getCell(2).value = s.full_name;
+      
+      // WWs (C through J)
       row.getCell(3).value = s.ww1 ?? '';
       row.getCell(4).value = s.ww2 ?? '';
       row.getCell(5).value = s.ww3 ?? '';
@@ -225,6 +223,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       row.getCell(9).value = { formula: `IF(OR(H${cursor}=0),"",H${cursor}/$H$15*100)` };
       row.getCell(10).value = { formula: `IFERROR(I${cursor}*$C$13,"")` };
 
+      // PTs (K through P)
       row.getCell(11).value = s.pt1 ?? '';
       row.getCell(12).value = s.pt2 ?? '';
       row.getCell(13).value = s.pt3 ?? '';
@@ -232,6 +231,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       row.getCell(15).value = { formula: `IF(OR(N${cursor}=0),"",N${cursor}/$N$15*100)` };
       row.getCell(16).value = { formula: `IFERROR(O${cursor}*$K$13,"")` };
 
+      // EXs (Q through V)
       row.getCell(17).value = s.ex1 ?? '';
       row.getCell(18).value = s.ex2 ?? '';
       row.getCell(19).value = s.ex3 ?? '';
@@ -239,6 +239,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       row.getCell(21).value = { formula: `IF(OR(T${cursor}=0),"",T${cursor}/$T$15*100)` };
       row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13,"")` };
 
+      // Final Grades (W, X, Y)
       row.getCell(23).value = {
         formula: `IF(OR(J${cursor}=0,P${cursor}=0),"",SUM(J${cursor},P${cursor},V${cursor}))`
       };
@@ -290,7 +291,6 @@ function buildLookupSheet(wb) {
 // Build FINAL GRADE sheet, WITH gender split
 // -----------------------------------------------------------------------------
 function buildFinalSheet(wb, termRows, meta) {
-  // Merge three terms by student
   const studentMap = new Map();
   for (const term of [1, 2, 3]) {
     for (const r of termRows[term]) {
@@ -307,13 +307,13 @@ function buildFinalSheet(wb, termRows, meta) {
 
   const ws = wb.addWorksheet('FINAL GRADE');
   ws.getColumn('A').width = 6;
-  ws.getColumn('B').width = 30;
-  ws.getColumn('E').width = 10;
-  ws.getColumn('F').width = 10;
-  ws.getColumn('G').width = 10;
-  ws.getColumn('H').width = 12;
-  ws.getColumn('I').width = 16;
-  ws.getColumn('J').width = 14;
+  ws.getColumn('B').width = 32;
+  ws.getColumn('E').width = 12;
+  ws.getColumn('F').width = 12;
+  ws.getColumn('G').width = 12;
+  ws.getColumn('H').width = 15;
+  ws.getColumn('I').width = 18;
+  ws.getColumn('J').width = 15;
 
   ws.mergeCells('A2:J2');
   ws.getCell('A2').value = 'CLASS RECORD - FINAL GRADES';
@@ -346,7 +346,6 @@ function buildFinalSheet(wb, termRows, meta) {
   ws.getRow(13).values = ['', '', '', '', 'TERM 1', 'TERM 2', 'TERM 3', '', '', ''];
   ws.getRow(13).font = { bold: true };
 
-  // Split students by gender
   const male = [];
   const female = [];
   for (const [, s] of studentMap) {
@@ -358,7 +357,6 @@ function buildFinalSheet(wb, termRows, meta) {
   const writeBlock = (label, list) => {
     ws.getCell(`A${cursor}`).value = label;
     ws.getCell(`A${cursor}`).font = { bold: true, italic: true };
-    ws.mergeCells(`A${cursor}:D${cursor}`);
     cursor++;
 
     list.forEach((s, i) => {
