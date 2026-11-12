@@ -179,14 +179,19 @@ router.get('/attendance-history/:subjectId', async (req, res) => {
 router.get('/at-risk', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
-             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS absences
+      SELECT u.id, u.full_name,
+             ROUND(AVG(g.term_grade), 2) AS avg_grade,
+             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present') AS raw_present,
+             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late')    AS raw_late,
+             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused') AS raw_excused,
+             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent')  AS raw_absent
       FROM users u 
       JOIN students s ON s.user_id = u.id
       JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
       LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
       GROUP BY u.id, u.full_name 
-      HAVING avg_grade < 75 OR absences > 4`, [req.user.id]);
+      HAVING (avg_grade < 75) 
+          OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

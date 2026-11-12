@@ -487,9 +487,48 @@ async function loadAttendanceHistory() {
 // --- WARNINGS & SF2 ---
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
-  document.getElementById('warningBody').innerHTML = rows.map(r => `
-    <tr><td>${r.full_name}</td><td>${r.avg_grade ?? '—'}</td><td>${r.absences}</td></tr>
-  `).join('') || '<tr><td colspan="3" style="text-align:center;">🎉 No at-risk students!</td></tr>';
+
+  // Category 1: at risk of failing (avg term grade below 75)
+  const failing = rows.filter(r =>
+    r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75
+  );
+  document.getElementById('failingBody').innerHTML = failing.map(r => `
+    <tr>
+      <td>${r.full_name}</td>
+      <td><span class="badge danger">${r.avg_grade}</span></td>
+    </tr>
+  `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
+
+  // Category 2: at risk of dropping (more than 4 effective absences).
+  // Use the raw attendance counts from the backend and the shared
+  // computeAttendance() rule so this always matches the attendance sheet.
+  const dropping = rows.filter(r => {
+    const t = computeAttendance({
+      present: Number(r.raw_present) || 0,
+      late:    Number(r.raw_late)    || 0,
+      excused: Number(r.raw_excused) || 0,
+      absent:  Number(r.raw_absent)  || 0
+    });
+    return t.absent > 4;
+  }).map(r => {
+    const t = computeAttendance({
+      present: Number(r.raw_present) || 0,
+      late:    Number(r.raw_late)    || 0,
+      excused: Number(r.raw_excused) || 0,
+      absent:  Number(r.raw_absent)  || 0
+    });
+    return { ...r, effective_absences: t.absent, converted: t.converted };
+  });
+
+  document.getElementById('droppingBody').innerHTML = dropping.map(r => `
+    <tr>
+      <td>${r.full_name}</td>
+      <td>
+        <span class="badge warn">${r.effective_absences}</span>
+        ${r.converted ? `<span style="font-size:11px; color: var(--muted);">(${r.converted} from lates)</span>` : ''}
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
 }
 
 async function loadSF2() {
