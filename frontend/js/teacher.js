@@ -78,7 +78,7 @@ function showView(name, el) {
   const titles = {
     'subjects': 'My Classes', 'gradebook': 'Class Record', 'attendance': 'Attendance Dashboard',
     'attendance-sheet': 'Daily Attendance', 'attendance-history': 'Monthly History',
-    'warning': 'Early Warning', 'sf2': 'SF2 Report'
+    'warning': 'At-Risk Students', 'sf2': 'SF2 Report'
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Teacher Portal';
 
@@ -185,7 +185,7 @@ function renderGradebook() {
   if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
-    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="24" style="text-align:center; padding: 20px;">No students found.</td></tr>';
+    document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="25" style="text-align:center; padding: 20px;">No students found.</td></tr>';
     return;
   }
 
@@ -200,6 +200,7 @@ function renderGradebook() {
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
+      
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
       <td class="computed-cell" id="ww-total-${r.student_id}"></td>
@@ -219,6 +220,17 @@ function renderGradebook() {
       <td class="initial-cell" id="initial-${r.student_id}"></td>
       <td class="term-grade-cell" id="term-${r.student_id}"></td>
       <td class="descriptor-cell" id="desc-${r.student_id}"></td>
+
+      <!-- Missing Requirements Input -->
+      <td style="padding: 2px;">
+        <input type="text" 
+               data-idx="${originalIndex}" 
+               data-field="missing_requirements" 
+               value="${r.missing_requirements || ''}" 
+               placeholder="e.g. PT2, Exam"
+               style="width: 100%; max-width: 150px; font-size: 11px; text-align: left; padding: 4px; border-color: #fca5a5;"
+               onchange="markUnsaved()">
+      </td>
     </tr>`;
   }).join('');
 
@@ -288,10 +300,16 @@ async function saveAllGrades() {
   inputs.forEach(input => {
     const idx = input.getAttribute('data-idx');
     const field = input.getAttribute('data-field');
+    
     if (!payload[idx]) {
       payload[idx] = { student_id: currentGradebookData[idx].student_id, subject_id: currentSubjectId, term: term, ...hpsValues };
     }
-    payload[idx][field] = input.value ? parseInt(input.value) : 0;
+    
+    if (field === 'missing_requirements') {
+      payload[idx][field] = input.value.trim();
+    } else {
+      payload[idx][field] = input.value ? parseInt(input.value) : 0;
+    }
   });
 
   try {
@@ -484,14 +502,47 @@ async function loadAttendanceHistory() {
   }).join('');
 }
 
-// --- WARNINGS & SF2 ---
+// --- AT-RISK DASHBOARD LOGIC ---
 async function loadWarnings() {
-  const rows = await apiFetch('/teacher/at-risk');
-  document.getElementById('warningBody').innerHTML = rows.map(r => `
-    <tr><td>${r.full_name}</td><td>${r.avg_grade ?? '—'}</td><td>${r.absences}</td></tr>
-  `).join('') || '<tr><td colspan="3" style="text-align:center;">🎉 No at-risk students!</td></tr>';
+  try {
+    const data = await apiFetch('/teacher/at-risk');
+    
+    // --- Render At Risk of Failing ---
+    const failingBody = document.getElementById('atRiskFailingBody');
+    if (data.failing.length === 0) {
+      failingBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px; color: var(--success);">🎉 No students are at risk of failing.</td></tr>';
+    } else {
+      failingBody.innerHTML = data.failing.map(r => `
+        <tr>
+          <td><strong>${r.full_name}</strong></td>
+          <td>${r.section}</td>
+          <td><span class="badge danger">${r.current_avg}</span></td>
+          <td style="font-size: 13px; color: var(--danger); text-align:left;">${r.reason}</td>
+        </tr>
+      `).join('');
+    }
+
+    // --- Render At Risk of Dropping ---
+    const droppingBody = document.getElementById('atRiskDroppingBody');
+    if (data.dropping.length === 0) {
+      droppingBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px; color: var(--success);">🎉 No students are at risk of dropping.</td></tr>';
+    } else {
+      droppingBody.innerHTML = data.dropping.map(r => `
+        <tr>
+          <td><strong>${r.full_name}</strong></td>
+          <td>${r.section}</td>
+          <td><span class="badge warn">${r.total_absences}</span></td>
+          <td style="font-size: 13px; color: var(--warning); text-align:left;">${r.reason}</td>
+        </tr>
+      `).join('');
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load at-risk students.', 'error');
+  }
 }
 
+// --- SF2 ---
 async function loadSF2() {
   const rows = await apiFetch(`/teacher/sf2/1`);
   document.getElementById('sf2Body').innerHTML = rows.map(r => {
