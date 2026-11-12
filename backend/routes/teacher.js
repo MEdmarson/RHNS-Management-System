@@ -67,33 +67,25 @@ router.post('/grades', async (req, res) => {
     ex1_hps, ex2_hps, ex3_hps
   } = req.body;
 
-  // 1. Calculate Totals
   const wwTotal = [ww1, ww2, ww3, ww4, ww5].reduce((a, b) => a + (Number(b) || 0), 0);
   const ptTotal = [pt1, pt2, pt3].reduce((a, b) => a + (Number(b) || 0), 0);
   const exTotal = [ex1, ex2, ex3].reduce((a, b) => a + (Number(b) || 0), 0);
 
-  // 2. Calculate HPS Totals
   const wwHpsTotal = [ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
   const ptHpsTotal = [pt1_hps, pt2_hps, pt3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
   const exHpsTotal = [ex1_hps, ex2_hps, ex3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
 
-  // 3. Calculate PS (Percentage Score)
   const wwPs = (wwTotal / wwHpsTotal) * 100;
   const ptPs = (ptTotal / ptHpsTotal) * 100;
   const exPs = (exTotal / exHpsTotal) * 100;
 
-  // 4. Calculate WS (Weighted Score) - Core Subjects: WW 20%, PT 50%, EX 30%
   const wwWs = wwPs * 0.20; 
   const ptWs = ptPs * 0.50; 
   const exWs = exPs * 0.30; 
 
-  // 5. Calculate Initial Grade and Term Grade
   const initialGrade = wwWs + ptWs + exWs;
-  
-  // FIX: Apply the transmutation to get the actual TERM GRADE instead of just rounding the initial grade
   const termGrade = transmute(initialGrade);
 
-  // 6. Calculate Descriptor
   let descriptor = 'Emerging';
   if (termGrade > 89) descriptor = 'Advancing';
   else if (termGrade > 79) descriptor = 'Benchmarking';
@@ -134,13 +126,12 @@ router.post('/grades', async (req, res) => {
   }
 });
 
-// GET final grades (average of all 3 terms per student)
+// GET final grades
 router.get('/final-grades', async (req, res) => {
   const subjectId = req.query.subject;
   if (!subjectId) return res.status(400).json({ error: "Subject ID required" });
 
   try {
-    // Pivot using g.term_grade (Column X), NOT g.initial_grade (Column W)
     const [rows] = await pool.query(`
       SELECT u.id AS student_id, u.full_name,
              MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
@@ -161,15 +152,12 @@ router.get('/final-grades', async (req, res) => {
       const t2 = r.term2 === null ? null : Number(r.term2);
       const t3 = r.term3 === null ? null : Number(r.term3);
       
-      // Get only the terms that have actual grades
       const present = [t1, t2, t3].filter(v => v !== null && v !== undefined);
       
-      // Round the average exactly like Excel's =ROUND(AVERAGE(...),0)
       const final_grade = present.length 
         ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) 
         : null;
 
-      // Use the same thresholds as the Term Grade descriptors in the ECR
       let descriptor = '';
       if (final_grade !== null) {
         if (final_grade > 89)      descriptor = 'Advancing';
@@ -277,8 +265,20 @@ router.get('/at-risk', async (req, res) => {
   }
 });
 
+// *** UPDATED SF2 ROUTE WITH SECURITY CHECK ***
 router.get('/sf2/:sectionId', async (req, res) => {
   try {
+    // 1. Verify the teacher actually handles this section
+    const [authCheck] = await pool.query(`
+      SELECT 1 FROM subjects sub 
+      WHERE sub.section_id = ? AND sub.teacher_id = ? LIMIT 1`, 
+      [req.params.sectionId, req.user.id]);
+    
+    if (!authCheck.length) {
+      return res.status(403).json({ error: "Unauthorized access to this section's SF2" });
+    }
+
+    // 2. Fetch the students for this section
     const [rows] = await pool.query(`
       SELECT s.lrn, u.full_name, 
              SUM(a.status = 'present') AS days_present, 

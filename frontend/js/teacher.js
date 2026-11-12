@@ -131,7 +131,6 @@ async function loadGradebook() {
     return;
   }
 
-  // Leaving final mode — ensure normal table + controls are restored
   if (currentGradebookMode === 'final') {
     restoreGradebookLayout();
   }
@@ -153,18 +152,15 @@ async function loadGradebook() {
   renderGradebook();
 }
 
-// Restore the standard 4-row header, 24-column colgroup, and visible controls
 function restoreGradebookLayout() {
   currentGradebookMode = 'term';
   const table = document.getElementById('gradebookTable');
   table.classList.remove('final-mode');
 
-  // Show subject type controls, save button, HPS row
   document.getElementById('subjectTypeLabel').style.display = '';
   document.getElementById('subjectTypeSelect').style.display = '';
   document.getElementById('saveBtn').style.display = '';
 
-  // colgroup — restore full 24-column widths
   document.getElementById('gradebookColgroup').innerHTML = `
     <col style="width: 160px;">
     <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
@@ -176,7 +172,6 @@ function restoreGradebookLayout() {
     <col style="width: 60px;"><col style="width: 60px;"><col style="width: 80px;">
   `;
 
-  // thead — restore the 4-row structure
   document.getElementById('gradebookThead').innerHTML = `
     <tr>
       <th rowspan="3" class="name-col">LEARNERS' NAMES</th>
@@ -223,29 +218,24 @@ function restoreGradebookLayout() {
     </tr>
   `;
 
-  // Re-bind HPS listeners (the old nodes were replaced)
   document.querySelectorAll('.hps-input').forEach(el => el.addEventListener('input', updateHpsTotals));
 }
 
-// --- FINAL GRADE MODE ---
 async function loadFinalGrades() {
   currentGradebookMode = 'final';
   const table = document.getElementById('gradebookTable');
   table.classList.add('final-mode');
 
-  // Hide controls that don't apply to a summary view
   document.getElementById('subjectTypeLabel').style.display = 'none';
   document.getElementById('subjectTypeSelect').style.display = 'none';
   document.getElementById('saveBtn').style.display = 'none';
 
-  // 7-column colgroup
   document.getElementById('gradebookColgroup').innerHTML = `
     <col style="width: 180px;">
     <col style="width: 70px;"><col style="width: 70px;"><col style="width: 70px;">
     <col style="width: 90px;"><col style="width: 110px;"><col style="width: 100px;">
   `;
 
-  // 2-row header
   document.getElementById('gradebookThead').innerHTML = `
     <tr>
       <th rowspan="2" class="name-col">LEARNERS' NAMES</th>
@@ -327,7 +317,7 @@ function changeSubjectType() {
 }
 
 function updateHpsTotals() {
-  if (currentGradebookMode === 'final') return; // no HPS in final mode
+  if (currentGradebookMode === 'final') return; 
   const getVal = id => { const el = document.getElementById(id); return el ? (parseInt(el.value) || 0) : 0; };
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
   const pct = v => Math.round(v * 10000) / 100;
@@ -446,7 +436,7 @@ function calculateRowEl(tr) {
 }
 
 async function saveAllGrades() {
-  if (currentGradebookMode === 'final') return; // no editable cells in final mode
+  if (currentGradebookMode === 'final') return; 
 
   const btn = document.getElementById('saveBtn');
   btn.textContent = 'Saving...';
@@ -664,7 +654,6 @@ async function loadAttendanceHistory() {
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
 
-  // Category 1: at risk of failing (avg term grade below 75)
   const failing = rows.filter(r =>
     r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75
   );
@@ -675,7 +664,6 @@ async function loadWarnings() {
     </tr>
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
 
-  // Category 2: at risk of dropping (more than 4 effective absences)
   const dropping = rows.filter(r => {
     const t = computeAttendance({
       present: Number(r.raw_present) || 0,
@@ -705,17 +693,46 @@ async function loadWarnings() {
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
 }
 
+// *** UPDATED SF2 LOGIC ***
 async function loadSF2() {
-  const rows = await apiFetch(`/teacher/sf2/1`);
-  document.getElementById('sf2Body').innerHTML = rows.map(r => {
-    const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
-    const note = t.converted ? ` <span style="font-size:11px; color: var(--muted);">(${t.converted} from lates)</span>` : '';
-    return `
-    <tr>
-      <td>${r.lrn}</td><td>${r.full_name}</td><td>${t.present}</td><td>${t.late}</td><td>${t.excused}</td><td>${t.absent}${note}</td>
-      <td>${t.absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
-    </tr>`;
-  }).join('');
+  try {
+    // 1. Get the teacher's assigned subjects/sections
+    const subjects = await apiFetch('/teacher/my-subjects');
+    
+    if (subjects.length === 0) {
+      document.getElementById('sf2Body').innerHTML = '<tr><td colspan="7" style="text-align:center;">No sections assigned to you.</td></tr>';
+      return;
+    }
+
+    // 2. Get the first section assigned to this teacher
+    const activeSectionId = subjects[0].section_id;
+    const sectionName = subjects[0].section;
+
+    // 3. Update the page title to show which section is loaded
+    document.querySelector('#view-sf2 h3').innerHTML = `🏫 School Form 2 (SF2) — ${sectionName}`;
+
+    // 4. Fetch the data for this specific section
+    const rows = await apiFetch(`/teacher/sf2/${activeSectionId}`);
+    
+    document.getElementById('sf2Body').innerHTML = rows.map(r => {
+      const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
+      const note = t.converted ? ` <span style="font-size:11px; color: var(--muted);">(${t.converted} from lates)</span>` : '';
+      return `
+      <tr>
+        <td>${r.lrn}</td>
+        <td>${r.full_name}</td>
+        <td>${t.present}</td>
+        <td>${t.late}</td>
+        <td>${t.excused}</td>
+        <td>${t.absent}${note}</td>
+        <td>${t.absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
+      </tr>`;
+    }).join('');
+    
+  } catch (err) {
+    console.error("SF2 Error:", err);
+    showToast("Failed to load SF2 report.", "error");
+  }
 }
 
 document.getElementById('attDate').valueAsDate = new Date();
