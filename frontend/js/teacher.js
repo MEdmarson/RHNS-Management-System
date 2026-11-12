@@ -195,7 +195,7 @@ function renderGradebook() {
     
     const makeInput = (field) => {
       const val = r[field] ?? '';
-      return `<input type="number" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
+      return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
     return `
@@ -273,6 +273,8 @@ function calculateRowEl(tr) {
   set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
+  const dEl = document.getElementById(`desc-${studentId}`);
+  dEl.className = 'descriptor-cell' + (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : '');
 }
 
 async function saveAllGrades() {

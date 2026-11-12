@@ -82,6 +82,9 @@
       box-sizing: border-box;
     }
     .excel-table thead th:not(.name-col) { text-align: center; padding-left: 2px; }
+    /* style.css pins the first <th> of every row to the left; only the name column should be pinned */
+    .excel-table thead th:not(.name-col) { left: auto; border-right: 1px solid #d1d5db; }
+
     .excel-table thead tr:nth-child(1) th { top: 0; }
     .excel-table thead tr:nth-child(2) th { top: 26px; }
     .excel-table thead tr:nth-child(3) th { top: 52px; }
@@ -100,6 +103,74 @@
     }
     .excel-table tbody td:first-child { background: #fff; z-index: 1; }
     .excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
+
+    /* ---------- Design polish (all screens) ---------- */
+    .excel-table tbody tr:nth-child(even) td:not(.computed-cell):not(.initial-cell):not(.descriptor-cell) { background: #fafafa; }
+    .excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
+    .excel-table tbody td:first-child { font-weight: 500; }
+    .excel-table tbody td:first-child { box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
+    .term-grade-cell { font-weight: 800; font-size: 14px; }
+    /* Descriptor chips colour-coded by level */
+    .descriptor-cell.desc-advancing   { background: #dcfce7; color: #166534; }
+    .descriptor-cell.desc-benchmarking{ background: #dbeafe; color: #1e40af; }
+    .descriptor-cell.desc-connecting  { background: #e0f2fe; color: #075985; }
+    .descriptor-cell.desc-developing  { background: #fef3c7; color: #92400e; }
+    .descriptor-cell.desc-emerging    { background: #fee2e2; color: #991b1b; }
+    .excel-table input:placeholder-shown { background: #fff; }
+    .swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
+
+    /* ---------- Mobile ---------- */
+    @media (max-width: 768px) {
+      /* Compact top bar + page padding (style.css stacks them, wasting vertical space) */
+      .main { padding: 12px 10px 90px; }
+      .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+      .topbar h2 { font-size: 18px; }
+      .user-chip { padding: 5px 10px; font-size: 12px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+      #toastContainer { bottom: 80px; right: 10px; left: 10px; }
+
+      /* Bottom tab bar: icon above label */
+      .nav-item .nav-icon { font-size: 20px; line-height: 1; }
+      .nav-item .nav-label { font-size: 10.5px; line-height: 1.1; }
+
+      /* Monthly history: style.css pins a 250px name column + 2 right columns, which fills a phone screen */
+      #historyTable td:first-child, #historyTable th:first-child { min-width: 110px !important; max-width: 110px !important; font-size: 11px; padding-left: 6px; }
+      #historyTable td, #historyTable th { min-width: 30px !important; padding: 5px 2px; font-size: 11px; }
+      #historyTable td:last-child, #historyTable th:last-child { min-width: 46px !important; right: 0; }
+      #historyTable td:nth-last-child(2), #historyTable th:nth-last-child(2) { min-width: 46px !important; right: 46px; }
+      #view-gradebook .card { padding: 8px !important; }
+      .gb-toolbar { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+      .gb-title { gap: 10px !important; flex-wrap: wrap; }
+      .gb-title h3 { font-size: 15px; flex: 1; min-width: 0; }
+      .gb-controls { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-items: center; }
+      .gb-select { width: 100% !important; max-width: none !important; min-height: 38px; font-size: 14px; }
+      #gradebookSearch { max-width: none !important; min-height: 40px; font-size: 16px; }
+
+      /* Floating save button, always reachable */
+      #saveBtn {
+        position: fixed; right: 14px; bottom: 80px; z-index: 60; /* sits above the 65px bottom tab bar */
+        padding: 12px 18px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.28);
+        grid-column: 1 / -1;
+      }
+
+      .swipe-hint { display: block; }
+      .excel-wrapper { min-height: 280px; max-height: calc(100dvh - 330px); border-radius: 6px; overscroll-behavior: contain; }
+
+      /* Narrower columns so more of the sheet fits on screen */
+      .excel-table col:first-child { width: 112px !important; }
+      .excel-table col { width: 42px !important; }
+      .excel-table thead th, .excel-table td { padding: 3px 1px; }
+      .excel-table tbody td:first-child,
+      .excel-table thead th.name-col { padding-left: 5px; font-size: 11px; line-height: 1.2; }
+      .excel-table th { font-size: 10px; }
+      .excel-table input { max-width: 38px; min-height: 34px; font-size: 16px; padding: 2px 0; }
+      .excel-table .hps-input { min-height: 30px; font-size: 14px; }
+      .excel-table thead tr:nth-child(4) th { height: 40px; }
+      .descriptor-cell { font-size: 10px; }
+    }
+    @media (max-width: 480px) {
+      .excel-table col:first-child { width: 96px !important; }
+      .excel-table tbody td:first-child, .excel-table thead th.name-col { font-size: 10.5px; }
+    }
   </style>
 </head>
 <body>
@@ -115,10 +186,10 @@
       <img src="rnshs-logo.png" alt="Logo">
       <span>RNHS</span>
     </div>
-    <button class="nav-item active" onclick="showView('subjects', this)">📚 My Classes</button>
-    <button class="nav-item" onclick="showView('attendance', this)">📋 Attendance</button>
-    <button class="nav-item" onclick="showView('warning', this)">⚠️ Early Warning</button>
-    <button class="nav-item" onclick="showView('sf2', this)">🏫 SF2 Report</button>
+    <button class="nav-item active" onclick="showView('subjects', this)"><span class="nav-icon">📚</span><span class="nav-label">My Classes</span></button>
+    <button class="nav-item" onclick="showView('attendance', this)"><span class="nav-icon">📋</span><span class="nav-label">Attendance</span></button>
+    <button class="nav-item" onclick="showView('warning', this)"><span class="nav-icon">⚠️</span><span class="nav-label">Early Warning</span></button>
+    <button class="nav-item" onclick="showView('sf2', this)"><span class="nav-icon">🏫</span><span class="nav-label">SF2 Report</span></button>
     
     <div class="sidebar-logout">
       <button onclick="logout()">↩ Logout</button>
@@ -139,17 +210,17 @@
     <!-- 2. CLASS RECORD -->
     <div class="view" id="view-gradebook" style="display: none;">
       <div class="card" style="padding: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 15px;">
+        <div class="gb-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+          <div class="gb-title" style="display: flex; align-items: center; gap: 15px;">
             <button class="btn btn-secondary" onclick="showView('subjects', document.querySelector('.nav-item'))">← Back</button>
             <h3 style="margin: 0;" id="gradebookTitle">Class Record</h3>
             <span id="unsavedIndicator" style="display:none; color: var(--danger); font-size: 12px; font-weight: bold;">● Unsaved changes</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="gb-controls" style="display: flex; align-items: center; gap: 10px;">
             <label style="font-weight: 600; font-size: 14px;">Subject Type: </label>
-            <select id="subjectTypeSelect" class="input" style="width: auto; max-width: 260px; font-weight: bold;" onchange="changeSubjectType()"></select>
+            <select id="subjectTypeSelect" class="input gb-select" style="font-weight: bold;" onchange="changeSubjectType()"></select>
             <label style="font-weight: 600; font-size: 14px;">Term: </label>
-            <select id="termSelect" class="input" style="width: 100px; font-weight: bold;" onchange="loadGradebook()">
+            <select id="termSelect" class="input gb-select gb-term" style="font-weight: bold;" onchange="loadGradebook()">
               <option value="1">Term 1</option>
               <option value="2">Term 2</option>
               <option value="3">Term 3</option>
@@ -162,6 +233,7 @@
           <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
         </div>
 
+        <div class="swipe-hint">⇆ Swipe sideways to see all columns — names stay pinned</div>
         <div class="excel-wrapper">
           <table class="excel-table" id="gradebookTable">
             <!-- 
