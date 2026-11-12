@@ -4,6 +4,22 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 router.use(authenticate, authorize('teacher'));
 
+// DepEd Transmutation Table
+const TRANSMUTATION = [
+  [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
+  [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
+  [80.61,84],[79.43,83],[78.25,82],[77.07,81],[75.89,80],[74.71,79],[73.53,78],[72.35,77],
+  [71.17,76],[69.99,75],[65.33,74],[60.66,73],[56,72],[51.33,71],[46.66,70],[42,69],
+  [37.33,68],[32.67,67],[28,66],[23.34,65],[18.67,64],[14,63],[9.34,62],[4.67,61],[0,60]
+];
+
+function transmute(initial) {
+  for (const [min, grade] of TRANSMUTATION) {
+    if (initial > min) return grade;
+  }
+  return 0;
+}
+
 // GET subjects assigned to this teacher
 router.get('/my-subjects', async (req, res) => {
   const [rows] = await pool.query(`
@@ -73,7 +89,9 @@ router.post('/grades', async (req, res) => {
 
   // 5. Calculate Initial Grade and Term Grade
   const initialGrade = wwWs + ptWs + exWs;
-  const termGrade = Math.round(initialGrade);
+  
+  // FIX: Apply the transmutation to get the actual TERM GRADE instead of just rounding the initial grade
+  const termGrade = transmute(initialGrade);
 
   // 6. Calculate Descriptor
   let descriptor = 'Emerging';
