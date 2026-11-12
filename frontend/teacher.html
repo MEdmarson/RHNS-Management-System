@@ -11,7 +11,7 @@
     /* --- Specific Styles for the Class Record --- */
     .excel-wrapper {
       overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
+      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
       max-height: 70vh;
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -22,7 +22,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 12px;
-      table-layout: fixed;
+      table-layout: fixed; /* Forces strict column widths */
     }
     
     .excel-table th, .excel-table td {
@@ -41,9 +41,11 @@
       font-size: 11px;
     }
     
+    /* Sub-headers */
     .excel-table thead tr:nth-child(1) th { background: #e5e7eb; font-size: 12px; }
     .excel-table thead tr:nth-child(2) th { background: #f9fafb; font-size: 10px; }
     
+    /* Inputs */
     .excel-table input {
       width: 100%;
       max-width: 45px;
@@ -67,24 +69,28 @@
       font-weight: bold; 
     }
     
+    /* Computed Columns */
     .computed-cell { background: #f9fafb; font-weight: bold; font-size: 12px; }
     .descriptor-cell { background: #ecfdf5; color: #065f46; font-weight: 600; font-size: 11px; white-space: normal; }
     .initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; font-size: 12px; }
 
-    /* Sticky Headers */
+    /* Sticky Headers: each header row gets its own offset so they stack instead of overlapping */
     .excel-table thead th {
       position: sticky;
       z-index: 2;
       height: 26px;
       box-sizing: border-box;
     }
-    .excel-table thead th:not(.name-col) { text-align: center; padding-left: 2px; left: auto; border-right: 1px solid #d1d5db; }
+    .excel-table thead th:not(.name-col) { text-align: center; padding-left: 2px; }
+    /* style.css pins the first <th> of every row to the left; only the name column should be pinned */
+    .excel-table thead th:not(.name-col) { left: auto; border-right: 1px solid #d1d5db; }
+
     .excel-table thead tr:nth-child(1) th { top: 0; }
     .excel-table thead tr:nth-child(2) th { top: 26px; }
     .excel-table thead tr:nth-child(3) th { top: 52px; }
     .excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
 
-    /* Sticky Student Name Column */
+    /* Sticky Student Name Column (only the name cells, NOT the first th of every header row) */
     .excel-table tbody td:first-child,
     .excel-table thead th.name-col {
       position: sticky;
@@ -93,25 +99,28 @@
       border-right: 2px solid #d1d5db;
       padding-left: 8px;
       font-size: 12px;
-      white-space: normal;
+      white-space: normal; /* Allow name to wrap */
     }
     .excel-table tbody td:first-child { background: #fff; z-index: 1; }
     .excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
 
-    /* Design polish */
+    /* ---------- Design polish (all screens) ---------- */
     .excel-table tbody tr:nth-child(even) td:not(.computed-cell):not(.initial-cell):not(.descriptor-cell) { background: #fafafa; }
     .excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
-    .excel-table tbody td:first-child { font-weight: 500; box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
+    .excel-table tbody td:first-child { font-weight: 500; }
+    .excel-table tbody td:first-child { box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
     .term-grade-cell { font-weight: 800; font-size: 14px; }
-    
+    /* Descriptor chips colour-coded by level */
     .descriptor-cell.desc-advancing   { background: #dcfce7; color: #166534; }
     .descriptor-cell.desc-benchmarking{ background: #dbeafe; color: #1e40af; }
     .descriptor-cell.desc-connecting  { background: #e0f2fe; color: #075985; }
     .descriptor-cell.desc-developing  { background: #fef3c7; color: #92400e; }
     .descriptor-cell.desc-emerging    { background: #fee2e2; color: #991b1b; }
+    .excel-table input:placeholder-shown { background: #fff; }
     .swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
 
-    /* Attendance status buttons */
+
+    /* ---------- Attendance status buttons ---------- */
     .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
     .att-btn { background: #fff; color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
     .att-btn:hover { background: #f3f4f6; }
@@ -121,20 +130,24 @@
     .att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
     .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
 
-    /* Mobile */
+    /* ---------- Mobile ---------- */
     @media (max-width: 768px) {
+      /* Attendance: 2x2 status buttons so 4 options fit on a phone */
       .att-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
       .att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
 
+      /* Compact top bar + page padding (style.css stacks them, wasting vertical space) */
       .main { padding: 12px 10px 90px; }
       .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
       .topbar h2 { font-size: 18px; }
       .user-chip { padding: 5px 10px; font-size: 12px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
       #toastContainer { bottom: 80px; right: 10px; left: 10px; }
 
+      /* Bottom tab bar: icon above label */
       .nav-item .nav-icon { font-size: 20px; line-height: 1; }
       .nav-item .nav-label { font-size: 10.5px; line-height: 1.1; }
 
+      /* Monthly history: style.css pins a 250px name column + 2 right columns, which fills a phone screen */
       #historyTable td:first-child, #historyTable th:first-child { min-width: 110px !important; max-width: 110px !important; font-size: 11px; padding-left: 6px; }
       #historyTable td, #historyTable th { min-width: 30px !important; padding: 5px 2px; font-size: 11px; }
       #historyTable td:last-child, #historyTable th:last-child { min-width: 46px !important; right: 0; }
@@ -147,8 +160,9 @@
       .gb-select { width: 100% !important; max-width: none !important; min-height: 38px; font-size: 14px; }
       #gradebookSearch { max-width: none !important; min-height: 40px; font-size: 16px; }
 
+      /* Floating save button, always reachable */
       #saveBtn {
-        position: fixed; right: 14px; bottom: 80px; z-index: 60;
+        position: fixed; right: 14px; bottom: 80px; z-index: 60; /* sits above the 65px bottom tab bar */
         padding: 12px 18px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.28);
         grid-column: 1 / -1;
       }
@@ -156,6 +170,7 @@
       .swipe-hint { display: block; }
       .excel-wrapper { min-height: 280px; max-height: calc(100dvh - 330px); border-radius: 6px; overscroll-behavior: contain; }
 
+      /* Narrower columns so more of the sheet fits on screen */
       .excel-table col:first-child { width: 112px !important; }
       .excel-table col { width: 42px !important; }
       .excel-table thead th, .excel-table td { padding: 3px 1px; }
@@ -166,6 +181,10 @@
       .excel-table .hps-input { min-height: 30px; font-size: 14px; }
       .excel-table thead tr:nth-child(4) th { height: 40px; }
       .descriptor-cell { font-size: 10px; }
+    }
+    @media (max-width: 480px) {
+      .excel-table col:first-child { width: 96px !important; }
+      .excel-table tbody td:first-child, .excel-table thead th.name-col { font-size: 10.5px; }
     }
   </style>
 </head>
@@ -184,7 +203,7 @@
     </div>
     <button class="nav-item active" onclick="showView('subjects', this)"><span class="nav-icon">📚</span><span class="nav-label">My Classes</span></button>
     <button class="nav-item" onclick="showView('attendance', this)"><span class="nav-icon">📋</span><span class="nav-label">Attendance</span></button>
-    <button class="nav-item" onclick="showView('warning', this)"><span class="nav-icon">🚨</span><span class="nav-label">At-Risk Students</span></button>
+    <button class="nav-item" onclick="showView('warning', this)"><span class="nav-icon">⚠️</span><span class="nav-label">Early Warning</span></button>
     <button class="nav-item" onclick="showView('sf2', this)"><span class="nav-icon">🏫</span><span class="nav-label">SF2 Report</span></button>
     
     <div class="sidebar-logout">
@@ -232,18 +251,30 @@
         <div class="swipe-hint">⇆ Swipe sideways to see all columns — names stay pinned</div>
         <div class="excel-wrapper">
           <table class="excel-table" id="gradebookTable">
+            <!-- 
+              COLGROUP: Defines exact widths to prevent layout breaking.
+              Order: Name, WW(1-5), WW-Total, WW-PS, WW-WS, 
+                     PT(1-3), PT-Total, PT-PS, PT-WS, 
+                     EX(1-3), EX-Total, EX-PS, EX-WS, 
+                     Initial, Term, Descriptor
+            -->
             <colgroup>
-              <col style="width: 160px;">
+              <col style="width: 160px;"> <!-- Student Name -->
+              <!-- WW -->
               <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
               <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
+              <!-- PT -->
               <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
               <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
+              <!-- EX -->
               <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
               <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
+              <!-- Grades -->
               <col style="width: 60px;"><col style="width: 60px;"><col style="width: 80px;">
             </colgroup>
 
             <thead>
+              <!-- ROW 1: MAIN CATEGORIES -->
               <tr>
                 <th rowspan="3" class="name-col">LEARNERS' NAMES</th>
                 <th colspan="8" style="background:#e0e7ff;">WRITTEN/ORAL WORKS (WWs)</th>
@@ -252,23 +283,30 @@
                 <th colspan="3" style="background:#f3f4f6;">GRADES</th>
               </tr>
               
+              <!-- ROW 2: WEIGHTS -->
               <tr>
                 <th colspan="8" id="pct-ww" style="font-size: 10px; background:#e0e7ff;">20%</th>
                 <th colspan="6" id="pct-pt" style="font-size: 10px; background:#dcfce7;">50%</th>
                 <th colspan="6" id="pct-ex" style="font-size: 10px; background:#fef3c7;">30%</th>
-                <th rowspan="2" style="font-size: 10px;">INITIAL</th>
-                <th rowspan="2" style="font-size: 10px;">TERM</th>
-                <th rowspan="2" style="font-size: 10px;">DESCRIPTOR</th>
+                <th rowspan="3" style="font-size: 10px;">INITIAL<br>GRADE</th>
+                <th rowspan="3" style="font-size: 10px;">TERM<br>GRADE</th>
+                <th rowspan="3" style="font-size: 10px;">DESCRIPTOR</th>
               </tr>
               
+              <!-- ROW 3: COLUMN NUMBERS -->
               <tr>
+                <!-- WW -->
                 <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>TOTAL</th><th>PS</th><th>WS</th>
+                <!-- PT -->
                 <th>1</th><th>2</th><th>3</th><th>TOTAL</th><th>PS</th><th>WS</th>
+                <!-- EX -->
                 <th>SA1</th><th>SA2</th><th>TE</th><th>TOTAL</th><th>PS</th><th>WS</th>
               </tr>
               
+              <!-- ROW 4: HPS INPUTS -->
               <tr style="background:#fffbeb; font-size: 11px;">
                 <th class="name-col" style="text-align: right; padding-right: 8px;">HIGHEST POSSIBLE SCORE</th>
+                <!-- WW HPS -->
                 <th><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ww3" value="100"></th>
@@ -277,14 +315,14 @@
                 <th class="computed-cell" id="hps-ww-total">0</th>
                 <th>100</th>
                 <th id="hps-ww-ws">20</th>
-                
+                <!-- PT HPS -->
                 <th><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
                 <th class="computed-cell" id="hps-pt-total">0</th>
                 <th>100</th>
                 <th id="hps-pt-ws">50</th>
-                
+                <!-- EX HPS -->
                 <th><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
                 <th><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
@@ -348,7 +386,7 @@
       </div>
     </div>
 
-    <!-- 5. ATTENDANCE HISTORY -->
+    <!-- 5. ATTENDANCE HISTORY (MONTHLY GRID) -->
     <div class="view" id="view-attendance-history" style="display: none;">
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
@@ -361,8 +399,9 @@
             <input type="month" id="historyMonth" class="input" style="width: auto; font-weight: bold;" onchange="loadAttendanceHistory()">
           </div>
         </div>
-        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">✅ = Present | ⏰ = Late | 📝 = Excused | ❌ = Absent</p>
+        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">✅ = Present | ❌ = Absent | Blank = No class / Not recorded</p>
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+          <div class="att-legend"><span>✅ Present</span><span>⏰ Late</span><span>📝 Excused</span><span>❌ Absent</span><span>* includes absences converted from lates</span></div>
           <table class="excel-table history-grid" id="historyTable">
             <thead>
               <tr id="historyHeaderRow">
@@ -377,28 +416,15 @@
       </div>
     </div>
 
-    <!-- 6. AT-RISK STUDENTS -->
+    <!-- 6. EARLY WARNING -->
     <div class="view" id="view-warning" style="display:none">
-      <div class="card" style="margin-bottom: 20px;">
-        <h3 style="color: var(--danger); margin-bottom: 5px;">⚠️ At Risk of Failing</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Students whose current average falls below 78 or have missing requirements/INC.</p>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead><tr><th>Student</th><th>Section</th><th>Current Avg</th><th>Reason</th></tr></thead>
-            <tbody id="atRiskFailingBody"></tbody>
-          </table>
-        </div>
-      </div>
-
       <div class="card">
-        <h3 style="color: var(--warning); margin-bottom: 5px;">🏃 At Risk of Dropping</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Students with high absences (5+) or low attendance rates (< 85%).</p>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead><tr><th>Student</th><th>Section</th><th>Absences</th><th>Reason</th></tr></thead>
-            <tbody id="atRiskDroppingBody"></tbody>
-          </table>
-        </div>
+        <h3>⚠️ At-Risk Students</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Flagged if Term Grade falls below 75 or absences exceed 4.</p>
+        <table>
+          <thead><tr><th>Student</th><th>Avg Term Grade</th><th>Absences</th></tr></thead>
+          <tbody id="warningBody"></tbody>
+        </table>
       </div>
     </div>
 

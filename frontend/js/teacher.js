@@ -78,7 +78,7 @@ function showView(name, el) {
   const titles = {
     'subjects': 'My Classes', 'gradebook': 'Class Record', 'attendance': 'Attendance Dashboard',
     'attendance-sheet': 'Daily Attendance', 'attendance-history': 'Monthly History',
-    'warning': 'At-Risk Students', 'sf2': 'SF2 Report'
+    'warning': 'Early Warning', 'sf2': 'SF2 Report'
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Teacher Portal';
 
@@ -200,7 +200,6 @@ function renderGradebook() {
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
-      
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
       <td class="computed-cell" id="ww-total-${r.student_id}"></td>
@@ -230,7 +229,6 @@ function calculateRow(input) {
   calculateRowEl(input.closest('tr'));
 }
 
-// --- UPDATED CALCULATION WITH INC LOGIC ---
 function calculateRowEl(tr) {
   const studentId = tr.id.replace('row-', '');
   const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
@@ -256,28 +254,8 @@ function calculateRowEl(tr) {
   let initial = null;
   if (ww.ws !== 0 && pt.ws !== 0) initial = (ww.ws || 0) + (pt.ws || 0) + (ex.ws || 0);
 
-  // --- NEW INC LOGIC ---
-  // Check if the teacher has entered grades for the TE (ex3) across the section.
-  // If >= 50% of students have an ex3 grade, and this student's ex3 is blank, flag as INC.
-  let isInc = false;
-  const teInput = tr.querySelector(`input[data-field="ex3"]`);
-  if (teInput && teInput.value === '') {
-    // Count how many students in the current table have a value for ex3
-    const allRows = document.querySelectorAll('#gradebookBody tr');
-    let filledTeCount = 0;
-    allRows.forEach(row => {
-      const teField = row.querySelector(`input[data-field="ex3"]`);
-      if (teField && teField.value !== '') filledTeCount++;
-    });
-    
-    // 50% threshold
-    if (filledTeCount >= (allRows.length / 2) && filledTeCount > 0) {
-      isInc = true;
-    }
-  }
-
-  const hasGrade = initial !== null && initial > 0 && !isInc;
-  const termGrade = isInc ? 'INC' : (initial === null ? null : transmute(initial));
+  const hasGrade = initial !== null && initial > 0;
+  const termGrade = initial === null ? null : transmute(initial);
 
   const fmt2 = v => v === null ? '' : v.toFixed(2);
   const set = (id, text) => { document.getElementById(`${id}-${studentId}`).textContent = text; };
@@ -287,11 +265,10 @@ function calculateRowEl(tr) {
   set('ex-total', ex.total || '');  set('ex-ps', fmt2(ex.ps));  set('ex-ws', fmt2(ex.ws));
 
   set('initial', hasGrade ? Math.round(initial) : '');
-  set('term', isInc ? '<span style="color:#b45309; font-weight:bold;">INC</span>' : (hasGrade ? termGrade : ''));
-  set('desc', isInc ? 'Incomplete' : (hasGrade ? getDescriptor(termGrade) : ''));
-  
+  set('term', hasGrade ? termGrade : '');
+  set('desc', hasGrade ? getDescriptor(termGrade) : '');
   const dEl = document.getElementById(`desc-${studentId}`);
-  dEl.className = 'descriptor-cell' + (isInc ? ' desc-developing' : (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : ''));
+  dEl.className = 'descriptor-cell' + (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : '');
 }
 
 async function saveAllGrades() {
@@ -311,13 +288,10 @@ async function saveAllGrades() {
   inputs.forEach(input => {
     const idx = input.getAttribute('data-idx');
     const field = input.getAttribute('data-field');
-    
     if (!payload[idx]) {
       payload[idx] = { student_id: currentGradebookData[idx].student_id, subject_id: currentSubjectId, term: term, ...hpsValues };
     }
-    
-    // Allow empty values to be sent as NULL
-    payload[idx][field] = input.value !== '' ? parseInt(input.value) : null;
+    payload[idx][field] = input.value ? parseInt(input.value) : 0;
   });
 
   try {
@@ -510,45 +484,14 @@ async function loadAttendanceHistory() {
   }).join('');
 }
 
-// --- AT-RISK DASHBOARD LOGIC ---
+// --- WARNINGS & SF2 ---
 async function loadWarnings() {
-  try {
-    const data = await apiFetch('/teacher/at-risk');
-    
-    const failingBody = document.getElementById('atRiskFailingBody');
-    if (data.failing.length === 0) {
-      failingBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px; color: var(--success);">🎉 No students are at risk of failing.</td></tr>';
-    } else {
-      failingBody.innerHTML = data.failing.map(r => `
-        <tr>
-          <td><strong>${r.full_name}</strong></td>
-          <td>${r.section}</td>
-          <td><span class="badge danger">${r.current_avg || 'INC'}</span></td>
-          <td style="font-size: 13px; color: var(--danger); text-align:left;">${r.reason}</td>
-        </tr>
-      `).join('');
-    }
-
-    const droppingBody = document.getElementById('atRiskDroppingBody');
-    if (data.dropping.length === 0) {
-      droppingBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px; color: var(--success);">🎉 No students are at risk of dropping.</td></tr>';
-    } else {
-      droppingBody.innerHTML = data.dropping.map(r => `
-        <tr>
-          <td><strong>${r.full_name}</strong></td>
-          <td>${r.section}</td>
-          <td><span class="badge warn">${r.total_absences}</span></td>
-          <td style="font-size: 13px; color: var(--warning); text-align:left;">${r.reason}</td>
-        </tr>
-      `).join('');
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('Failed to load at-risk students.', 'error');
-  }
+  const rows = await apiFetch('/teacher/at-risk');
+  document.getElementById('warningBody').innerHTML = rows.map(r => `
+    <tr><td>${r.full_name}</td><td>${r.avg_grade ?? '—'}</td><td>${r.absences}</td></tr>
+  `).join('') || '<tr><td colspan="3" style="text-align:center;">🎉 No at-risk students!</td></tr>';
 }
 
-// --- SF2 ---
 async function loadSF2() {
   const rows = await apiFetch(`/teacher/sf2/1`);
   document.getElementById('sf2Body').innerHTML = rows.map(r => {
