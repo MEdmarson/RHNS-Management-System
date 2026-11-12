@@ -67,8 +67,6 @@ router.post('/grades', async (req, res) => {
   const exPs = (exTotal / exHpsTotal) * 100;
 
   // 4. Calculate WS (Weighted Score) - Core Subjects: WW 20%, PT 50%, EX 30%
-  // Note: If you added the dynamic SUBJECT_WEIGHTS logic to the frontend, you might 
-  // want to pass the weights from the frontend to this backend route as well.
   const wwWs = wwPs * 0.20; 
   const ptWs = ptPs * 0.50; 
   const exWs = exPs * 0.30; 
@@ -112,6 +110,61 @@ router.post('/grades', async (req, res) => {
        ex1_hps, ex2_hps, ex3_hps]);
 
     res.json({ ok: true, termGrade });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET final grades (average of all 3 terms per student)
+router.get('/final-grades', async (req, res) => {
+  const subjectId = req.query.subject;
+  if (!subjectId) return res.status(400).json({ error: "Subject ID required" });
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.id AS student_id, u.full_name,
+             MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
+             MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
+             MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3
+      FROM subjects sub
+      JOIN sections sec ON sec.id = sub.section_id
+      JOIN students s  ON s.section_id = sec.id
+      JOIN users u     ON u.id = s.user_id
+      LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
+      WHERE sub.teacher_id = ? AND sub.id = ?
+      GROUP BY u.id, u.full_name
+      ORDER BY u.full_name
+    `, [req.user.id, subjectId]);
+
+    const out = rows.map(r => {
+      const t1 = r.term1 === null ? null : Number(r.term1);
+      const t2 = r.term2 === null ? null : Number(r.term2);
+      const t3 = r.term3 === null ? null : Number(r.term3);
+      const present = [t1, t2, t3].filter(v => v !== null && v !== undefined);
+      const final_grade = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
+
+      let descriptor = '';
+      if (final_grade !== null) {
+        if (final_grade > 89)      descriptor = 'Advancing';
+        else if (final_grade > 79) descriptor = 'Benchmarking';
+        else if (final_grade > 74) descriptor = 'Connecting';
+        else if (final_grade > 64) descriptor = 'Developing';
+        else if (final_grade > 0)  descriptor = 'Emerging';
+      }
+
+      return {
+        student_id: r.student_id,
+        full_name: r.full_name,
+        term1: r.term1,
+        term2: r.term2,
+        term3: r.term3,
+        final_grade,
+        descriptor
+      };
+    });
+
+    res.json(out);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

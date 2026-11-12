@@ -111,6 +111,10 @@
     .excel-table input:placeholder-shown { background: #fff; }
     .swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
 
+    /* ---------- Final Grade view extras ---------- */
+    .final-grade-cell { font-weight: 800; font-size: 14px; background: #ecfdf5; color: #065f46; }
+    .remarks-passed { background: #dcfce7; color: #166534; font-weight: 700; }
+    .remarks-failed { background: #fee2e2; color: #991b1b; font-weight: 700; }
 
     /* ---------- Attendance status buttons ---------- */
     .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
@@ -182,6 +186,10 @@
       .descriptor-cell { font-size: 10px; }
 
       .warning-grid { grid-template-columns: 1fr; }
+
+      /* Final Grade view: tighter widths on mobile */
+      #gradebookTable.final-mode col:first-child { width: 130px !important; }
+      #gradebookTable.final-mode col { width: 52px !important; }
     }
     @media (max-width: 480px) {
       .excel-table col:first-child { width: 96px !important; }
@@ -233,26 +241,32 @@
             <span id="unsavedIndicator" style="display:none; color: var(--danger); font-size: 12px; font-weight: bold;">● Unsaved changes</span>
           </div>
           <div class="gb-controls" style="display: flex; align-items: center; gap: 10px;">
-            <label style="font-weight: 600; font-size: 14px;">Subject Type: </label>
+            <label id="subjectTypeLabel" style="font-weight: 600; font-size: 14px;">Subject Type: </label>
             <select id="subjectTypeSelect" class="input gb-select" style="font-weight: bold;" onchange="changeSubjectType()"></select>
             <label style="font-weight: 600; font-size: 14px;">Term: </label>
             <select id="termSelect" class="input gb-select gb-term" style="font-weight: bold;" onchange="loadGradebook()">
               <option value="1">Term 1</option>
               <option value="2">Term 2</option>
               <option value="3">Term 3</option>
+              <option value="final">Final Grade</option>
             </select>
             <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
           </div>
         </div>
 
         <div style="margin-bottom: 10px;">
-          <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderGradebook()">
+          <input type="text" id="gradebookSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="onGradebookSearch()">
         </div>
 
         <div class="swipe-hint">⇆ Swipe sideways to see all columns — names stay pinned</div>
         <div class="excel-wrapper">
           <table class="excel-table" id="gradebookTable">
-            <colgroup>
+            <!-- 
+              COLGROUP is rebuilt dynamically by renderFinalGrades() when
+              the Final Grade view is active, and restored by
+              restoreGradebookLayout() when the user switches back.
+            -->
+            <colgroup id="gradebookColgroup">
               <col style="width: 160px;">
               <col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;"><col style="width: 45px;">
               <col style="width: 50px;"><col style="width: 45px;"><col style="width: 45px;">
@@ -263,7 +277,7 @@
               <col style="width: 60px;"><col style="width: 60px;"><col style="width: 80px;">
             </colgroup>
 
-            <thead>
+            <thead id="gradebookThead">
               <tr>
                 <th rowspan="3" class="name-col">LEARNERS' NAMES</th>
                 <th colspan="8" style="background:#e0e7ff;">WRITTEN/ORAL WORKS (WWs)</th>
@@ -397,7 +411,6 @@
     <div class="view" id="view-warning" style="display:none">
       <div class="warning-grid">
 
-        <!-- Category 1: At Risk of Failing -->
         <div class="card warning-card failing">
           <h3>📉 At Risk of Failing</h3>
           <p class="warning-desc">Students whose average term grade falls below 75.</p>
@@ -407,7 +420,6 @@
           </table>
         </div>
 
-        <!-- Category 2: At Risk of Dropping -->
         <div class="card warning-card dropping">
           <h3>🚪 At Risk of Dropping</h3>
           <p class="warning-desc">Students with more than 4 absences (every 3 lates counts as 1 absence).</p>
