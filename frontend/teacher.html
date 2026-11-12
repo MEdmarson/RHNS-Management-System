@@ -119,8 +119,23 @@
     .excel-table input:placeholder-shown { background: #fff; }
     .swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
 
+
+    /* ---------- Attendance status buttons ---------- */
+    .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+    .att-btn { background: #fff; color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
+    .att-btn:hover { background: #f3f4f6; }
+    .att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
+    .att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
+    .att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
+    .att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+    .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+
     /* ---------- Mobile ---------- */
     @media (max-width: 768px) {
+      /* Attendance: 2x2 status buttons so 4 options fit on a phone */
+      .att-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
+      .att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
+
       /* Compact top bar + page padding (style.css stacks them, wasting vertical space) */
       .main { padding: 12px 10px 90px; }
       .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
@@ -347,14 +362,22 @@
           <input type="text" id="attendanceSearch" class="input" style="width: 100%; max-width: 300px;" placeholder="🔍 Search student name..." oninput="renderAttendance()">
         </div>
 
+        <div class="att-legend">
+          <span><b>Present</b> attended</span>
+          <span><b>Late</b> attended &mdash; every 3 lates = 1 absence</span>
+          <span><b>Excused</b> not counted as absent</span>
+          <span><b>Absent</b> counted as absent</span>
+        </div>
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
           <table class="excel-table" style="table-layout: auto;">
             <thead>
               <tr>
                 <th style="text-align:left; min-width: 150px;">Student Name</th>
-                <th class="hide-mobile">Total Days Present</th>
-                <th class="hide-mobile">Total Days Absent</th>
-                <th style="min-width: 160px;">Today's Status</th>
+                <th class="hide-mobile">Present</th>
+                <th class="hide-mobile">Late <span style="text-transform:none;">(3 = 1 abs.)</span></th>
+                <th class="hide-mobile">Excused</th>
+                <th class="hide-mobile">Absent</th>
+                <th style="min-width: 150px;">Today's Status</th>
               </tr>
             </thead>
             <tbody id="attendanceBody"></tbody>
@@ -378,6 +401,7 @@
         </div>
         <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">✅ = Present | ❌ = Absent | Blank = No class / Not recorded</p>
         <div style="overflow-x: auto; max-height: 600px; border: 1px solid var(--border); border-radius: 8px;">
+          <div class="att-legend"><span>✅ Present</span><span>⏰ Late</span><span>📝 Excused</span><span>❌ Absent</span><span>* includes absences converted from lates</span></div>
           <table class="excel-table history-grid" id="historyTable">
             <thead>
               <tr id="historyHeaderRow">
@@ -410,7 +434,7 @@
         <h3>🏫 School Form 2 (SF2)</h3>
         <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Auto-generated from recorded attendance data.</p>
         <table>
-          <thead><tr><th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Days Absent</th><th>Remarks</th></tr></thead>
+          <thead><tr><th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th><th>Excused</th><th>Days Absent</th><th>Remarks</th></tr></thead>
           <tbody id="sf2Body"></tbody>
         </table>
         <button class="btn" style="margin-top:20px;" onclick="window.print()">🖨 Print / Export PDF</button>

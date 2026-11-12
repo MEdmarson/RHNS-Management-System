@@ -269,7 +269,7 @@ function calculateRowEl(tr) {
   set('pt-total', pt.total || '');  set('pt-ps', fmt2(pt.ps));  set('pt-ws', fmt2(pt.ws));
   set('ex-total', ex.total || '');  set('ex-ps', fmt2(ex.ps));  set('ex-ws', fmt2(ex.ws));
 
-  // *** THE FIX: Show as integer in UI, but keep the decimal math for the final grade ***
+  // *** The UI displays the rounded integer, but `initial` is still a decimal for the term grade calculation ***
   set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
@@ -315,6 +315,20 @@ async function saveAllGrades() {
   }
 }
 
+// --- ATTENDANCE RULES ---
+const LATES_PER_ABSENCE = 3;
+const EXCUSED_COUNTS_AS_ABSENT = false;
+
+function computeAttendance({ present = 0, late = 0, excused = 0, absent = 0 } = {}) {
+  present = +present || 0; late = +late || 0; excused = +excused || 0; absent = +absent || 0;
+  const converted = Math.floor(late / LATES_PER_ABSENCE);          
+  return {
+    present: present + late - converted,                           
+    absent: absent + converted + (EXCUSED_COUNTS_AS_ABSENT ? excused : 0),
+    late, excused, converted
+  };
+}
+
 // --- ATTENDANCE LOGIC ---
 async function loadAttendanceDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
@@ -351,34 +365,51 @@ async function loadAttendanceSheet() {
   renderAttendance();
 }
 
+const ATT_BUTTONS = [
+  { status: 'present', label: 'Present', icon: '✓' },
+  { status: 'late',    label: 'Late',    icon: '⏰' },
+  { status: 'excused', label: 'Excused', icon: '📝' },
+  { status: 'absent',  label: 'Absent',  icon: '✕' }
+];
+
 function renderAttendance() {
   const searchQuery = document.getElementById('attendanceSearch').value.toLowerCase();
   let filtered = currentAttendanceData;
   if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
-    document.getElementById('attendanceBody').innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">No students found.</td></tr>';
+    document.getElementById('attendanceBody').innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">No students found.</td></tr>';
     return;
   }
 
-  document.getElementById('attendanceBody').innerHTML = filtered.map(r => `
+  document.getElementById('attendanceBody').innerHTML = filtered.map(r => {
+    const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
+    const lateNote = t.converted > 0 ? ` <span title="${LATES_PER_ABSENCE} lates = 1 absence" style="font-size:10px;">(${t.converted} from lates)</span>` : '';
+    const lateLeft = t.late % LATES_PER_ABSENCE;
+    const warnLate = t.late > 0 ? ` <span style="font-size:10px; color: var(--muted);">${lateLeft}/${LATES_PER_ABSENCE}</span>` : '';
+
+    const buttons = ATT_BUTTONS.map(b =>
+      `<button class="btn btn-small att-btn att-${b.status} ${r.status === b.status ? 'active' : ''}" onclick="mark(${r.student_id},'${b.status}')"><span class="att-icon">${b.icon}</span> ${b.label}</button>`
+    ).join('');
+
+    return `
     <tr>
       <td style="text-align:left;">
         <strong>${r.full_name}</strong>
         <div class="mobile-stats" style="display: none;">
-          <span class="badge ok">Present: ${r.days_present || 0}</span>
-          <span class="badge danger">Absent: ${r.days_absent || 0}</span>
+          <span class="badge ok">P: ${t.present}</span>
+          <span class="badge warn">L: ${t.late}</span>
+          <span class="badge" style="background:#dbeafe;color:#1e40af;">E: ${t.excused}</span>
+          <span class="badge danger">A: ${t.absent}</span>
         </div>
       </td>
-      <td class="hide-mobile"><span class="badge ok" style="font-size: 13px;">${r.days_present || 0} Days</span></td>
-      <td class="hide-mobile"><span class="badge danger" style="font-size: 13px;">${r.days_absent || 0} Days</span></td>
-      <td>
-        <div style="display: flex; gap: 4px; justify-content: center;">
-          <button class="btn btn-small ${r.status === 'present' ? 'btn-primary' : 'btn-secondary'}" onclick="mark(${r.student_id},'present')">Present</button>
-          <button class="btn btn-small ${r.status === 'absent' ? 'btn-danger' : 'btn-secondary'}" onclick="mark(${r.student_id},'absent')">Absent</button>
-        </div>
-      </td>
-    </tr>`).join('');
+      <td class="hide-mobile"><span class="badge ok" style="font-size: 13px;">${t.present} Days</span></td>
+      <td class="hide-mobile"><span class="badge warn" style="font-size: 13px;">${t.late}</span>${warnLate}</td>
+      <td class="hide-mobile"><span class="badge" style="font-size: 13px; background:#dbeafe; color:#1e40af;">${t.excused}</span></td>
+      <td class="hide-mobile"><span class="badge danger" style="font-size: 13px;">${t.absent} Days</span>${lateNote}</td>
+      <td><div class="att-btns">${buttons}</div></td>
+    </tr>`;
+  }).join('');
 }
 
 async function mark(student_id, status) {
@@ -419,31 +450,38 @@ async function loadAttendanceHistory() {
 
   let headerHtml = `<th style="text-align:left; position: sticky; left:0; background:#f3f4f6; z-index:2;">Student Name</th>`;
   for (let i = 1; i <= daysInMonth; i++) headerHtml += `<th style="min-width: 30px; font-size: 11px;">${i}</th>`;
-  headerHtml += `<th style="background: #dcfce7; min-width: 60px;">Present</th><th style="background: #fee2e2; min-width: 60px;">Absent</th>`;
+  headerHtml += `<th style="background: #dcfce7; min-width: 60px;" title="Present + Late (minus lates converted to absences)">Present</th><th style="background: #fee2e2; min-width: 60px;" title="Absent + converted lates">Absent</th>`;
   document.getElementById('historyHeaderRow').innerHTML = headerHtml;
 
   const studentMap = {};
-  students.forEach(s => studentMap[s.student_id] = { name: s.full_name, days: {}, presentCount: 0, absentCount: 0 });
+  students.forEach(s => studentMap[s.student_id] = { name: s.full_name, days: {}, counts: { present: 0, late: 0, excused: 0, absent: 0 } });
 
   records.forEach(r => {
     const day = new Date(r.date).getDate();
-    if (studentMap[r.student_id]) {
-      studentMap[r.student_id].days[day] = r.status;
-      if (r.status === 'present') studentMap[r.student_id].presentCount++;
-      if (r.status === 'absent') studentMap[r.student_id].absentCount++;
+    const st = studentMap[r.student_id];
+    if (st && st.counts[r.status] !== undefined) {
+      st.days[day] = r.status;
+      st.counts[r.status]++;
     }
   });
 
+  const CELL = {
+    present: { mark: '✅', color: '#dcfce7' },
+    late:    { mark: '⏰', color: '#fef3c7' },
+    excused: { mark: '📝', color: '#dbeafe' },
+    absent:  { mark: '❌', color: '#fee2e2' }
+  };
+
   document.getElementById('historyBody').innerHTML = Object.values(studentMap).map(s => {
+    const t = computeAttendance(s.counts);
     let rowHtml = `<tr><td style="text-align:left;">${s.name}</td>`;
     for (let i = 1; i <= daysInMonth; i++) {
-      const status = s.days[i];
-      let mark = '', color = '';
-      if (status === 'present') { mark = '✅'; color = '#dcfce7'; }
-      else if (status === 'absent') { mark = '❌'; color = '#fee2e2'; }
-      rowHtml += `<td style="background: ${color};">${mark}</td>`;
+      const c = CELL[s.days[i]];
+      rowHtml += `<td style="background: ${c ? c.color : ''};" title="${s.days[i] || ''}">${c ? c.mark : ''}</td>`;
     }
-    rowHtml += `<td><span class="badge ok">${s.presentCount}</span></td><td><span class="badge danger">${s.absentCount}</span></td></tr>`;
+    const tip = `Late: ${t.late}, Excused: ${t.excused}` + (t.converted ? `, ${t.converted} absence(s) from lates` : '');
+    rowHtml += `<td title="${tip}"><span class="badge ok">${t.present}</span></td>`;
+    rowHtml += `<td title="${tip}"><span class="badge danger">${t.absent}</span>${t.converted ? '*' : ''}</td></tr>`;
     return rowHtml;
   }).join('');
 }
@@ -458,11 +496,15 @@ async function loadWarnings() {
 
 async function loadSF2() {
   const rows = await apiFetch(`/teacher/sf2/1`);
-  document.getElementById('sf2Body').innerHTML = rows.map(r => `
+  document.getElementById('sf2Body').innerHTML = rows.map(r => {
+    const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
+    const note = t.converted ? ` <span style="font-size:11px; color: var(--muted);">(${t.converted} from lates)</span>` : '';
+    return `
     <tr>
-      <td>${r.lrn}</td><td>${r.full_name}</td><td>${r.days_present}</td><td>${r.days_absent}</td>
-      <td>${r.days_absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
-    </tr>`).join('');
+      <td>${r.lrn}</td><td>${r.full_name}</td><td>${t.present}</td><td>${t.late}</td><td>${t.excused}</td><td>${t.absent}${note}</td>
+      <td>${t.absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
+    </tr>`;
+  }).join('');
 }
 
 document.getElementById('attDate').valueAsDate = new Date();
