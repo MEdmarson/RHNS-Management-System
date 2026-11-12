@@ -1,239 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login</title>
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      background: #f3f4f6;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-    }
-
-    .auth-card {
-      background: #fff;
-      width: 100%;
-      max-width: 420px;
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-      padding: 2rem 1.75rem;
-    }
-
-    .auth-card h1 {
-      margin: 0 0 1.25rem;
-      font-size: 1.5rem;
-      color: #111827;
-      text-align: center;
-    }
-
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .tab {
-      flex: 1;
-      padding: 0.65rem 1rem;
-      text-align: center;
-      background: #f3f4f6;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 500;
-      color: #4b5563;
-      border: none;
-      font-size: 0.95rem;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    .tab.active {
-      background: #2563eb;
-      color: #fff;
-    }
-
-    .section { display: none; }
-    .section.active { display: block; }
-
-    .form-group {
-      margin-bottom: 1rem;
-    }
-
-    .form-group label {
-      display: block;
-      margin-bottom: 0.4rem;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: #374151;
-    }
-
-    .form-control {
-      width: 100%;
-      padding: 0.7rem 0.85rem;
-      font-size: 1rem;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
-      outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-
-    .form-control:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-    }
-
-    /* Password wrapper + eye toggle */
-    .password-wrapper {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .password-wrapper input {
-      flex: 1;
-      padding-right: 2.5rem; /* room for the eye button */
-    }
-
-    .toggle-password {
-      position: absolute;
-      right: 0.5rem;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      padding: 0.25rem;
-      color: #6b7280;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 4px;
-    }
-
-    .toggle-password:hover {
-      color: #111827;
-      background: rgba(0, 0, 0, 0.05);
-    }
-
-    .toggle-password:focus-visible {
-      outline: 2px solid #3b82f6;
-      outline-offset: 2px;
-    }
-
-    .btn-primary {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s;
-      margin-top: 0.5rem;
-    }
-
-    .btn-primary:hover { background: #1d4ed8; }
-    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
-
-    .error {
-      color: #dc2626;
-      font-size: 0.875rem;
-      margin-top: 0.75rem;
-      min-height: 1.2em;
-      text-align: center;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rosales National High School</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
-<body>
+<body class="login-page">
 
-  <div class="auth-card">
-    <h1>Welcome</h1>
+  <div id="loadingOverlay">
+    <div class="spinner"></div>
+    <div style="font-weight: 600; color: var(--primary);">Loading, please wait...</div>
+  </div>
 
-    <!-- Tabs -->
-    <div class="tabs">
-      <button type="button" id="tab-login" class="tab active">Login</button>
-      <button type="button" id="tab-signup" class="tab">Sign Up</button>
-    </div>
+  <div class="login-left">
+    <img src="rnshs-logo.png" alt="Rosales National High School Logo" onerror="this.src='https://via.placeholder.com/220?text=RNHS+Logo'">
+    <h1>Rosales National High School</h1>
+    <p>Web-Based School Management System</p>
+  </div>
 
-    <!-- LOGIN SECTION -->
-    <div id="section-login" class="section active">
-      <form id="loginForm" novalidate>
-        <div class="form-group">
-          <label for="loginEmail">LRN or Email</label>
-          <input
-            type="text"
-            id="loginEmail"
-            class="form-control"
-            placeholder="Enter your LRN or email"
-            autocomplete="username"
-            required
-          >
-        </div>
+  <div class="login-right">
+    <div class="form-container">
+      
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('login')" id="tab-login">Log In</div>
+        <div class="tab" onclick="switchTab('signup')" id="tab-signup">Sign Up</div>
+      </div>
 
-        <div class="form-group">
-          <label for="loginPassword">Password</label>
-          <div class="password-wrapper">
-            <input
-              type="password"
-              id="loginPassword"
-              class="form-control"
-              placeholder="Enter your password"
-              autocomplete="current-password"
-              required
-            >
-            <button
-              type="button"
-              class="toggle-password"
-              id="toggleLoginPassword"
-              aria-label="Show password"
-              title="Show password"
-            >
-              <!-- Eye (hidden) icon -->
-              <svg id="eyeOpen" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-              <!-- Eye-off (shown) icon -->
-              <svg id="eyeClosed" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                   style="display:none;">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
-                <line x1="1" y1="1" x2="23" y2="23"/>
-              </svg>
-            </button>
+      <!-- LOGIN FORM -->
+      <div class="form-section active" id="section-login">
+        <form id="loginForm">
+          <div class="form-group">
+            <label>LRN (Students) or Email (Teachers)</label>
+            <input type="text" id="loginEmail" placeholder="LRN or teacher@rnhs.edu.ph" required autocomplete="username">
           </div>
+          <div class="form-group">
+            <label>Password</label>
+            <div class="password-wrapper">
+              <input type="password" id="loginPassword" placeholder="Enter your password" required autocomplete="current-password">
+              <button type="button" class="toggle-password" id="togglePassword" aria-label="Show password" tabindex="-1">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+          <button type="submit" class="btn-submit">Log In</button>
+          <div id="loginError" class="error-msg"></div>
+        </form>
+        <div style="margin-top: 20px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5;">
+          <b>First Time Login:</b><br>
+          Students: Use your LRN for both ID and Password.<br>
+          Teachers: Use your Email for both ID and Password.
         </div>
+      </div>
 
-        <button type="submit" class="btn-primary" id="loginSubmitBtn">Login</button>
-        <div id="loginError" class="error" role="alert"></div>
-      </form>
-    </div>
+      <!-- SIGN UP FORM (Kept for later use) -->
+      <div class="form-section" id="section-signup">
+        <form id="signupForm">
+          <p style="text-align: center; font-size: 14px; margin-bottom: 20px;">Sign up is disabled. Please contact the administrator to create your account.</p>
+        </form>
+      </div>
 
-    <!-- SIGNUP SECTION (placeholder — merge your existing signup form here) -->
-    <div id="section-signup" class="section">
-      <p style="color:#6b7280;text-align:center;">Signup form goes here.</p>
     </div>
   </div>
 
+  <script src="js/api.js"></script>
   <script>
-    // ---------------------------
-    // Tab switching
-    // ---------------------------
     function switchTab(tab) {
       document.getElementById('tab-login').classList.remove('active');
       document.getElementById('tab-signup').classList.remove('active');
@@ -243,101 +75,70 @@
       document.getElementById(`section-${tab}`).classList.add('active');
     }
 
-    document.getElementById('tab-login').addEventListener('click', () => switchTab('login'));
-    document.getElementById('tab-signup').addEventListener('click', () => switchTab('signup'));
+    // ---- Show / Hide Password ----
+    const toggleBtn = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('loginPassword');
 
-    // ---------------------------
-    // View / hide password toggle
-    // ---------------------------
-    (function setupPasswordToggle() {
-      const input = document.getElementById('loginPassword');
-      const btn = document.getElementById('toggleLoginPassword');
-      const eyeOpen = document.getElementById('eyeOpen');
-      const eyeClosed = document.getElementById('eyeClosed');
-      if (!input || !btn) return;
+    toggleBtn.addEventListener('click', () => {
+      const isHidden = passwordInput.type === 'password';
+      passwordInput.type = isHidden ? 'text' : 'password';
 
-      btn.addEventListener('click', () => {
-        const showing = input.type === 'text';
-        input.type = showing ? 'password' : 'text';
-        eyeOpen.style.display = showing ? 'block' : 'none';
-        eyeClosed.style.display = showing ? 'none' : 'block';
-        btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-        btn.setAttribute('title', showing ? 'Show password' : 'Hide password');
+      const icon = toggleBtn.querySelector('i');
+      icon.classList.toggle('fa-eye', !isHidden);
+      icon.classList.toggle('fa-eye-slash', isHidden);
+      toggleBtn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+      passwordInput.focus();
+    });
 
-        // Keep cursor position after re-focus
-        const pos = input.selectionStart;
-        input.focus();
-        try { input.setSelectionRange(pos, pos); } catch (_) {}
-      });
-    })();
-
-    // ---------------------------
-    // Login API call
-    // ---------------------------
-    async function login(identifier, password) {
-      const res = await fetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: identifier, password })
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid credentials');
-      }
-
-      // Persist session
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('role', data.role);
-      localStorage.setItem('name', data.name || '');
-      localStorage.setItem('lrn', data.lrn || '');
-      localStorage.setItem('email', data.email || '');
-      localStorage.setItem('is_first_login', String(data.is_first_login));
-
-      // Redirect — adjust to your actual routes
-      if (data.is_first_login) {
-        window.location.href = '/change-password.html';
-      } else if (data.role === 'admin') {
-        window.location.href = '/admin.html';
-      } else if (data.role === 'teacher') {
-        window.location.href = '/teacher.html';
-      } else {
-        window.location.href = '/student.html';
-      }
-
-      return data;
-    }
-
-    // ---------------------------
-    // Login form submit
-    // ---------------------------
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    // ---- Login Submit ----
+    document.getElementById('loginForm').addEventListener('submit', async e => {
       e.preventDefault();
-
       const idInput = document.getElementById('loginEmail').value.trim();
       const password = document.getElementById('loginPassword').value;
       const errorDiv = document.getElementById('loginError');
-      const submitBtn = document.getElementById('loginSubmitBtn');
-
+      
       errorDiv.textContent = '';
-
-      if (!idInput || !password) {
-        errorDiv.textContent = 'Please enter your LRN/email and password.';
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Logging in…';
-
       try {
         await login(idInput, password);
       } catch (err) {
         errorDiv.textContent = err.message || 'Invalid credentials';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Login';
       }
     });
   </script>
+
+  <style>
+    /* Password wrapper + eye toggle */
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-wrapper input {
+      width: 100%;
+      padding-right: 42px; /* room for the eye button */
+    }
+    .toggle-password {
+      position: absolute;
+      right: 8px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--muted, #6b7280);
+      font-size: 15px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .toggle-password:hover {
+      color: var(--primary, #2563eb);
+    }
+    .toggle-password:focus-visible {
+      outline: 2px solid var(--primary, #2563eb);
+      outline-offset: 2px;
+    }
+  </style>
 </body>
 </html>
