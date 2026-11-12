@@ -11,7 +11,7 @@ let currentHistorySubjectId = null;
 let mySubjectsData = []; 
 let hasUnsavedChanges = false;
 let currentGradebookMode = 'term'; // 'term' | 'final'
-let sf2Initialized = false;        // <-- NEW: cache for SF2 subject dropdown
+let sf2Initialized = false;        // <-- cache for SF2 subject dropdown
 
 // --- DEPED CLASS RECORD CONSTANTS ---
 const SUBJECT_WEIGHTS = {            
@@ -473,6 +473,82 @@ async function saveAllGrades() {
   } finally {
     btn.textContent = '💾 Save All Changes';
     btn.disabled = false;
+  }
+}
+
+// --- EXPORT TO EXCEL ---
+async function downloadExcel() {
+  if (!currentSubjectId) {
+    showToast('Please open a class record first.', 'error');
+    return;
+  }
+
+  // Auto-save if there are unsaved changes to ensure the exported file is current
+  if (hasUnsavedChanges) {
+    const confirmSave = confirm("You have unsaved changes. Save them before downloading?");
+    if (confirmSave) {
+      await saveAllGrades();
+    }
+  }
+
+  const btn = event?.target?.closest('button');
+  const originalText = btn?.innerHTML;
+  
+  if (btn) {
+    btn.innerHTML = '⏳ Generating...';
+    btn.disabled = true;
+  }
+
+  try {
+    // Build the URL using your current subject ID and the selected subject type
+    const typeQuery = encodeURIComponent(currentSubjectType);
+    const url = `/api/teacher/class-record/${currentSubjectId}/export?type=${typeQuery}`;
+
+    // Get the token from localStorage (adjust this key if your app uses a different one)
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+
+    // Fetch the file
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+
+    // Convert response to a Blob and trigger download
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    
+    // Extract filename from headers, or fallback
+    const cd = response.headers.get('Content-Disposition');
+    let filename = `ClassRecord.xlsx`;
+    if (cd && cd.includes('filename="')) {
+      filename = cd.split('filename="')[1].split('"')[0];
+    }
+
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Cleanup
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    
+    showToast('Excel file downloaded successfully!');
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Failed to download Excel file.', 'error');
+  } finally {
+    if (btn) {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    }
   }
 }
 
