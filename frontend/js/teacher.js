@@ -11,6 +11,7 @@ let currentHistorySubjectId = null;
 let mySubjectsData = []; 
 let hasUnsavedChanges = false;
 let currentGradebookMode = 'term'; // 'term' | 'final'
+let sf2Initialized = false;        // <-- NEW: cache for SF2 subject dropdown
 
 // --- DEPED CLASS RECORD CONSTANTS ---
 const SUBJECT_WEIGHTS = {            
@@ -650,7 +651,7 @@ async function loadAttendanceHistory() {
   }).join('');
 }
 
-// --- WARNINGS & SF2 ---
+// --- WARNINGS ---
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
 
@@ -693,30 +694,65 @@ async function loadWarnings() {
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
 }
 
-// *** UPDATED SF2 LOGIC ***
+// --- SF2 (UPDATED: subject/section selector + monthly auto-generation) ---
 async function loadSF2() {
   try {
-    // 1. Get the teacher's assigned subjects/sections
-    const subjects = await apiFetch('/teacher/my-subjects');
-    
-    if (subjects.length === 0) {
-      document.getElementById('sf2Body').innerHTML = '<tr><td colspan="7" style="text-align:center;">No sections assigned to you.</td></tr>';
-      return;
+    const sel = document.getElementById('sf2SubjectSelect');
+    const monthInput = document.getElementById('sf2Month');
+
+    // Populate the subject dropdown once (cached in mySubjectsData)
+    if (!sf2Initialized || sel.options.length === 0) {
+      const subjects = await apiFetch('/teacher/my-subjects');
+      mySubjectsData = subjects;
+
+      if (subjects.length === 0) {
+        document.getElementById('sf2Body').innerHTML =
+          '<tr><td colspan="7" style="text-align:center;">No subjects assigned to you.</td></tr>';
+        return;
+      }
+
+      sel.innerHTML = subjects.map(s =>
+        `<option value="${s.id}">${s.name} — ${s.section}</option>`
+      ).join('');
+
+      // Default month = current month
+      if (!monthInput.value) {
+        const now = new Date();
+        monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      }
+
+      sf2Initialized = true;
     }
 
-    // 2. Get the first section assigned to this teacher
-    const activeSectionId = subjects[0].section_id;
-    const sectionName = subjects[0].section;
+    const subjectId = Number(sel.value);
+    const subj = mySubjectsData.find(s => s.id === subjectId);
+    if (!subj) return;
 
-    // 3. Update the page title to show which section is loaded
-    document.querySelector('#view-sf2 h3').innerHTML = `🏫 School Form 2 (SF2) — ${sectionName}`;
+    const monthVal = monthInput.value;
+    if (!monthVal) return;
+    const [year, month] = monthVal.split('-');
 
-    // 4. Fetch the data for this specific section
-    const rows = await apiFetch(`/teacher/sf2/${activeSectionId}`);
-    
+    document.getElementById('sf2Title').textContent =
+      `🏫 School Form 2 (SF2) — ${subj.name} (${subj.section})`;
+
+    const monthName = new Date(year, month - 1, 1)
+      .toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    document.getElementById('sf2Range').textContent = `(${monthName})`;
+
+    const rows = await apiFetch(
+      `/teacher/sf2/${subj.section_id}?month=${month}&year=${year}`
+    );
+
     document.getElementById('sf2Body').innerHTML = rows.map(r => {
-      const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
-      const note = t.converted ? ` <span style="font-size:11px; color: var(--muted);">(${t.converted} from lates)</span>` : '';
+      const t = computeAttendance({
+        present: r.days_present,
+        late: r.days_late,
+        excused: r.days_excused,
+        absent: r.days_absent
+      });
+      const note = t.converted
+        ? ` <span style="font-size:11px; color: var(--muted);">(${t.converted} from lates)</span>`
+        : '';
       return `
       <tr>
         <td>${r.lrn}</td>
@@ -727,8 +763,8 @@ async function loadSF2() {
         <td>${t.absent}${note}</td>
         <td>${t.absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
       </tr>`;
-    }).join('');
-    
+    }).join('') || '<tr><td colspan="7" style="text-align:center;">No attendance recorded for this month.</td></tr>';
+
   } catch (err) {
     console.error("SF2 Error:", err);
     showToast("Failed to load SF2 report.", "error");

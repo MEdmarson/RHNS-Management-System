@@ -242,7 +242,7 @@ router.get('/attendance-history/:subjectId', async (req, res) => {
   }
 });
 
-// --- WARNINGS & SF2 ---
+// --- WARNINGS ---
 router.get('/at-risk', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -265,34 +265,50 @@ router.get('/at-risk', async (req, res) => {
   }
 });
 
-// *** UPDATED SF2 ROUTE WITH SECURITY CHECK ***
+// --- SF2 (UPDATED: monthly auto-generation + per-section security) ---
 router.get('/sf2/:sectionId', async (req, res) => {
   try {
+    const { sectionId } = req.params;
+    const { month, year } = req.query;
+
+    // Default to current month/year if not provided
+    const now = new Date();
+    const m = Number(month) || (now.getMonth() + 1);
+    const y = Number(year)  || now.getFullYear();
+
     // 1. Verify the teacher actually handles this section
     const [authCheck] = await pool.query(`
-      SELECT 1 FROM subjects sub 
-      WHERE sub.section_id = ? AND sub.teacher_id = ? LIMIT 1`, 
-      [req.params.sectionId, req.user.id]);
-    
+      SELECT 1 FROM subjects sub
+      WHERE sub.section_id = ? AND sub.teacher_id = ? LIMIT 1`,
+      [sectionId, req.user.id]);
+
     if (!authCheck.length) {
       return res.status(403).json({ error: "Unauthorized access to this section's SF2" });
     }
 
-    // 2. Fetch the students for this section
+    // 2. Fetch per-student attendance counts for the given month only.
+    //    LEFT JOIN keeps students with zero records in the result.
     const [rows] = await pool.query(`
-      SELECT s.lrn, u.full_name, 
-             SUM(a.status = 'present') AS days_present, 
-             SUM(a.status = 'late') AS days_late,
-             SUM(a.status = 'excused') AS days_excused,
-             SUM(a.status = 'absent') AS days_absent
-      FROM users u 
+      SELECT s.lrn, u.full_name,
+             COALESCE(SUM(a.status = 'present'), 0) AS days_present,
+             COALESCE(SUM(a.status = 'late'),    0) AS days_late,
+             COALESCE(SUM(a.status = 'excused'), 0) AS days_excused,
+             COALESCE(SUM(a.status = 'absent'),  0) AS days_absent
+      FROM users u
       JOIN students s ON s.user_id = u.id
-      LEFT JOIN attendance a ON a.student_id = u.id
-      WHERE s.section_id = ? 
-      GROUP BY u.id, s.lrn, u.full_name 
-      ORDER BY u.full_name`, [req.params.sectionId]);
+      LEFT JOIN attendance a
+             ON a.student_id = u.id
+            AND a.section_id = s.section_id
+            AND MONTH(a.date) = ?
+            AND YEAR(a.date)  = ?
+      WHERE s.section_id = ?
+      GROUP BY u.id, s.lrn, u.full_name
+      ORDER BY u.full_name`,
+      [m, y, sectionId]);
+
     res.json(rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });

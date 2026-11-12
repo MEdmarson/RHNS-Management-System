@@ -435,10 +435,31 @@
     <!-- 7. SF2 REPORT -->
     <div class="view" id="view-sf2" style="display:none">
       <div class="card">
-        <h3>🏫 School Form 2 (SF2)</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Auto-generated from recorded attendance data.</p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 15px;">
+            <h3 style="margin: 0;" id="sf2Title">🏫 School Form 2 (SF2)</h3>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="font-weight: 600; font-size: 14px;">Subject / Section: </label>
+            <select id="sf2SubjectSelect" class="input gb-select" style="font-weight: bold; min-width: 220px;"
+                    onchange="loadSF2()"></select>
+
+            <label style="font-weight: 600; font-size: 14px;">Month: </label>
+            <input type="month" id="sf2Month" class="input" style="width: auto; font-weight: bold;"
+                   onchange="loadSF2()">
+          </div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">
+          Auto-generated from recorded attendance data for the selected month.
+          <span id="sf2Range" style="font-weight:600;"></span>
+        </p>
         <table>
-          <thead><tr><th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th><th>Excused</th><th>Days Absent</th><th>Remarks</th></tr></thead>
+          <thead>
+            <tr>
+              <th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th>
+              <th>Excused</th><th>Days Absent</th><th>Remarks</th>
+            </tr>
+          </thead>
           <tbody id="sf2Body"></tbody>
         </table>
         <button class="btn" style="margin-top:20px;" onclick="window.print()">🖨 Print / Export PDF</button>
