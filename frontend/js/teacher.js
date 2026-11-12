@@ -11,7 +11,7 @@ let mySubjectsData = [];
 let hasUnsavedChanges = false;
 
 // --- DEPED CLASS RECORD CONSTANTS (mirrors Sheet2 + TERM sheets of the Excel ECR) ---
-const SUBJECT_WEIGHTS = {            // [WW, PT, EX]  (Sheet2 lookup table)
+const SUBJECT_WEIGHTS = {            
   'Academic Electives':                         [0.20, 0.50, 0.30],
   'Arts Apprenticeship':                        [0.15, 0.70, 0.15],
   'Arts, Sports, Health and Wellness Electives':[0.20, 0.60, 0.20],
@@ -25,7 +25,7 @@ const SUBJECT_WEIGHTS = {            // [WW, PT, EX]  (Sheet2 lookup table)
 };
 let currentSubjectType = 'Core Subjects';
 
-// Transmutation table from the Excel "Term Grade" column: [initial grade must be > min, term grade]
+// Transmutation table from the Excel "Term Grade" column
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
   [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
@@ -122,7 +122,6 @@ async function loadGradebook() {
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   currentGradebookData = rows; 
 
-  // Load HPS values into the header
   if (rows.length > 0 && rows[0].ww1_hps !== null && rows[0].ww1_hps !== undefined) {
     const r = rows[0];
     HPS_FIELDS.forEach(f => {
@@ -157,7 +156,6 @@ function changeSubjectType() {
   updateHpsTotals();
 }
 
-// HPS header: totals, PS (always 100) and WS (= 100 x weight), then refresh every row
 function updateHpsTotals() {
   const getVal = id => parseInt(document.getElementById(id).value) || 0;
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
@@ -195,7 +193,6 @@ function renderGradebook() {
   document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
     
-    // Helper to generate input
     const makeInput = (field) => {
       const val = r[field] ?? '';
       return `<input type="number" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
@@ -233,20 +230,10 @@ function renderGradebook() {
   recalcAllRows();
 }
 
-// Live calculation as teacher types
 function calculateRow(input) {
   calculateRowEl(input.closest('tr'));
 }
 
-/*
- * Same computation as the Excel ECR (TERM sheets):
- *   TOTAL = sum of scores
- *   PS    = TOTAL / HPS total x 100                (blank when TOTAL = 0)
- *   WS    = PS x weight (weight comes from the Subject Type, Sheet2)
- *   Initial Grade = WW WS + PT WS + EX WS          (not rounded)
- *   Term Grade    = Initial Grade run through the DepEd transmutation table
- *   Descriptor    = from the Term Grade
- */
 function calculateRowEl(tr) {
   const studentId = tr.id.replace('row-', '');
   const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
@@ -269,7 +256,6 @@ function calculateRowEl(tr) {
   const pt = group(['pt1','pt2','pt3'], wPT);
   const ex = group(['ex1','ex2','ex3'], wEX);
 
-  // Excel: IF(OR(J=0,P=0)," ",SUM(J,P,V)) -- SUM ignores blank (text) cells
   let initial = null;
   if (ww.ws !== 0 && pt.ws !== 0) initial = (ww.ws || 0) + (pt.ws || 0) + (ex.ws || 0);
 
@@ -283,7 +269,8 @@ function calculateRowEl(tr) {
   set('pt-total', pt.total || '');  set('pt-ps', fmt2(pt.ps));  set('pt-ws', fmt2(pt.ws));
   set('ex-total', ex.total || '');  set('ex-ps', fmt2(ex.ps));  set('ex-ws', fmt2(ex.ws));
 
-  set('initial', hasGrade ? initial.toFixed(2) : '');
+  // *** THE FIX: Show as integer in UI, but keep the decimal math for the final grade ***
+  set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
 }
