@@ -35,6 +35,9 @@ function normalizeGender(g) {
   return 'male';
 }
 
+// Helper to convert nulls to empty strings for Excel formulas
+const val = (v) => (v === null || v === undefined) ? '' : v;
+
 async function fetchTermRows(pool, teacherId, subjectId, term) {
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, s.lrn, s.gender,
@@ -140,7 +143,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('Q12').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
   ws.getCell('Q12').font = { bold: true };
 
-  // Sub-headers row 14 (Aligned with columns C through V)
+  // Sub-headers row 14
   ['1', '2', '3', '4', '5', 'TOTAL', 'PS', 'WS'].forEach((h, i) => {
     const cell = ws.getRow(14).getCell(3 + i);
     cell.value = h;
@@ -165,21 +168,21 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell('B15').font = { bold: true };
   const hpsRef = rows[0] || {};
   ['ww1_hps', 'ww2_hps', 'ww3_hps', 'ww4_hps', 'ww5_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(3 + i).value = hpsRef[f] ?? 100;
+    ws.getRow(15).getCell(3 + i).value = val(hpsRef[f]) || 100;
   });
   ws.getCell('H15').value = { formula: 'SUM(C15:G15)' };
   ws.getCell('I15').value = 100;
   ws.getCell('J15').value = { formula: 'I15*$C$13' };
 
   ['pt1_hps', 'pt2_hps', 'pt3_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(11 + i).value = hpsRef[f] ?? 100;
+    ws.getRow(15).getCell(11 + i).value = val(hpsRef[f]) || 100;
   });
   ws.getCell('N15').value = { formula: 'SUM(K15:M15)' };
   ws.getCell('O15').value = 100;
   ws.getCell('P15').value = { formula: 'O15*$K$13' };
 
   ['ex1_hps', 'ex2_hps', 'ex3_hps'].forEach((f, i) => {
-    ws.getRow(15).getCell(17 + i).value = hpsRef[f] ?? 100;
+    ws.getRow(15).getCell(17 + i).value = val(hpsRef[f]) || 100;
   });
   ws.getCell('T15').value = { formula: 'SUM(Q15:S15)' };
   ws.getCell('U15').value = 100;
@@ -214,34 +217,34 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       row.getCell(2).value = s.full_name;
       
       // WWs (C through J)
-      row.getCell(3).value = s.ww1 ?? '';
-      row.getCell(4).value = s.ww2 ?? '';
-      row.getCell(5).value = s.ww3 ?? '';
-      row.getCell(6).value = s.ww4 ?? '';
-      row.getCell(7).value = s.ww5 ?? '';
+      row.getCell(3).value = val(s.ww1);
+      row.getCell(4).value = val(s.ww2);
+      row.getCell(5).value = val(s.ww3);
+      row.getCell(6).value = val(s.ww4);
+      row.getCell(7).value = val(s.ww5);
       row.getCell(8).value = { formula: `SUM(C${cursor}:G${cursor})` };
-      row.getCell(9).value = { formula: `IF(OR(H${cursor}=0),"",H${cursor}/$H$15*100)` };
+      row.getCell(9).value = { formula: `IF(OR(H${cursor}=0,H${cursor}=""),"",H${cursor}/$H$15*100)` };
       row.getCell(10).value = { formula: `IFERROR(I${cursor}*$C$13,"")` };
 
       // PTs (K through P)
-      row.getCell(11).value = s.pt1 ?? '';
-      row.getCell(12).value = s.pt2 ?? '';
-      row.getCell(13).value = s.pt3 ?? '';
+      row.getCell(11).value = val(s.pt1);
+      row.getCell(12).value = val(s.pt2);
+      row.getCell(13).value = val(s.pt3);
       row.getCell(14).value = { formula: `SUM(K${cursor}:M${cursor})` };
-      row.getCell(15).value = { formula: `IF(OR(N${cursor}=0),"",N${cursor}/$N$15*100)` };
+      row.getCell(15).value = { formula: `IF(OR(N${cursor}=0,N${cursor}=""),"",N${cursor}/$N$15*100)` };
       row.getCell(16).value = { formula: `IFERROR(O${cursor}*$K$13,"")` };
 
       // EXs (Q through V)
-      row.getCell(17).value = s.ex1 ?? '';
-      row.getCell(18).value = s.ex2 ?? '';
-      row.getCell(19).value = s.ex3 ?? '';
+      row.getCell(17).value = val(s.ex1);
+      row.getCell(18).value = val(s.ex2);
+      row.getCell(19).value = val(s.ex3);
       row.getCell(20).value = { formula: `SUM(Q${cursor}:S${cursor})` };
-      row.getCell(21).value = { formula: `IF(OR(T${cursor}=0),"",T${cursor}/$T$15*100)` };
+      row.getCell(21).value = { formula: `IF(OR(T${cursor}=0,T${cursor}=""),"",T${cursor}/$T$15*100)` };
       row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13,"")` };
 
       // Final Grades (W, X, Y)
       row.getCell(23).value = {
-        formula: `IF(OR(J${cursor}=0,P${cursor}=0),"",SUM(J${cursor},P${cursor},V${cursor}))`
+        formula: `IF(OR(J${cursor}=0,P${cursor}=0,J${cursor}="",P${cursor}=""),"",SUM(J${cursor},P${cursor},V${cursor}))`
       };
       row.getCell(24).value = {
         formula: `IF(W${cursor}="","",IF(W${cursor}>99.49,100,IF(W${cursor}>98.31,99,IF(W${cursor}>97.13,98,IF(W${cursor}>95.95,97,IF(W${cursor}>94.77,96,IF(W${cursor}>93.59,95,IF(W${cursor}>92.41,94,IF(W${cursor}>91.23,93,IF(W${cursor}>90.05,92,IF(W${cursor}>88.87,91,IF(W${cursor}>87.69,90,IF(W${cursor}>86.51,89,IF(W${cursor}>85.33,88,IF(W${cursor}>84.15,87,IF(W${cursor}>82.97,86,IF(W${cursor}>81.79,85,IF(W${cursor}>80.61,84,IF(W${cursor}>79.43,83,IF(W${cursor}>78.25,82,IF(W${cursor}>77.07,81,IF(W${cursor}>75.89,80,IF(W${cursor}>74.71,79,IF(W${cursor}>73.53,78,IF(W${cursor}>72.35,77,IF(W${cursor}>71.17,76,IF(W${cursor}>69.99,75,IF(W${cursor}>65.33,74,IF(W${cursor}>60.66,73,IF(W${cursor}>56,72,IF(W${cursor}>51.33,71,IF(W${cursor}>46.66,70,IF(W${cursor}>42,69,IF(W${cursor}>37.33,68,IF(W${cursor}>32.67,67,IF(W${cursor}>28,66,IF(W${cursor}>23.34,65,IF(W${cursor}>18.67,64,IF(W${cursor}>14,63,IF(W${cursor}>9.34,62,IF(W${cursor}>4.67,61,IF(W${cursor}>0,60,0)))))))))))))))))))))))))))))))))))))))))`
@@ -364,7 +367,7 @@ function buildFinalSheet(wb, termRows, meta) {
       row.getCell(1).value = i + 1;
       row.getCell(2).value = s.full_name;
       [1, 2, 3].forEach((t, idx) => {
-        row.getCell(5 + idx).value = s.terms[t]?.term_grade ?? '';
+        row.getCell(5 + idx).value = val(s.terms[t]?.term_grade);
       });
       row.getCell(8).value = { formula: `IFERROR(ROUND(AVERAGE(E${cursor}:G${cursor}),0),"")` };
       row.getCell(9).value = {
