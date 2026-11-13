@@ -58,17 +58,26 @@ function calculateRowEl(tr) {
   if (currentGradebookMode === 'final') return;
   const studentId = tr.id.replace('row-', '');
   const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
+  
   const getVal = field => {
     const el = tr.querySelector(`input[data-field="${field}"]`);
     return el ? num(parseInt(el.value)) : 0;
   };
-  const getHps = f => { const el = document.getElementById(`hps-${f}`); return el ? (parseInt(el.value) || 0) : 0; };
+  
+  // Fallback to 100 if the HPS input is blank or 0 to prevent division by zero
+  const getHps = f => { 
+    const el = document.getElementById(`hps-${f}`); 
+    const val = el ? parseInt(el.value) : 100;
+    return (isNaN(val) || val === 0) ? 100 : val; 
+  };
+
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
 
   const group = (fields, weight) => {
     const total = fields.reduce((s, f) => s + getVal(f), 0);
     const hps   = fields.reduce((s, f) => s + getHps(f), 0);
-    const ps = (total === 0 || hps === 0) ? null : (total / hps) * 100;
+    // If the student has no scores yet (total === 0), PS is null
+    const ps = (total === 0) ? null : (total / hps) * 100;
     const ws = ps === null ? null : ps * weight;
     return { total, ps, ws };
   };
@@ -78,7 +87,10 @@ function calculateRowEl(tr) {
   const ex = group(['ex1','ex2','ex3'], wEX);
 
   let initial = null;
-  if (ww.ws !== 0 && pt.ws !== 0) initial = (ww.ws || 0) + (pt.ws || 0) + (ex.ws || 0);
+  // Only calculate initial grade if the student has data in WW and PT
+  if (ww.ws !== null && pt.ws !== null) {
+    initial = (ww.ws || 0) + (pt.ws || 0) + (ex.ws || 0);
+  }
 
   const hasGrade = initial !== null && initial > 0;
   const termGrade = initial === null ? null : transmute(initial);
@@ -93,6 +105,7 @@ function calculateRowEl(tr) {
   set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
+  
   const dEl = document.getElementById(`desc-${studentId}`);
   dEl.className = 'descriptor-cell' + (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : '');
 }
@@ -116,7 +129,9 @@ async function loadGradebook() {
   if (rows.length > 0 && rows[0].ww1_hps !== null && rows[0].ww1_hps !== undefined) {
     const r = rows[0];
     HPS_FIELDS.forEach(f => {
-      document.getElementById(`hps-${f}`).value = r[`${f}_hps`];
+      const el = document.getElementById(`hps-${f}`);
+      // Explicitly set to 100 if the DB value is null/0 to prevent HPS 0 bug
+      el.value = (r[`${f}_hps`] === null || r[`${f}_hps`] === 0) ? 100 : r[`${f}_hps`];
     });
   } else {
     document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
@@ -334,7 +349,9 @@ async function saveAllGrades() {
   
   const hpsValues = {};
   ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].forEach(f => {
-    hpsValues[`${f}_hps`] = parseInt(document.getElementById(`hps-${f}`).value) || 0;
+    // Ensure we save a valid number, fallback to 100 if blank
+    const val = parseInt(document.getElementById(`hps-${f}`).value);
+    hpsValues[`${f}_hps`] = (isNaN(val) || val === 0) ? 100 : val;
   });
 
   const payload = {};
