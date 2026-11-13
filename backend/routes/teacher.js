@@ -116,19 +116,15 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// NEW ROUTE: Save only HPS without touching student scores
+// Save only HPS without touching student scores (No longer used by frontend, but kept for safety)
 router.post('/grades/hps', asyncRoute(async (req, res) => {
   const { subject_id, term, hps } = req.body;
-  
   try {
     const [existing] = await pool.query(
       'SELECT student_id FROM grades WHERE subject_id = ? AND term = ? LIMIT 1',
       [subject_id, term]
     );
-
-    if (existing.length === 0) {
-      return res.json({ ok: true, message: 'HPS will be saved with the first student grade.' });
-    }
+    if (existing.length === 0) return res.json({ ok: true, message: 'HPS will be saved with the first student grade.' });
 
     const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
     const updates = hpsFields.map(f => `${f} = ?`).join(', ');
@@ -138,7 +134,6 @@ router.post('/grades/hps', asyncRoute(async (req, res) => {
       `UPDATE grades SET ${updates} WHERE subject_id = ? AND term = ?`,
       [...values, subject_id, term]
     );
-
     res.json({ ok: true, message: 'HPS updated successfully' });
   } catch (err) {
     console.error("HPS Save Error:", err);
@@ -149,11 +144,7 @@ router.post('/grades/hps', asyncRoute(async (req, res) => {
 router.post('/grades', asyncRoute(async (req, res) => {
   try {
     const g = req.body;
-    
-    if (!g.student_id) {
-      console.warn("Skipped saving grade: Missing student_id");
-      return res.json({ ok: true, skipped: true });
-    }
+    if (!g.student_id) return res.json({ ok: true, skipped: true });
 
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
     
@@ -200,12 +191,8 @@ router.post('/grades', asyncRoute(async (req, res) => {
 
     await pool.query(sql, vals);
     res.json({ ok: true, termGrade });
-
   } catch (err) {
-    console.error("\n================ DATABASE ERROR ================");
-    console.error("SQL Message:", err.message);
-    console.error("Payload received:", req.body);
-    console.error("================================================\n");
+    console.error("DATABASE ERROR:", err.message);
     res.status(500).json({ error: err.message });
   }
 }));

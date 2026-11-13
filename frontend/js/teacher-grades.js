@@ -4,7 +4,6 @@ let currentFinalGradeData = [];
 let currentSubjectId = null;
 let currentGradebookMode = 'term'; 
 let hasUnsavedChanges = false;
-let hpsSaveTimeout;
 
 const HPS_FIELDS = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'];
 
@@ -26,6 +25,7 @@ function changeSubjectType() {
   updateHpsTotals();
 }
 
+// Removed auto-save. This just recalculates the screen.
 function updateHpsTotals() {
   if (currentGradebookMode === 'final') return; 
   const getVal = id => { const el = document.getElementById(id); return el ? (parseInt(el.value) || 0) : 0; };
@@ -44,29 +44,6 @@ function updateHpsTotals() {
   document.getElementById('pct-ex').textContent = pct(wEX) + '%';
 
   recalcAllRows();
-
-  // Auto-save HPS to the database after 1 second of not typing
-  clearTimeout(hpsSaveTimeout);
-  hpsSaveTimeout = setTimeout(async () => {
-    if (!currentSubjectId) return;
-    const term = document.getElementById('termSelect').value;
-    if (term === 'final') return;
-
-    const hps = {};
-    HPS_FIELDS.forEach(f => {
-      const el = document.getElementById(`hps-${f}`);
-      hps[f] = el.value === '' ? 0 : parseInt(el.value) || 0;
-    });
-
-    try {
-      await apiFetch('/teacher/grades/hps', {
-        method: 'POST',
-        body: JSON.stringify({ subject_id: currentSubjectId, term, hps })
-      });
-    } catch (err) {
-      console.error("Failed to auto-save HPS:", err);
-    }
-  }, 1000);
 }
 
 function recalcAllRows() {
@@ -185,8 +162,9 @@ function renderGradebook() {
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id || item.full_name === r.full_name);
     const rowId = r.student_id || `idx-${originalIndex}`;
     
+    // Ensure inputs show '0' if value is 0, but empty string if null
     const makeInput = (field) => {
-      const val = r[field] ?? '';
+      const val = r[field] === null || r[field] === undefined ? '' : r[field];
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
