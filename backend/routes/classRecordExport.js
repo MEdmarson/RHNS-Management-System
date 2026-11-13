@@ -70,7 +70,7 @@ async function fetchMeta(pool, teacherId, subjectId) {
 function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   const sheetName = `TERM ${term}`;
   const ws = wb.addWorksheet(sheetName, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }]
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }] // Freezes headers for easy scrolling
   });
 
   const widths = {
@@ -143,9 +143,9 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       row.getCell(21).value = { formula: `IF(OR(T${cursor}=0)," ",((Q${cursor}/$Q$15*30)+(R${cursor}/$R$15*30)+(S${cursor}/$S$15*40)))` };
       row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13," ")` };
 
-      row.getCell(23).value = { formula: `IF(OR(J${cursor}=0,P${cursor}=0)," ",SUM(J${cursor},P${cursor},V${cursor}))` };
-      row.getCell(24).value = { formula: `IF(W${cursor}=" "," ",IF(W${cursor}>99.49,100,IF(W${cursor}>98.31,99,IF(W${cursor}>97.13,98,IF(W${cursor}>95.95,97,IF(W${cursor}>94.77,96,IF(W${cursor}>93.59,95,IF(W${cursor}>92.41,94,IF(W${cursor}>91.23,93,IF(W${cursor}>90.05,92,IF(W${cursor}>88.87,91,IF(W${cursor}>87.69,90,IF(W${cursor}>86.51,89,IF(W${cursor}>85.33,88,IF(W${cursor}>84.15,87,IF(W${cursor}>82.97,86,IF(W${cursor}>81.79,85,IF(W${cursor}>80.61,84,IF(W${cursor}>79.43,83,IF(W${cursor}>78.25,82,IF(W${cursor}>77.07,81,IF(W${cursor}>75.89,80,IF(W${cursor}>74.71,79,IF(W${cursor}>73.53,78,IF(W${cursor}>72.35,77,IF(W${cursor}>71.17,76,IF(W${cursor}>69.99,75,IF(W${cursor}>65.33,74,IF(W${cursor}>60.66,73,IF(W${cursor}>56,72,IF(W${cursor}>51.33,71,IF(W${cursor}>46.66,70,IF(W${cursor}>42,69,IF(W${cursor}>37.33,68,IF(W${cursor}>32.67,67,IF(W${cursor}>28,66,IF(W${cursor}>23.34,65,IF(W${cursor}>18.67,64,IF(W${cursor}>14,63,IF(W${cursor}>9.34,62,IF(W${cursor}>4.67,61,IF(W${cursor}>0,60,IF(W${cursor}=0,0)))))))))))))))))))))))))))))))))))))))))))` };
-      row.getCell(25).value = { formula: `IF(X${cursor}=" "," ",IF(X${cursor}>89,"Advancing",IF(X${cursor}>79,"Benchmarking",IF(X${cursor}>74,"Connecting",IF(X${cursor}>64,"Developing",IF(X${cursor}>0,"Emerging",0))))))` };
+      row.getCell(23).value = { formula: `IF(OR(J${cursor}=" " , P${cursor}=" ")," ",SUM(J${cursor},P${cursor},V${cursor}))` };
+      row.getCell(24).value = { formula: `IFERROR(LOOKUP(W${cursor}, Transmutation!$A$2:$A$42, Transmutation!$B$2:$B$42),"")` };
+      row.getCell(25).value = { formula: `IF(OR(X${cursor}="", X${cursor}="#N/A"),"",IF(X${cursor}>89,"Advancing",IF(X${cursor}>79,"Benchmarking",IF(X${cursor}>74,"Connecting",IF(X${cursor}>64,"Developing",IF(X${cursor}>0,"Emerging",0))))))` };
       cursor++;
     });
   };
@@ -170,8 +170,9 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   headers.forEach((h, i) => { ws.getCell(pHeader, 2 + i).value = h; ws.getCell(pHeader, 2 + i).font = { bold: true }; });
 
   const levels = ['Advancing', 'Benchmarking', 'Connecting', 'Developing', 'Emerging'];
-  const mRange = male.length > 0 ? `$Y$18:$Y$${maleEndRow}` : `$Y$18:$Y$18`;
-  const fRange = female.length > 0 ? `$Y$${maleEndRow + 2}:$Y$${femaleEndRow}` : `$Y$${maleEndRow + 2}:$Y$${maleEndRow + 2}`;
+  // Using full ranges to ensure no missed rows
+  const mRange = `$Y$18:$Y$${male.length > 0 ? maleEndRow : 18}`;
+  const fRange = `$Y$${male.length > 0 ? maleEndRow + 2 : 19}:$Y$${female.length > 0 ? femaleEndRow : 19}`;
 
   levels.forEach((lvl, i) => {
     const r = pHeader + 1 + i;
@@ -187,7 +188,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   // --- BASIC STATISTICS ---
   ws.getCell(`P${pHeader}`).value = 'BASIC STATISTICS'; ws.getCell(`P${pHeader}`).font = { bold: true };
   ws.getCell(`Q${pHeader}`).value = 'SA1'; ws.getCell(`R${pHeader}`).value = 'SA2'; ws.getCell(`S${pHeader}`).value = 'TE';
-  ws.getCell(`T${pHeader}`).value = 'PASSED'; ws.getCell(`U${pHeader}`).value = { formula: `SUM(J${pHeader+1}:J${pHeader+5})` };
+  ws.getCell(`T${pHeader}`).value = 'PASSED'; ws.getCell(`U${pHeader}`).value = { formula: `SUM(J${pHeader+1}:J${pHeader+3})` };
   
   ws.getCell(`P${pHeader+1}`).value = 'EXAMS';
   ws.getCell(`Q${pHeader+1}`).value = 'MEAN';
@@ -195,7 +196,7 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   ws.getCell(`S${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(R18:R${femaleEndRow})," ")` };
   ws.getCell(`T${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(S18:S${femaleEndRow})," ")` };
   ws.getCell(`U${pHeader+1}`).value = 'FAILED';
-  ws.getCell(`V${pHeader+1}`).value = { formula: `SUM(J${pHeader+3}:J${pHeader+5})` };
+  ws.getCell(`V${pHeader+1}`).value = { formula: `SUM(J${pHeader+5}:J${pHeader+6})` };
 
   ws.getCell(`P${pHeader+2}`).value = 'MPS';
   ws.getCell(`Q${pHeader+2}`).value = { formula: `IFERROR(Q${pHeader+1}/Q15," ")` };
