@@ -6,7 +6,7 @@ const ExcelJS = require('exceljs');
 router.use(authenticate, authorize('teacher'));
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
-  console.error("SERVER ERROR:", err); // This will print the exact SQL error to your terminal
+  console.error("SERVER ERROR:", err);
   res.status(500).json({ error: err.message });
 });
 
@@ -90,7 +90,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const g = req.body;
     
     // Ensure all values are numbers or 0
-    const n = (v) => isNaN(Number(v)) || v === '' || v === null || v === undefined ? 0 : Number(v);
+    const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
     
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
     const pt1 = n(g.pt1), pt2 = n(g.pt2), pt3 = n(g.pt3);
@@ -100,7 +100,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_hps = n(g.pt1_hps) + n(g.pt2_hps) + n(g.pt3_hps);
     const ex_hps = n(g.ex1_hps) + n(g.ex2_hps) + n(g.ex3_hps);
 
-    // Compute weights dynamically (Assuming Core Subjects for now, but we can use req.body.subjectType if needed)
     const ww_ps = ww_hps === 0 ? 0 : ((ww1+ww2+ww3+ww4+ww5) / ww_hps) * 100;
     const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
     const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
@@ -109,7 +108,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
     const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-    // Match the exact columns to prevent SQL errors
     const sql = `
       INSERT INTO grades (
         student_id, subject_id, term,
@@ -139,11 +137,15 @@ router.post('/grades', asyncRoute(async (req, res) => {
     res.json({ ok: true, termGrade });
 
   } catch (err) {
-    console.error("Save Grade Error:", err); // Logs to terminal
+    console.error("\n================ DATABASE ERROR ================");
+    console.error("SQL Message:", err.message);
+    console.error("Payload received:", req.body);
+    console.error("================================================\n");
     res.status(500).json({ error: err.message });
   }
 }));
 
+// (The rest of the file: final-grades, attendance, etc. remains exactly the same)
 router.get('/final-grades', asyncRoute(async (req, res) => {
   const { subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
@@ -165,7 +167,6 @@ router.get('/final-grades', asyncRoute(async (req, res) => {
   }));
 }));
 
-// --- ATTENDANCE & WARNINGS ---
 router.get('/attendance/:subjectId/:date', asyncRoute(async (req, res) => {
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, a.status,
@@ -229,7 +230,6 @@ router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
 router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const subjectId = Number(req.params.subjectId);
   const subjectType = req.query.type || 'Core Subjects';
-  const weights = SUBJECT_WEIGHTS[subjectType] || SUBJECT_WEIGHTS['Core Subjects'];
 
   const [[meta]] = await pool.query(`SELECT sub.name AS subject_name, sec.name AS section, u.full_name AS teacher_name FROM subjects sub JOIN sections sec ON sec.id = sub.section_id JOIN users u ON u.id = sub.teacher_id WHERE sub.teacher_id = ? AND sub.id = ?`, [req.user.id, subjectId]);
   if (!meta) return res.status(404).json({ error: 'Subject not found' });
