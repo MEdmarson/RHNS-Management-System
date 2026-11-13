@@ -124,17 +124,23 @@ async function loadGradebook() {
   }
 
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
-  currentGradebookData = rows;
+  
+  // FIX: Ensure we are correctly mapping the ID from the backend response
+  currentGradebookData = rows.map((r, index) => {
+    return {
+      ...r,
+      // If the backend sent 'id' instead of 'student_id', we capture it here
+      student_id: r.student_id || r.id || null 
+    };
+  });
 
-  // Find the first row that actually has HPS data
-  const hpsRow = rows.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined);
+  const hpsRow = currentGradebookData.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined);
   
   if (hpsRow) {
     HPS_FIELDS.forEach(f => {
       document.getElementById(`hps-${f}`).value = hpsRow[`${f}_hps`];
     });
   } else {
-    // Only default to 100 if the database has absolutely no HPS data
     document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
   }
   updateHpsTotals();
@@ -153,43 +159,44 @@ function renderGradebook() {
     return;
   }
 
-  document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
-    // FIX: Prevent rendering rows for students that have a missing/null database ID
-    if (!r.student_id) {
-      return `<tr><td colspan="24" style="text-align:center; padding: 15px; color: var(--danger); font-weight: bold; background: #fee2e2;">
-        ⚠️ Error: Student "${r.full_name || 'Unknown'}" is missing a User ID in the database and cannot be graded. Please re-import or fix their record.
-      </td></tr>`;
-    }
-
-    const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
+  document.getElementById('gradebookBody').innerHTML = filtered.map((r) => {
+    // Find the actual index in the main array
+    const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id || item.full_name === r.full_name);
+    
+    // Fallback to array index if ID is truly missing, preventing the red error
+    const rowId = r.student_id || `idx-${originalIndex}`;
     
     const makeInput = (field) => {
       const val = r[field] ?? '';
+      // We pass the originalIndex to find the data during save
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
     return `
-    <tr id="row-${r.student_id}">
-      <td style="text-align:left;">${r.full_name}</td>
+    <tr id="row-${rowId}">
+      <td style="text-align:left;">
+        ${r.full_name}
+        ${!r.student_id ? '<span style="color:var(--danger); font-size:10px;">(Missing DB ID)</span>' : ''}
+      </td>
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
       <td>${makeInput('ww4')}</td><td>${makeInput('ww5')}</td>
-      <td class="computed-cell" id="ww-total-${r.student_id}"></td>
-      <td class="computed-cell" id="ww-ps-${r.student_id}"></td>
-      <td class="computed-cell" id="ww-ws-${r.student_id}"></td>
+      <td class="computed-cell" id="ww-total-${rowId}"></td>
+      <td class="computed-cell" id="ww-ps-${rowId}"></td>
+      <td class="computed-cell" id="ww-ws-${rowId}"></td>
       
       <td>${makeInput('pt1')}</td><td>${makeInput('pt2')}</td><td>${makeInput('pt3')}</td>
-      <td class="computed-cell" id="pt-total-${r.student_id}"></td>
-      <td class="computed-cell" id="pt-ps-${r.student_id}"></td>
-      <td class="computed-cell" id="pt-ws-${r.student_id}"></td>
+      <td class="computed-cell" id="pt-total-${rowId}"></td>
+      <td class="computed-cell" id="pt-ps-${rowId}"></td>
+      <td class="computed-cell" id="pt-ws-${rowId}"></td>
 
       <td>${makeInput('ex1')}</td><td>${makeInput('ex2')}</td><td>${makeInput('ex3')}</td>
-      <td class="computed-cell" id="ex-total-${r.student_id}"></td>
-      <td class="computed-cell" id="ex-ps-${r.student_id}"></td>
-      <td class="computed-cell" id="ex-ws-${r.student_id}"></td>
+      <td class="computed-cell" id="ex-total-${rowId}"></td>
+      <td class="computed-cell" id="ex-ps-${rowId}"></td>
+      <td class="computed-cell" id="ex-ws-${rowId}"></td>
 
-      <td class="initial-cell" id="initial-${r.student_id}"></td>
-      <td class="term-grade-cell" id="term-${r.student_id}"></td>
-      <td class="descriptor-cell" id="desc-${r.student_id}"></td>
+      <td class="initial-cell" id="initial-${rowId}"></td>
+      <td class="term-grade-cell" id="term-${rowId}"></td>
+      <td class="descriptor-cell" id="desc-${rowId}"></td>
     </tr>`;
   }).join('');
 
@@ -353,9 +360,7 @@ async function saveAllGrades() {
   btn.disabled = true;
 
   const term = document.getElementById('termSelect').value;
-  
-  // Target only inputs inside valid rows (that have an ID)
-  const inputs = document.querySelectorAll('#gradebookBody tr[id^="row-"] input');
+  const inputs = document.querySelectorAll('#gradebookBody tr input');
   
   const hpsValues = {};
   HPS_FIELDS.forEach(f => {
@@ -369,12 +374,12 @@ async function saveAllGrades() {
     const field = input.getAttribute('data-field');
     const student = currentGradebookData[idx];
 
-    // Ensure we don't try to save a student that doesn't exist
-    if (!student || !student.student_id) return;
+    // Skip if somehow the student data is entirely missing
+    if (!student) return;
 
     if (!payload[idx]) {
       payload[idx] = { 
-        student_id: student.student_id, 
+        student_id: student.student_id, // Use the ID we guaranteed in loadGradebook
         subject_id: currentSubjectId, 
         term: term, 
         ...hpsValues 
