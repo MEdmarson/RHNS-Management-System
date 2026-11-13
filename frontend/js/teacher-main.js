@@ -3,24 +3,92 @@ requireAuth('teacher');
 document.getElementById('userChip').textContent = '👩‍🏫 ' + getUser().name;
 
 let mySubjectsData = []; 
+let currentViewName = 'subjects';
 
 window.addEventListener('beforeunload', (e) => {
   if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; }
 });
+
+function pushViewState(name) {
+  history.pushState({ view: name }, '', '#' + name);
+}
+
+// When the user hits Back / Forward, popstate fires.
+window.addEventListener('popstate', async (e) => {
+  if (hasUnsavedChanges) {
+    const leave = confirm('You have unsaved changes. Leave this page?');
+    if (!leave) {
+      history.pushState({ view: currentViewName }, '', '#' + currentViewName);
+      return;
+    }
+    hasUnsavedChanges = false;
+    document.getElementById('unsavedIndicator').style.display = 'none';
+  }
+
+  const targetView = e.state?.view;
+
+  // If they pressed Back from the "subjects" view (or there's no state),
+  // treat it as wanting to logout.
+  if (!targetView || targetView === 'subjects') {
+    if (!targetView && currentViewName === 'subjects') {
+      const doLogout = confirm('Do you want to log out?');
+      if (doLogout) {
+        logout();
+      } else {
+        history.pushState({ view: 'subjects' }, '', '#subjects');
+      }
+      return;
+    }
+    navigateToView('subjects', false);
+    return;
+  }
+
+  navigateToView(targetView, false);
+});
+
+function confirmLogout() {
+  if (hasUnsavedChanges) {
+    const leave = confirm('You have unsaved changes. Log out anyway?');
+    if (!leave) return;
+  } else {
+    const leave = confirm('Log out of the Teacher Portal?');
+    if (!leave) return;
+  }
+  logout();
+}
 
 function showView(name, el) {
   if (hasUnsavedChanges && !confirm('You have unsaved changes. Are you sure you want to leave?')) return;
   hasUnsavedChanges = false;
   document.getElementById('unsavedIndicator').style.display = 'none';
 
+  pushViewState(name);
+  navigateToView(name, el);
+}
+
+function navigateToView(name, el) {
+  currentViewName = name;
+
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
   document.getElementById(`view-${name}`).style.display = 'block';
-  
+
   if (el) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
+  } else {
+    const map = {
+      subjects: 0, gradebook: 0,
+      attendance: 1, 'attendance-sheet': 1, 'attendance-history': 1,
+      warning: 2, sf2: 3
+    };
+    const idx = map[name];
+    if (idx !== undefined) {
+      const navs = document.querySelectorAll('.nav-item');
+      navs.forEach(n => n.classList.remove('active'));
+      if (navs[idx]) navs[idx].classList.add('active');
+    }
   }
-  
+
   const titles = {
     'subjects': 'My Classes', 'gradebook': 'Class Record', 'attendance': 'Attendance Dashboard',
     'attendance-sheet': 'Daily Attendance', 'attendance-history': 'Monthly History',
@@ -130,6 +198,9 @@ async function downloadExcel() {
     }
   }
 }
+
+// Seed initial state so Back/Forward work from the very start
+history.replaceState({ view: 'subjects' }, '', '#subjects');
 
 // Boot
 document.getElementById('attDate').valueAsDate = new Date();

@@ -109,7 +109,6 @@
 /* ---------- Attendance Status Buttons ---------- */
 .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
 
-/* Base button style - overrides generic .btn */
 button.att-btn { 
   background: #f3f4f6; 
   color: var(--text); 
@@ -124,13 +123,11 @@ button.att-btn {
 }
 button.att-btn:hover { filter: brightness(0.92); }
 
-/* Default (inactive) colors - using chained selectors to beat .btn */
 button.att-btn.att-present { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
 button.att-btn.att-late    { background: #fef3c7; border-color: #fde68a; color: #92400e; }
 button.att-btn.att-excused { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
 button.att-btn.att-absent  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
 
-/* Active states (when clicked) */
 button.att-btn.att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
 button.att-btn.att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
 button.att-btn.att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
@@ -138,7 +135,6 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
 
 .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
 
-/* Fix for cut-off badges */
 .badge {
   display: inline-block;
   padding: 4px 8px;
@@ -165,9 +161,27 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
 .warning-card .warning-desc { font-size: 13px; color: var(--muted); margin-bottom: 15px; }
 .warning-empty { text-align: center; padding: 20px; color: var(--muted); }
 
+/* ---------- Mobile-only logout button ---------- */
+.mobile-only-logout { display: none; }
+
 /* ---------- Mobile Responsiveness ---------- */
 @media (max-width: 768px) {
-  /* Only make it a grid on mobile devices */
+  /* Show logout in bottom nav */
+  .mobile-only-logout {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0;
+    font-size: 11px;
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+    border-left: none !important;
+    border-top: 3px solid transparent;
+    color: #fecaca;
+  }
+  .mobile-only-logout .nav-icon { font-size: 20px; }
+
   .att-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
   button.att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
 
@@ -214,7 +228,6 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
 
   .warning-grid { grid-template-columns: 1fr; }
 
-  /* Final Grade view: tighter widths on mobile */
   #gradebookTable.final-mode col:first-child { width: 130px !important; }
   #gradebookTable.final-mode col { width: 52px !important; }
 }

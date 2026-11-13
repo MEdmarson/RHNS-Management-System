@@ -35,8 +35,13 @@
         <span class="nav-icon">🏫</span><span class="nav-label">SF2 Report</span>
       </button>
       
+      <!-- NEW: Mobile-only logout button -->
+      <button class="nav-item mobile-only-logout" onclick="confirmLogout()">
+        <span class="nav-icon">↩</span><span class="nav-label">Logout</span>
+      </button>
+      
       <div class="sidebar-logout">
-        <button onclick="logout()">↩ Logout</button>
+        <button onclick="confirmLogout()">↩ Logout</button>
       </div>
     </aside>
 
