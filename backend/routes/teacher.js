@@ -6,7 +6,7 @@ const ExcelJS = require('exceljs');
 router.use(authenticate, authorize('teacher'));
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
-  console.error(err);
+  console.error("SERVER ERROR:", err); // This will print the exact SQL error to your terminal
   res.status(500).json({ error: err.message });
 });
 
@@ -41,13 +41,11 @@ router.get('/my-subjects', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// NEW: Get all sections for the dropdown
 router.get('/sections', asyncRoute(async (req, res) => {
   const [rows] = await pool.query('SELECT id, name FROM sections');
   res.json(rows);
 }));
 
-// NEW: Create a new subject
 router.post('/subjects', asyncRoute(async (req, res) => {
   const { code, name, section_id } = req.body;
   try {
@@ -62,9 +60,7 @@ router.post('/subjects', asyncRoute(async (req, res) => {
   }
 }));
 
-// NEW: Delete a subject
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
-  // Only allow deleting their own subjects
   const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.id]);
   if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
 
@@ -90,31 +86,62 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
 }));
 
 router.post('/grades', asyncRoute(async (req, res) => {
-  const g = req.body;
-  const sum = (keys) => keys.reduce((a, k) => a + (Number(g[k]) || 0), 0);
-  const getPs = (tot, hpsKeys) => (tot / (sum(hpsKeys) || 1)) * 100;
-  const getWs = (ps, weight) => ps * weight;
+  try {
+    const g = req.body;
+    
+    // Ensure all values are numbers or 0
+    const n = (v) => isNaN(Number(v)) || v === '' || v === null || v === undefined ? 0 : Number(v);
+    
+    const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
+    const pt1 = n(g.pt1), pt2 = n(g.pt2), pt3 = n(g.pt3);
+    const ex1 = n(g.ex1), ex2 = n(g.ex2), ex3 = n(g.ex3);
+    
+    const ww_hps = n(g.ww1_hps) + n(g.ww2_hps) + n(g.ww3_hps) + n(g.ww4_hps) + n(g.ww5_hps);
+    const pt_hps = n(g.pt1_hps) + n(g.pt2_hps) + n(g.pt3_hps);
+    const ex_hps = n(g.ex1_hps) + n(g.ex2_hps) + n(g.ex3_hps);
 
-  const wwPs = getPs(sum(['ww1','ww2','ww3','ww4','ww5']), ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps']);
-  const ptPs = getPs(sum(['pt1','pt2','pt3']), ['pt1_hps','pt2_hps','pt3_hps']);
-  const exPs = getPs(sum(['ex1','ex2','ex3']), ['ex1_hps','ex2_hps','ex3_hps']);
+    // Compute weights dynamically (Assuming Core Subjects for now, but we can use req.body.subjectType if needed)
+    const ww_ps = ww_hps === 0 ? 0 : ((ww1+ww2+ww3+ww4+ww5) / ww_hps) * 100;
+    const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
+    const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
 
-  const initialGrade = getWs(wwPs, 0.20) + getWs(ptPs, 0.50) + getWs(exPs, 0.30);
-  const termGrade = transmute(initialGrade);
-  const descriptor = termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
+    const initialGrade = (ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30);
+    const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+    const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-  // Strictly normalize HPS values to 0 if empty
-  const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
-  const normalizedHps = hpsFields.map(k => {
-    const v = g[k];
-    return (v === '' || v === null || v === undefined) ? 0 : Number(v);
-  });
+    // Match the exact columns to prevent SQL errors
+    const sql = `
+      INSERT INTO grades (
+        student_id, subject_id, term,
+        ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
+        initial_grade, term_grade, descriptor,
+        ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
+        pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE 
+        ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
+        pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
+        initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
+        ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
+        pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps), 
+        ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)
+    `;
 
-  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k] || 0), initialGrade, termGrade, descriptor, ...normalizedHps];
-  const cols = ['student_id','subject_id','term','ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3','initial_grade','term_grade','descriptor','ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
+    const vals = [
+      g.student_id, g.subject_id, g.term,
+      ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
+      initialGrade, termGrade, descriptor,
+      n(g.ww1_hps), n(g.ww2_hps), n(g.ww3_hps), n(g.ww4_hps), n(g.ww5_hps),
+      n(g.pt1_hps), n(g.pt2_hps), n(g.pt3_hps), n(g.ex1_hps), n(g.ex2_hps), n(g.ex3_hps)
+    ];
 
-  await pool.query(`INSERT INTO grades (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')}) ON DUPLICATE KEY UPDATE ${cols.slice(3).map(c=>`${c}=VALUES(${c})`).join(',')}`, vals);
-  res.json({ ok: true, termGrade });
+    await pool.query(sql, vals);
+    res.json({ ok: true, termGrade });
+
+  } catch (err) {
+    console.error("Save Grade Error:", err); // Logs to terminal
+    res.status(500).json({ error: err.message });
+  }
 }));
 
 router.get('/final-grades', asyncRoute(async (req, res) => {
@@ -131,7 +158,7 @@ router.get('/final-grades', asyncRoute(async (req, res) => {
     WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name ORDER BY u.full_name`, [req.user.id, subject]);
 
   res.json(rows.map(r => {
-    const present = [r.term1, r.term2, r.term3].filter(v => v !== null).map(Number);
+    const present = [r.term1, r.term2, r.term3].filter(v => v !== null && v > 0).map(Number);
     const final = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
     const desc = final === null ? '' : final > 89 ? 'Advancing' : final > 79 ? 'Benchmarking' : final > 74 ? 'Connecting' : final > 64 ? 'Developing' : 'Emerging';
     return { ...r, final_grade: final, descriptor: desc };
