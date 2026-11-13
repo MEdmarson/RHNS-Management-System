@@ -60,20 +60,14 @@ router.post('/subjects', asyncRoute(async (req, res) => {
   }
 }));
 
-// FIXED: Delete linked grades before deleting the subject to prevent foreign key errors
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
   const { id } = req.params;
   try {
     const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [id, req.user.id]);
     if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
     
-    // 1. Delete associated grades
     await pool.query('DELETE FROM grades WHERE subject_id = ?', [id]);
-    
-    // 2. Delete associated attendance (if it links to subject_id, usually it links to section_id but we'll clean up just in case)
-    await pool.query('DELETE FROM attendance WHERE subject_id = ?', [id]).catch(() => {}); // Ignore error if column doesn't exist
-
-    // 3. Delete the subject
+    await pool.query('DELETE FROM attendance WHERE subject_id = ?', [id]).catch(() => {});
     await pool.query('DELETE FROM subjects WHERE id = ?', [id]);
     
     res.json({ ok: true, message: 'Subject deleted successfully' });
@@ -88,12 +82,10 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   const { term = 1, subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
 
-  // 1. Get the subject and its section
   const [subjRows] = await pool.query('SELECT section_id FROM subjects WHERE id = ? AND teacher_id = ?', [subject, req.user.id]);
   if (!subjRows.length) return res.status(404).json({ error: "Subject not found" });
   const sectionId = subjRows[0].section_id;
 
-  // 2. Get all students in this section safely
   const [students] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, s.lrn
     FROM students s
@@ -102,12 +94,10 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
     ORDER BY u.full_name
   `, [sectionId]);
 
-  // 3. Get all grades for this subject and term
   const [grades] = await pool.query(`
     SELECT * FROM grades WHERE subject_id = ? AND term = ?
   `, [subject, term]);
 
-  // 4. Map the grades to the students
   const gradeMap = {};
   grades.forEach(g => { gradeMap[g.student_id] = g; });
 
@@ -126,17 +116,45 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
+// NEW ROUTE: Save only HPS without touching student scores
+router.post('/grades/hps', asyncRoute(async (req, res) => {
+  const { subject_id, term, hps } = req.body;
+  
+  try {
+    const [existing] = await pool.query(
+      'SELECT student_id FROM grades WHERE subject_id = ? AND term = ? LIMIT 1',
+      [subject_id, term]
+    );
+
+    if (existing.length === 0) {
+      return res.json({ ok: true, message: 'HPS will be saved with the first student grade.' });
+    }
+
+    const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
+    const updates = hpsFields.map(f => `${f} = ?`).join(', ');
+    const values = hpsFields.map(f => hps[f] || 0);
+    
+    await pool.query(
+      `UPDATE grades SET ${updates} WHERE subject_id = ? AND term = ?`,
+      [...values, subject_id, term]
+    );
+
+    res.json({ ok: true, message: 'HPS updated successfully' });
+  } catch (err) {
+    console.error("HPS Save Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+}));
+
 router.post('/grades', asyncRoute(async (req, res) => {
   try {
     const g = req.body;
     
-    // SAFETY CHECK: Prevent server crash if student_id is null
     if (!g.student_id) {
       console.warn("Skipped saving grade: Missing student_id");
       return res.json({ ok: true, skipped: true });
     }
 
-    // Ensure all values are numbers or 0
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
     
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
@@ -151,7 +169,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
     const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
 
-    // Make sure to round to 2 decimal places
     const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
     const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
     const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
@@ -245,14 +262,20 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
 
 router.get('/at-risk', asyncRoute(async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present') AS raw_present,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late') AS raw_late,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused') AS raw_excused,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS raw_absent
-    FROM users u JOIN students s ON s.user_id = u.id JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
+    SELECT u.id, u.full_name, 
+           ROUND(AVG(g.term_grade), 2) AS avg_grade,
+           COUNT(DISTINCT g.term_grade) AS graded_count,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_present,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_excused,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent
+    FROM users u 
+    JOIN students s ON s.user_id = u.id 
+    JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-    GROUP BY u.id, u.full_name HAVING (avg_grade < 75) OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
+    GROUP BY u.id, u.full_name 
+    HAVING (avg_grade < 75 AND graded_count > 0) 
+        OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
   res.json(rows);
 }));
 

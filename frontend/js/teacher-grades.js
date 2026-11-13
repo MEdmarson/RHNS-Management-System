@@ -4,6 +4,7 @@ let currentFinalGradeData = [];
 let currentSubjectId = null;
 let currentGradebookMode = 'term'; 
 let hasUnsavedChanges = false;
+let hpsSaveTimeout;
 
 const HPS_FIELDS = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'];
 
@@ -43,6 +44,29 @@ function updateHpsTotals() {
   document.getElementById('pct-ex').textContent = pct(wEX) + '%';
 
   recalcAllRows();
+
+  // Auto-save HPS to the database after 1 second of not typing
+  clearTimeout(hpsSaveTimeout);
+  hpsSaveTimeout = setTimeout(async () => {
+    if (!currentSubjectId) return;
+    const term = document.getElementById('termSelect').value;
+    if (term === 'final') return;
+
+    const hps = {};
+    HPS_FIELDS.forEach(f => {
+      const el = document.getElementById(`hps-${f}`);
+      hps[f] = el.value === '' ? 0 : parseInt(el.value) || 0;
+    });
+
+    try {
+      await apiFetch('/teacher/grades/hps', {
+        method: 'POST',
+        body: JSON.stringify({ subject_id: currentSubjectId, term, hps })
+      });
+    } catch (err) {
+      console.error("Failed to auto-save HPS:", err);
+    }
+  }, 1000);
 }
 
 function recalcAllRows() {
@@ -125,11 +149,9 @@ async function loadGradebook() {
 
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   
-  // FIX: Ensure we are correctly mapping the ID from the backend response
-  currentGradebookData = rows.map((r, index) => {
+  currentGradebookData = rows.map((r) => {
     return {
       ...r,
-      // If the backend sent 'id' instead of 'student_id', we capture it here
       student_id: r.student_id || r.id || null 
     };
   });
@@ -160,15 +182,11 @@ function renderGradebook() {
   }
 
   document.getElementById('gradebookBody').innerHTML = filtered.map((r) => {
-    // Find the actual index in the main array
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id || item.full_name === r.full_name);
-    
-    // Fallback to array index if ID is truly missing, preventing the red error
     const rowId = r.student_id || `idx-${originalIndex}`;
     
     const makeInput = (field) => {
       const val = r[field] ?? '';
-      // We pass the originalIndex to find the data during save
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
@@ -374,18 +392,18 @@ async function saveAllGrades() {
     const field = input.getAttribute('data-field');
     const student = currentGradebookData[idx];
 
-    // Skip if somehow the student data is entirely missing
-    if (!student) return;
+    if (!student || !student.student_id) return;
 
     if (!payload[idx]) {
       payload[idx] = { 
-        student_id: student.student_id, // Use the ID we guaranteed in loadGradebook
+        student_id: student.student_id, 
         subject_id: currentSubjectId, 
         term: term, 
         ...hpsValues 
       };
     }
-    payload[idx][field] = input.value ? parseInt(input.value) : 0;
+    
+    payload[idx][field] = input.value === '' ? 0 : parseInt(input.value) || 0;
   });
 
   try {
