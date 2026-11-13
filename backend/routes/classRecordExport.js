@@ -34,6 +34,7 @@ function normalizeGender(g) {
   return 'male';
 }
 
+// Ensures blank values are null so Excel treats them as truly empty
 const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
 
 async function fetchTermRows(pool, teacherId, subjectId, term) {
@@ -130,24 +131,24 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
       
       row.getCell(3).value = val(s.ww1); row.getCell(4).value = val(s.ww2); row.getCell(5).value = val(s.ww3); row.getCell(6).value = val(s.ww4); row.getCell(7).value = val(s.ww5);
       row.getCell(8).value = { formula: `SUM(C${cursor}:G${cursor})` };
-      row.getCell(9).value = { formula: `IF(OR(H${cursor}=0)," ",H${cursor}/$H$15*100)` }; 
-      row.getCell(10).value = { formula: `IFERROR(IF(OR(H${cursor}=" ")," ",I${cursor}*$C$13)," ")` };
+      row.getCell(9).value = { formula: `IF(OR(H${cursor}=0),"",H${cursor}/$H$15*100)` }; 
+      row.getCell(10).value = { formula: `IFERROR(I${cursor}*$C$13,"")` };
 
       row.getCell(11).value = val(s.pt1); row.getCell(12).value = val(s.pt2); row.getCell(13).value = val(s.pt3);
       row.getCell(14).value = { formula: `SUM(K${cursor}:M${cursor})` };
-      row.getCell(15).value = { formula: `IF(OR(N${cursor}=0)," ",N${cursor}/$N$15*100)` };
-      row.getCell(16).value = { formula: `IFERROR(O${cursor}*$K$13," ")` };
+      row.getCell(15).value = { formula: `IF(OR(N${cursor}=0),"",N${cursor}/$N$15*100)` };
+      row.getCell(16).value = { formula: `IFERROR(O${cursor}*$K$13,"")` };
 
       row.getCell(17).value = val(s.ex1); row.getCell(18).value = val(s.ex2); row.getCell(19).value = val(s.ex3);
       row.getCell(20).value = { formula: `SUM(Q${cursor}:S${cursor})` };
-      row.getCell(21).value = { formula: `IF(OR(T${cursor}=0)," ",((Q${cursor}/$Q$15*30)+(R${cursor}/$R$15*30)+(S${cursor}/$S$15*40)))` };
-      row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13," ")` };
+      row.getCell(21).value = { formula: `IF(OR(T${cursor}=0),"",((Q${cursor}/$Q$15*30)+(R${cursor}/$R$15*30)+(S${cursor}/$S$15*40)))` };
+      row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13,"")` };
 
-      row.getCell(23).value = { formula: `IF(OR(J${cursor}=0,P${cursor}=0)," ",SUM(J${cursor},P${cursor},V${cursor}))` };
+      row.getCell(23).value = { formula: `IF(OR(J${cursor}=0,P${cursor}=0),"",SUM(J${cursor},P${cursor},V${cursor}))` };
       
       // EXACT NESTED IF FORMULA RESTORED HERE
-      row.getCell(24).value = { formula: `IF(W${cursor}=" "," ",IF(W${cursor}>99.49,100,IF(W${cursor}>98.31,99,IF(W${cursor}>97.13,98,IF(W${cursor}>95.95,97,IF(W${cursor}>94.77,96,IF(W${cursor}>93.59,95,IF(W${cursor}>92.41,94,IF(W${cursor}>91.23,93,IF(W${cursor}>90.05,92,IF(W${cursor}>88.87,91,IF(W${cursor}>87.69,90,IF(W${cursor}>86.51,89,IF(W${cursor}>85.33,88,IF(W${cursor}>84.15,87,IF(W${cursor}>82.97,86,IF(W${cursor}>81.79,85,IF(W${cursor}>80.61,84,IF(W${cursor}>79.43,83,IF(W${cursor}>78.25,82,IF(W${cursor}>77.07,81,IF(W${cursor}>75.89,80,IF(W${cursor}>74.71,79,IF(W${cursor}>73.53,78,IF(W${cursor}>72.35,77,IF(W${cursor}>71.17,76,IF(W${cursor}>69.99,75,IF(W${cursor}>65.33,74,IF(W${cursor}>60.66,73,IF(W${cursor}>56,72,IF(W${cursor}>51.33,71,IF(W${cursor}>46.66,70,IF(W${cursor}>42,69,IF(W${cursor}>37.33,68,IF(W${cursor}>32.67,67,IF(W${cursor}>28,66,IF(W${cursor}>23.34,65,IF(W${cursor}>18.67,64,IF(W${cursor}>14,63,IF(W${cursor}>9.34,62,IF(W${cursor}>4.67,61,IF(W${cursor}>0,60,IF(W${cursor}=0,0)))))))))))))))))))))))))))))))))))))))))))` };
-      row.getCell(25).value = { formula: `IF(X${cursor}=" "," ",IF(X${cursor}>89,"Advancing",IF(X${cursor}>79,"Benchmarking",IF(X${cursor}>74,"Connecting",IF(X${cursor}>64,"Developing",IF(X${cursor}>0,"Emerging",0))))))` };
+      row.getCell(24).value = { formula: `IF(W${cursor}="","",IF(W${cursor}>99.49,100,IF(W${cursor}>98.31,99,IF(W${cursor}>97.13,98,IF(W${cursor}>95.95,97,IF(W${cursor}>94.77,96,IF(W${cursor}>93.59,95,IF(W${cursor}>92.41,94,IF(W${cursor}>91.23,93,IF(W${cursor}>90.05,92,IF(W${cursor}>88.87,91,IF(W${cursor}>87.69,90,IF(W${cursor}>86.51,89,IF(W${cursor}>85.33,88,IF(W${cursor}>84.15,87,IF(W${cursor}>82.97,86,IF(W${cursor}>81.79,85,IF(W${cursor}>80.61,84,IF(W${cursor}>79.43,83,IF(W${cursor}>78.25,82,IF(W${cursor}>77.07,81,IF(W${cursor}>75.89,80,IF(W${cursor}>74.71,79,IF(W${cursor}>73.53,78,IF(W${cursor}>72.35,77,IF(W${cursor}>71.17,76,IF(W${cursor}>69.99,75,IF(W${cursor}>65.33,74,IF(W${cursor}>60.66,73,IF(W${cursor}>56,72,IF(W${cursor}>51.33,71,IF(W${cursor}>46.66,70,IF(W${cursor}>42,69,IF(W${cursor}>37.33,68,IF(W${cursor}>32.67,67,IF(W${cursor}>28,66,IF(W${cursor}>23.34,65,IF(W${cursor}>18.67,64,IF(W${cursor}>14,63,IF(W${cursor}>9.34,62,IF(W${cursor}>4.67,61,IF(W${cursor}>0,60,IF(W${cursor}=0,0)))))))))))))))))))))))))))))))))))))))))))` };
+      row.getCell(25).value = { formula: `IF(X${cursor}="","",IF(X${cursor}>89,"Advancing",IF(X${cursor}>79,"Benchmarking",IF(X${cursor}>74,"Connecting",IF(X${cursor}>64,"Developing",IF(X${cursor}>0,"Emerging",0))))))` };
       cursor++;
     });
   };
@@ -172,18 +173,18 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   headers.forEach((h, i) => { ws.getCell(pHeader, 2 + i).value = h; ws.getCell(pHeader, 2 + i).font = { bold: true }; });
 
   const levels = ['Advancing', 'Benchmarking', 'Connecting', 'Developing', 'Emerging'];
-  const mRange = `$Y$18:$Y$${maleEndRow}`;
-  const fRange = `$Y$${maleEndRow + 2}:$Y$${femaleEndRow}`;
+  const mRange = male.length ? `$Y$18:$Y$${maleEndRow}` : `$Y$18:$Y$18`;
+  const fRange = female.length ? `$Y$${maleEndRow + 2}:$Y$${femaleEndRow}` : `$Y$${maleEndRow + 2}:$Y$${maleEndRow + 2}`;
 
   levels.forEach((lvl, i) => {
     const r = pHeader + 1 + i;
     ws.getCell(r, 2).value = lvl;
     ws.getCell(r, 3).value = { formula: `COUNTIF(${mRange},"${lvl}")` };
-    ws.getCell(r, 5).value = { formula: `IFERROR(C${r}/SUM($C$${pHeader+1}:$C$${pHeader+5})*100," ")` };
+    ws.getCell(r, 5).value = { formula: `IFERROR(C${r}/SUM($C$${pHeader+1}:$C$${pHeader+5})*100,"")` };
     ws.getCell(r, 7).value = { formula: `COUNTIF(${fRange},"${lvl}")` };
-    ws.getCell(r, 9).value = { formula: `IFERROR(G${r}/SUM($G$${pHeader+1}:$G$${pHeader+5})*100," ")` };
+    ws.getCell(r, 9).value = { formula: `IFERROR(G${r}/SUM($G$${pHeader+1}:$G$${pHeader+5})*100,"")` };
     ws.getCell(r, 10).value = { formula: `SUM(C${r},G${r})` };
-    ws.getCell(r, 11).value = { formula: `IFERROR(J${r}/SUM($J$${pHeader+1}:$J$${pHeader+5})*100," ")` };
+    ws.getCell(r, 11).value = { formula: `IFERROR(J${r}/SUM($J$${pHeader+1}:$J$${pHeader+5})*100,"")` };
   });
 
   // --- BASIC STATISTICS ---
@@ -193,16 +194,16 @@ function buildTermSheet(wb, term, rows, meta, weights, subjectType) {
   
   ws.getCell(`P${pHeader+1}`).value = 'EXAMS';
   ws.getCell(`Q${pHeader+1}`).value = 'MEAN';
-  ws.getCell(`R${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(Q18:Q${femaleEndRow})," ")` };
-  ws.getCell(`S${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(R18:R${femaleEndRow})," ")` };
-  ws.getCell(`T${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(S18:S${femaleEndRow})," ")` };
+  ws.getCell(`R${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(Q18:Q${femaleEndRow}),"")` };
+  ws.getCell(`S${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(R18:R${femaleEndRow}),"")` };
+  ws.getCell(`T${pHeader+1}`).value = { formula: `IFERROR(AVERAGE(S18:S${femaleEndRow}),"")` };
   ws.getCell(`U${pHeader+1}`).value = 'FAILED';
   ws.getCell(`V${pHeader+1}`).value = { formula: `SUM(J${pHeader+5}:J${pHeader+6})` };
 
   ws.getCell(`P${pHeader+2}`).value = 'MPS';
-  ws.getCell(`Q${pHeader+2}`).value = { formula: `IFERROR(Q${pHeader+1}/Q15," ")` };
-  ws.getCell(`R${pHeader+2}`).value = { formula: `IFERROR(R${pHeader+1}/R15," ")` };
-  ws.getCell(`S${pHeader+2}`).value = { formula: `IFERROR(S${pHeader+1}/S15," ")` };
+  ws.getCell(`Q${pHeader+2}`).value = { formula: `IFERROR(Q${pHeader+1}/Q15,"")` };
+  ws.getCell(`R${pHeader+2}`).value = { formula: `IFERROR(R${pHeader+1}/R15,"")` };
+  ws.getCell(`S${pHeader+2}`).value = { formula: `IFERROR(S${pHeader+1}/S15,"")` };
 }
 
 function buildLookupSheet(wb) {
