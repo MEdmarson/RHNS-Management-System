@@ -129,7 +129,8 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
   msgDiv.textContent = 'Saving...'; msgDiv.style.color = 'var(--muted)';
 
   const payload = {
-    name: document.getElementById('subjName').value,
+    code: document.getElementById('subjCode').value.trim(),
+    name: document.getElementById('subjName').value.trim(),
     section_id: document.getElementById('subjSection').value
   };
 

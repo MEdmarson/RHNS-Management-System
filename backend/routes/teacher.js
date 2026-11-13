@@ -167,14 +167,19 @@ router.get('/sections', asyncRoute(async (req, res) => {
 }));
 
 router.post('/subjects', asyncRoute(async (req, res) => {
-  const { name, section_id } = req.body;
-  if (!name || !section_id) return res.status(400).json({ error: 'Subject name and section are required' });
+  const { code, name, section_id } = req.body;
+  if (!code || !name || !section_id) return res.status(400).json({ error: 'Subject code, name, and section are required' });
 
-  await pool.query(
-    'INSERT INTO subjects (name, section_id, teacher_id) VALUES (?, ?, ?)',
-    [name, section_id, req.user.id]
-  );
-  res.json({ ok: true, message: 'Subject created successfully' });
+  try {
+    await pool.query(
+      'INSERT INTO subjects (code, name, section_id, teacher_id) VALUES (?, ?, ?, ?)',
+      [code, name, section_id, req.user.id]
+    );
+    res.json({ ok: true, message: 'Subject created successfully' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
+    res.status(500).json({ error: err.message });
+  }
 }));
 
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
@@ -207,7 +212,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'RNHS Teacher Portal';
 
-  // 1. Setup Sheet2 (Lookup) & Hidden Transmutation Sheet
   const wsLookup = wb.addWorksheet('Sheet2');
   wsLookup.getRow(1).values = ['SUBJECT TYPE', 'WWs', 'PTs', 'STs-TE']; wsLookup.getRow(1).font = { bold: true };
   Object.entries(SUBJECT_WEIGHTS).forEach(([k, w], i) => wsLookup.getRow(i + 2).values = [k, w[0], w[1], w[2]]);
@@ -215,13 +219,11 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const wsTrans = wb.addWorksheet('Transmutation', { state: 'veryHidden' });
   TRANSMUTATION.forEach((t, i) => wsTrans.getRow(i + 2).values = t);
 
-  // 2. Build Term Sheets
   for (const term of [1, 2, 3]) {
     const ws = wb.addWorksheet(`TERM ${term}`, { views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }] });
     const widths = { A: 6, B: 32, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8, K: 6, L: 6, M: 6, N: 8, O: 8, P: 8, Q: 6, R: 6, S: 6, T: 8, U: 8, V: 8, W: 12, X: 12, Y: 15 };
     Object.entries(widths).forEach(([k, v]) => { ws.getColumn(k).width = v; });
 
-    // Headers
     ws.mergeCells('A1:Y1'); ws.getCell('A1').value = `CLASS RECORD - TERM ${term}`; ws.getCell('A1').font = { bold: true, size: 14 };
     ws.mergeCells('A3:Y3'); ws.getCell('A3').value = '(Pursuant to DepEd Order 15 series of 2026)'; ws.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF666666' } };
     
@@ -256,7 +258,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
 
     ws.getCell('B16').value = "LEARNERS' NAMES"; ws.getCell('W16').value = 'Initial Grade'; ws.getCell('X16').value = 'Term Grade'; ws.getCell('Y16').value = 'Descriptor'; ws.getRow(16).font = { bold: true };
 
-    // Student Blocks
     const male = termRows[term].filter(r => normalizeGender(r.gender) === 'male');
     const female = termRows[term].filter(r => normalizeGender(r.gender) === 'female');
     let cursor = 17;
@@ -297,7 +298,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
     ws.getCell(`B${sig + 2}`).value = 'Subject Teacher'; ws.getCell(`I${sig + 2}`).value = 'SHS OIC Assistant Principal'; ws.getCell(`V${sig + 2}`).value = 'Principal IV';
   }
 
-  // 3. Build Final Grade Sheet
   const wsFinal = wb.addWorksheet('FINAL GRADE');
   const fWidths = { A: 6, B: 32, E: 12, F: 12, G: 12, H: 15, I: 18, J: 15 };
   Object.entries(fWidths).forEach(([k, v]) => { wsFinal.getColumn(k).width = v; });
@@ -334,7 +334,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
 
   writeFinalBlock('MALE', fMale); writeFinalBlock('FEMALE', fFemale);
 
-  // 4. Send Response
   const safe = (str) => str.replace(/[^a-z0-9]+/gi, '_');
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="ClassRecord_${safe(meta.subject_name)}_${safe(meta.section)}.xlsx"`);
