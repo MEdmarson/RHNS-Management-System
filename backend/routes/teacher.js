@@ -72,17 +72,41 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   const { term = 1, subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
 
-  // FIXED: Strictly pulls student_id from users.id to avoid null values from broken links
-  const [rows] = await pool.query(`
-    SELECT u.id AS student_id, u.full_name, s.lrn, sec.name AS section, sub.id AS subject_id, sub.name AS subject,
-           g.*
-    FROM subjects sub
-    JOIN sections sec ON sec.id = sub.section_id
-    JOIN students s ON s.section_id = sec.id
+  // 1. Get the subject and its section
+  const [subjRows] = await pool.query('SELECT section_id FROM subjects WHERE id = ? AND teacher_id = ?', [subject, req.user.id]);
+  if (!subjRows.length) return res.status(404).json({ error: "Subject not found" });
+  const sectionId = subjRows[0].section_id;
+
+  // 2. Get all students in this section safely
+  const [students] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name, s.lrn
+    FROM students s
     JOIN users u ON u.id = s.user_id
-    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id AND g.term = ?
-    WHERE sub.teacher_id = ? AND sub.id = ?
-    ORDER BY u.full_name`, [term, req.user.id, subject]);
+    WHERE s.section_id = ?
+    ORDER BY u.full_name
+  `, [sectionId]);
+
+  // 3. Get all grades for this subject and term
+  const [grades] = await pool.query(`
+    SELECT * FROM grades WHERE subject_id = ? AND term = ?
+  `, [subject, term]);
+
+  // 4. Map the grades to the students
+  const gradeMap = {};
+  grades.forEach(g => { gradeMap[g.student_id] = g; });
+
+  const rows = students.map(s => {
+    const g = gradeMap[s.student_id] || {};
+    return {
+      student_id: s.student_id, 
+      full_name: s.full_name,
+      lrn: s.lrn,
+      subject_id: Number(subject),
+      term: term,
+      ...g 
+    };
+  });
+
   res.json(rows);
 }));
 
@@ -96,7 +120,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
       return res.json({ ok: true, skipped: true });
     }
 
-    // Ensure all values are numbers or 0 (Fixes TiDB crashing on empty strings/decimals)
+    // Ensure all values are numbers or 0
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
     
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
@@ -111,7 +135,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
     const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
 
-    // Make sure to round to 2 decimal places so TiDB doesn't complain about precision
+    // Make sure to round to 2 decimal places
     const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
     const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
     const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
