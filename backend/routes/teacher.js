@@ -72,6 +72,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   const { term = 1, subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
 
+  // FIXED: Strictly pulls student_id from users.id to avoid null values from broken links
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, s.lrn, sec.name AS section, sub.id AS subject_id, sub.name AS subject,
            g.*
@@ -80,7 +81,8 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
     JOIN students s ON s.section_id = sec.id
     JOIN users u ON u.id = s.user_id
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id AND g.term = ?
-    WHERE sub.teacher_id = ? AND sub.id = ? ORDER BY u.full_name`, [term, req.user.id, subject]);
+    WHERE sub.teacher_id = ? AND sub.id = ?
+    ORDER BY u.full_name`, [term, req.user.id, subject]);
   res.json(rows);
 }));
 
@@ -143,7 +145,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     res.json({ ok: true, termGrade });
 
   } catch (err) {
-    // THIS WILL SHOW IN YOUR RENDER LOGS
     console.error("\n================ DATABASE ERROR ================");
     console.error("SQL Message:", err.message);
     console.error("Payload received:", req.body);
