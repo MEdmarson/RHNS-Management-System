@@ -33,11 +33,16 @@
         <form id="loginForm">
           <div class="form-group">
             <label>LRN (Students) or Email (Teachers)</label>
-            <input type="text" id="loginEmail" placeholder="LRN or teacher@rnhs.edu.ph" required>
+            <input type="text" id="loginEmail" placeholder="LRN or teacher@rnhs.edu.ph" required autocomplete="username">
           </div>
           <div class="form-group">
             <label>Password</label>
-            <input type="password" id="loginPassword" placeholder="Enter your password" required>
+            <div class="password-wrapper">
+              <input type="password" id="loginPassword" placeholder="Enter your password" required autocomplete="current-password">
+              <button type="button" class="toggle-password" id="togglePassword" aria-label="Show password" tabindex="-1">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
           </div>
           <button type="submit" class="btn-submit">Log In</button>
           <div id="loginError" class="error-msg"></div>
@@ -70,9 +75,25 @@
       document.getElementById(`section-${tab}`).classList.add('active');
     }
 
+    // ---- Show / Hide Password ----
+    const toggleBtn = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('loginPassword');
+
+    toggleBtn.addEventListener('click', () => {
+      const isHidden = passwordInput.type === 'password';
+      passwordInput.type = isHidden ? 'text' : 'password';
+
+      const icon = toggleBtn.querySelector('i');
+      icon.classList.toggle('fa-eye', !isHidden);
+      icon.classList.toggle('fa-eye-slash', isHidden);
+      toggleBtn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+      passwordInput.focus();
+    });
+
+    // ---- Login Submit ----
     document.getElementById('loginForm').addEventListener('submit', async e => {
       e.preventDefault();
-      const idInput = document.getElementById('loginEmail').value;
+      const idInput = document.getElementById('loginEmail').value.trim();
       const password = document.getElementById('loginPassword').value;
       const errorDiv = document.getElementById('loginError');
       
@@ -84,5 +105,40 @@
       }
     });
   </script>
+
+  <style>
+    /* Password wrapper + eye toggle */
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-wrapper input {
+      width: 100%;
+      padding-right: 42px; /* room for the eye button */
+    }
+    .toggle-password {
+      position: absolute;
+      right: 8px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--muted, #6b7280);
+      font-size: 15px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .toggle-password:hover {
+      color: var(--primary, #2563eb);
+    }
+    .toggle-password:focus-visible {
+      outline: 2px solid var(--primary, #2563eb);
+      outline-offset: 2px;
+    }
+  </style>
 </body>
 </html>

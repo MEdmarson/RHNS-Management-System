@@ -8,28 +8,30 @@ require('dotenv').config();
 // LOGIN
 router.post('/login', async (req, res) => {
   // The 'email' variable from the frontend holds whatever the user typed (LRN or Email)
-  const { email, password } = req.body; 
-  
+  const { email, password } = req.body;
+  const identifier = (email || '').trim();
+  const passwordValue = password || '';
+
   try {
     let query;
     let params;
 
-    // If the input contains an '@', it's a teacher/admin. Search by email.
-    if (email.includes('@')) {
-      query = 'SELECT * FROM users WHERE email = ?';
-      params = [email];
-    } 
-    // If there's no '@', it's a student. Search by LRN.
-    else {
-      query = 'SELECT * FROM users WHERE lrn = ?';
-      params = [email];
+    // Use LOWER() on both sides for case-insensitive matching.
+    // - Email: case-insensitive
+    // - LRN: numeric, but LOWER() is harmless and keeps the code uniform.
+    if (identifier.includes('@')) {
+      query = 'SELECT * FROM users WHERE LOWER(email) = LOWER(?)';
+      params = [identifier];
+    } else {
+      query = 'SELECT * FROM users WHERE LOWER(lrn) = LOWER(?)';
+      params = [identifier];
     }
 
     const [rows] = await pool.query(query, params);
     if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
 
     const user = rows[0];
-    const valid = await bcrypt.compare(password, user.password_hash);
+    const valid = await bcrypt.compare(passwordValue, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign(
