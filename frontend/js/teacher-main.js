@@ -144,6 +144,55 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
   }
 });
 
+// --- EDIT SUBJECT ---
+async function openEditSubjectModal(event, subjectId, currentCode, currentName, currentSectionId) {
+  event.stopPropagation();
+  
+  document.getElementById('editSubjectForm').reset();
+  document.getElementById('editSubjMsg').textContent = '';
+  document.getElementById('editSubjId').value = subjectId;
+  document.getElementById('editSubjCode').value = currentCode;
+  document.getElementById('editSubjName').value = currentName;
+  
+  try {
+    const sections = await apiFetch('/teacher/sections');
+    const select = document.getElementById('editSubjSection');
+    select.innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    select.value = currentSectionId;
+    
+    document.getElementById('editSubjectModal').style.display = 'flex';
+  } catch (err) {
+    showToast('Failed to load sections.', 'error');
+  }
+}
+
+function closeEditSubjectModal() {
+  document.getElementById('editSubjectModal').style.display = 'none';
+}
+
+document.getElementById('editSubjectForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgDiv = document.getElementById('editSubjMsg');
+  msgDiv.textContent = 'Updating...'; msgDiv.style.color = 'var(--muted)';
+  
+  const subjectId = document.getElementById('editSubjId').value;
+  const payload = {
+    code: document.getElementById('editSubjCode').value.trim(),
+    name: document.getElementById('editSubjName').value.trim(),
+    section_id: document.getElementById('editSubjSection').value
+  };
+
+  try {
+    await apiFetch(`/teacher/subjects/${subjectId}`, { method: 'PUT', body: JSON.stringify(payload) });
+    showToast('Subject updated successfully!');
+    closeEditSubjectModal();
+    initDashboard(); 
+  } catch (err) {
+    msgDiv.textContent = '❌ ' + err.message; msgDiv.style.color = 'var(--danger)';
+  }
+});
+
+// --- DELETE SUBJECT ---
 async function deleteSubject(event, subjectId, subjectName) {
   event.stopPropagation(); 
   
@@ -159,6 +208,7 @@ async function deleteSubject(event, subjectId, subjectName) {
   }
 }
 
+// --- DASHBOARD ---
 async function initDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
   mySubjectsData = subjects; 
@@ -169,21 +219,36 @@ async function initDashboard() {
     return; 
   }
 
-  grid.innerHTML = subjects.map(s => `
+  grid.innerHTML = subjects.map(s => {
+    // Escape single quotes for safe HTML attribute insertion
+    const safeName = s.name.replace(/'/g, "\\'");
+    const safeCode = (s.code || '').replace(/'/g, "\\'");
+    
+    return `
     <div class="subject-card" onclick="openClassRecord(${s.id})" style="position: relative;">
       
-      <button onclick="deleteSubject(event, ${s.id}, '${s.name.replace(/'/g, "\\'")}')" 
+      <!-- Edit Button -->
+      <button onclick="openEditSubjectModal(event, ${s.id}, '${safeCode}', '${safeName}', ${s.section_id})" 
+              style="position: absolute; top: 12px; right: 45px; background: #e0e7ff; color: #3730a3; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
+              onmouseover="this.style.background='#c7d2fe'" onmouseout="this.style.background='#e0e7ff'"
+              title="Edit Subject">
+        ✏️
+      </button>
+
+      <!-- Delete Button -->
+      <button onclick="deleteSubject(event, ${s.id}, '${safeName}')" 
               style="position: absolute; top: 12px; right: 12px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
               onmouseover="this.style.background='#fca5a5'" onmouseout="this.style.background='#fee2e2'"
               title="Delete Subject">
         🗑️
       </button>
 
-      <h3 style="padding-right: 30px;">📚 ${s.name}</h3>
+      <h3 style="padding-right: 75px;">📚 ${s.name}</h3>
       <p>Section: ${s.section}</p>
       <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">Open Class Record →</div>
     </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function openClassRecord(subjectId) {

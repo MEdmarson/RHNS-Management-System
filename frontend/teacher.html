@@ -339,6 +339,35 @@
     </div>
   </div>
 
+  <!-- Subject Edit Modal -->
+  <div class="modal" id="editSubjectModal">
+    <div class="modal-content">
+      <span class="close-btn" onclick="closeEditSubjectModal()">&times;</span>
+      <h3 style="margin-bottom: 20px; color: var(--primary);">✏️ Edit Subject</h3>
+      <form id="editSubjectForm">
+        <input type="hidden" id="editSubjId">
+        
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Subject Code</label>
+          <input type="text" id="editSubjCode" class="input" style="width: 100%;" required>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Subject Name</label>
+          <input type="text" id="editSubjName" class="input" style="width: 100%;" required>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Assign to Section</label>
+          <select id="editSubjSection" class="input" style="width: 100%;" required></select>
+        </div>
+
+        <button type="submit" class="btn" style="margin-top: 10px; width: 100%;">Update Subject</button>
+        <div id="editSubjMsg" class="error-msg" style="margin-top: 10px; text-align: center; font-size: 13px;"></div>
+      </form>
+    </div>
+  </div>
+
   <div id="toastContainer"></div>
 
   <script src="js/api.js"></script>

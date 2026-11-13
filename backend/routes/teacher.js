@@ -60,6 +60,24 @@ router.post('/subjects', asyncRoute(async (req, res) => {
   }
 }));
 
+router.put('/subjects/:id', asyncRoute(async (req, res) => {
+  const { id } = req.params;
+  const { code, name, section_id } = req.body;
+  try {
+    const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [id, req.user.id]);
+    if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to edit this subject' });
+
+    await pool.query(
+      'UPDATE subjects SET code = ?, name = ?, section_id = ? WHERE id = ?',
+      [code, name, section_id, id]
+    );
+    res.json({ ok: true, message: 'Subject updated successfully' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
+    res.status(500).json({ error: err.message });
+  }
+}));
+
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
   const { id } = req.params;
   try {
@@ -121,9 +139,8 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const g = req.body;
     if (!g.student_id) return res.json({ ok: true, skipped: true });
 
-    // Helper: Converts to number, but keeps 'null' if it's empty
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
-    const calcN = (v) => n(v) || 0; // Helper for math (treats null as 0)
+    const calcN = (v) => n(v) || 0; 
 
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
     const pt1 = n(g.pt1), pt2 = n(g.pt2), pt3 = n(g.pt3);
@@ -133,7 +150,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_hps = calcN(g.pt1_hps) + calcN(g.pt2_hps) + calcN(g.pt3_hps);
     const ex_hps = calcN(g.ex1_hps) + calcN(g.ex2_hps) + calcN(g.ex3_hps);
 
-    // If all scores are null, don't calculate a grade (keep it null)
     const hasAnyGrade = [ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3].some(v => v !== null);
 
     let initialGrade = null;
@@ -420,5 +436,5 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   await wb.xlsx.write(res);
   res.end();
 }));
-//checkpoint safe stage
+
 module.exports = router;
