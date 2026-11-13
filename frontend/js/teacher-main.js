@@ -15,6 +15,12 @@ function pushViewState(name) {
 
 // When the user hits Back / Forward, popstate fires.
 window.addEventListener('popstate', async (e) => {
+  // Re-verify the user is still logged in
+  if (!getToken()) {
+    window.location.replace('index.html');
+    return;
+  }
+
   if (hasUnsavedChanges) {
     const leave = confirm('You have unsaved changes. Leave this page?');
     if (!leave) {
