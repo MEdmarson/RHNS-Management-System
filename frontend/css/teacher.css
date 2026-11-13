@@ -109,8 +109,8 @@
 /* ---------- Attendance Status Buttons ---------- */
 .att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
 
-/* Base button style */
-.att-btn { 
+/* Base button style - overrides generic .btn */
+button.att-btn { 
   background: #f3f4f6; 
   color: var(--text); 
   border: 1px solid var(--border); 
@@ -118,20 +118,23 @@
   transition: all 0.15s ease-in-out;
   border-radius: 4px;
   cursor: pointer;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
 }
-.att-btn:hover { filter: brightness(0.92); }
+button.att-btn:hover { filter: brightness(0.92); }
 
-/* Default (inactive) colors */
-.att-present { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
-.att-late    { background: #fef3c7; border-color: #fde68a; color: #92400e; }
-.att-excused { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
-.att-absent  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+/* Default (inactive) colors - using chained selectors to beat .btn */
+button.att-btn.att-present { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+button.att-btn.att-late    { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+button.att-btn.att-excused { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
+button.att-btn.att-absent  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
 
 /* Active states (when clicked) */
-.att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
-.att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
-.att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
-.att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+button.att-btn.att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
+button.att-btn.att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
+button.att-btn.att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
+button.att-btn.att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
 
 .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
 
@@ -164,8 +167,9 @@
 
 /* ---------- Mobile Responsiveness ---------- */
 @media (max-width: 768px) {
-  .att-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
-  .att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
+  /* Only make it a grid on mobile devices */
+  .att-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
+  button.att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
 
   .main { padding: 12px 10px 90px; }
   .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
