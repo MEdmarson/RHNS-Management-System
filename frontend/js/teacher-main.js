@@ -154,7 +154,8 @@ async function deleteSubject(event, subjectId, subjectName) {
     showToast('Subject deleted.');
     initDashboard(); 
   } catch (err) {
-    showToast('Error deleting subject.', 'error');
+    console.error("Delete failed:", err);
+    showToast('Error: ' + (err.message || 'Could not delete subject.'), 'error');
   }
 }
 

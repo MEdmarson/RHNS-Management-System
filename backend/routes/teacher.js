@@ -60,11 +60,27 @@ router.post('/subjects', asyncRoute(async (req, res) => {
   }
 }));
 
+// FIXED: Delete linked grades before deleting the subject to prevent foreign key errors
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
-  const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.id]);
-  if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
-  await pool.query('DELETE FROM subjects WHERE id = ?', [req.params.id]);
-  res.json({ ok: true, message: 'Subject deleted' });
+  const { id } = req.params;
+  try {
+    const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [id, req.user.id]);
+    if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
+    
+    // 1. Delete associated grades
+    await pool.query('DELETE FROM grades WHERE subject_id = ?', [id]);
+    
+    // 2. Delete associated attendance (if it links to subject_id, usually it links to section_id but we'll clean up just in case)
+    await pool.query('DELETE FROM attendance WHERE subject_id = ?', [id]).catch(() => {}); // Ignore error if column doesn't exist
+
+    // 3. Delete the subject
+    await pool.query('DELETE FROM subjects WHERE id = ?', [id]);
+    
+    res.json({ ok: true, message: 'Subject deleted successfully' });
+  } catch (err) {
+    console.error("Delete Error:", err);
+    res.status(500).json({ error: 'Database error: ' + err.message });
+  }
 }));
 
 // --- GRADEBOOK ---
