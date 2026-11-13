@@ -5,7 +5,6 @@ const ExcelJS = require('exceljs');
 
 router.use(authenticate, authorize('teacher'));
 
-// Helper to wrap async routes so we don't repeat try/catch everywhere
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
   console.error(err);
   res.status(500).json({ error: err.message });
@@ -36,12 +35,44 @@ const transmute = (initial) => (TRANSMUTATION.find(([min]) => initial > min) || 
 const normalizeGender = (g) => String(g || '').trim().toLowerCase().startsWith('f') ? 'female' : 'male';
 const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
 
-// --- DASHBOARD & GRADEBOOK ---
+// --- DASHBOARD & SUBJECTS ---
 router.get('/my-subjects', asyncRoute(async (req, res) => {
-  const [rows] = await pool.query(`SELECT sub.id, sub.name, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE sub.teacher_id = ?`, [req.user.id]);
+  const [rows] = await pool.query(`SELECT sub.id, sub.name, sub.code, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE sub.teacher_id = ?`, [req.user.id]);
   res.json(rows);
 }));
 
+// NEW: Get all sections for the dropdown
+router.get('/sections', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query('SELECT id, name FROM sections');
+  res.json(rows);
+}));
+
+// NEW: Create a new subject
+router.post('/subjects', asyncRoute(async (req, res) => {
+  const { code, name, section_id } = req.body;
+  try {
+    await pool.query(
+      'INSERT INTO subjects (code, name, teacher_id, section_id) VALUES (?, ?, ?, ?)',
+      [code, name, req.user.id, section_id]
+    );
+    res.json({ ok: true, message: 'Subject created successfully' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
+    res.status(500).json({ error: err.message });
+  }
+}));
+
+// NEW: Delete a subject
+router.delete('/subjects/:id', asyncRoute(async (req, res) => {
+  // Only allow deleting their own subjects
+  const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.id]);
+  if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
+
+  await pool.query('DELETE FROM subjects WHERE id = ?', [req.params.id]);
+  res.json({ ok: true, message: 'Subject deleted' });
+}));
+
+// --- GRADEBOOK ---
 router.get('/gradebook', asyncRoute(async (req, res) => {
   const { term = 1, subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
@@ -72,14 +103,14 @@ router.post('/grades', asyncRoute(async (req, res) => {
   const termGrade = transmute(initialGrade);
   const descriptor = termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-  // FIX: Ensure HPS values are strictly numbers (0 is valid, undefined becomes 0)
+  // Strictly normalize HPS values to 0 if empty
   const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
   const normalizedHps = hpsFields.map(k => {
     const v = g[k];
     return (v === '' || v === null || v === undefined) ? 0 : Number(v);
   });
 
-  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k]), initialGrade, termGrade, descriptor, ...normalizedHps];
+  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k] || 0), initialGrade, termGrade, descriptor, ...normalizedHps];
   const cols = ['student_id','subject_id','term','ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3','initial_grade','term_grade','descriptor','ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
 
   await pool.query(`INSERT INTO grades (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')}) ON DUPLICATE KEY UPDATE ${cols.slice(3).map(c=>`${c}=VALUES(${c})`).join(',')}`, vals);
@@ -168,7 +199,6 @@ router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
 }));
 
 // --- EXCEL EXPORT ---
-// Note: The route logic remains exactly the same as your original teacher.js file.
 router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const subjectId = Number(req.params.subjectId);
   const subjectType = req.query.type || 'Core Subjects';
@@ -189,7 +219,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'RNHS Teacher Portal';
 
-  // 1. Setup Sheet2 (Lookup) & Hidden Transmutation Sheet
   const wsLookup = wb.addWorksheet('Sheet2');
   wsLookup.getRow(1).values = ['SUBJECT TYPE', 'WWs', 'PTs', 'STs-TE']; wsLookup.getRow(1).font = { bold: true };
   Object.entries(SUBJECT_WEIGHTS).forEach(([k, w], i) => wsLookup.getRow(i + 2).values = [k, w[0], w[1], w[2]]);
@@ -199,13 +228,11 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const transFormula = (cell) => `LOOKUP(${cell}, Transmutation!$A$2:$A$42, Transmutation!$B$2:$B$42)`;
   const descFormula = (cell) => `IF(${cell}="","",IF(${cell}>89,"Advancing",IF(${cell}>79,"Benchmarking",IF(${cell}>74,"Connecting",IF(${cell}>64,"Developing",IF(${cell}>0,"Emerging",0))))))`;
 
-  // 2. Build Term Sheets
   for (const term of [1, 2, 3]) {
     const ws = wb.addWorksheet(`TERM ${term}`, { views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }] });
     const widths = { A: 6, B: 32, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8, K: 6, L: 6, M: 6, N: 8, O: 8, P: 8, Q: 6, R: 6, S: 6, T: 8, U: 8, V: 8, W: 12, X: 12, Y: 15 };
     Object.entries(widths).forEach(([k, v]) => { ws.getColumn(k).width = v; });
 
-    // Headers
     ws.mergeCells('A1:Y1'); ws.getCell('A1').value = `CLASS RECORD - TERM ${term}`; ws.getCell('A1').font = { bold: true, size: 14 };
     ws.mergeCells('A3:Y3'); ws.getCell('A3').value = '(Pursuant to DepEd Order 15 series of 2026)'; ws.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF666666' } };
     
@@ -229,7 +256,7 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
     ws.getRow(14).font = { bold: true }; ws.getRow(14).alignment = { horizontal: 'center' };
 
     ws.getCell('B15').value = 'HIGHEST POSSIBLE SCORE'; ws.getCell('B15').font = { bold: true };
-    const hpsRef = termRows[term][0] || {};
+    const hpsRef = termRows[term].find(r => r.ww1_hps !== null) || {};
     ['ww1','ww2','ww3','ww4','ww5'].forEach((f, i) => ws.getRow(15).getCell(3 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
     ['pt1','pt2','pt3'].forEach((f, i) => ws.getRow(15).getCell(11 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
     ['ex1','ex2','ex3'].forEach((f, i) => ws.getRow(15).getCell(17 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
@@ -240,7 +267,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
 
     ws.getCell('B16').value = "LEARNERS' NAMES"; ws.getCell('W16').value = 'Initial Grade'; ws.getCell('X16').value = 'Term Grade'; ws.getCell('Y16').value = 'Descriptor'; ws.getRow(16).font = { bold: true };
 
-    // Student Blocks
     const male = termRows[term].filter(r => normalizeGender(r.gender) === 'male');
     const female = termRows[term].filter(r => normalizeGender(r.gender) === 'female');
     let cursor = 17;
@@ -281,7 +307,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
     ws.getCell(`B${sig + 2}`).value = 'Subject Teacher'; ws.getCell(`I${sig + 2}`).value = 'SHS OIC Assistant Principal'; ws.getCell(`V${sig + 2}`).value = 'Principal IV';
   }
 
-  // 3. Build Final Grade Sheet
   const wsFinal = wb.addWorksheet('FINAL GRADE');
   const fWidths = { A: 6, B: 32, E: 12, F: 12, G: 12, H: 15, I: 18, J: 15 };
   Object.entries(fWidths).forEach(([k, v]) => { wsFinal.getColumn(k).width = v; });
@@ -318,7 +343,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
 
   writeFinalBlock('MALE', fMale); writeFinalBlock('FEMALE', fFemale);
 
-  // 4. Send Response
   const safe = (str) => str.replace(/[^a-z0-9]+/gi, '_');
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="ClassRecord_${safe(meta.subject_name)}_${safe(meta.section)}.xlsx"`);
