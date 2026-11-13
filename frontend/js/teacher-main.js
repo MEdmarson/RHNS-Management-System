@@ -13,9 +13,7 @@ function pushViewState(name) {
   history.pushState({ view: name }, '', '#' + name);
 }
 
-// When the user hits Back / Forward, popstate fires.
 window.addEventListener('popstate', async (e) => {
-  // Re-verify the user is still logged in
   if (!getToken()) {
     window.location.replace('index.html');
     return;
@@ -33,8 +31,6 @@ window.addEventListener('popstate', async (e) => {
 
   const targetView = e.state?.view;
 
-  // If they pressed Back from the "subjects" view (or there's no state),
-  // treat it as wanting to logout.
   if (!targetView || targetView === 'subjects') {
     if (!targetView && currentViewName === 'subjects') {
       const doLogout = confirm('Do you want to log out?');
@@ -107,16 +103,81 @@ function navigateToView(name, el) {
   if (name === 'sf2')        loadSF2();
 }
 
+// --- SUBJECT MANAGEMENT ---
+async function openSubjectModal() {
+  document.getElementById('subjectForm').reset();
+  document.getElementById('subjMsg').textContent = '';
+  
+  try {
+    const sections = await apiFetch('/teacher/sections');
+    const select = document.getElementById('subjSection');
+    select.innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    
+    document.getElementById('subjectModal').style.display = 'flex';
+  } catch (err) {
+    showToast('Failed to load sections.', 'error');
+  }
+}
+
+function closeSubjectModal() {
+  document.getElementById('subjectModal').style.display = 'none';
+}
+
+document.getElementById('subjectForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msgDiv = document.getElementById('subjMsg');
+  msgDiv.textContent = 'Saving...'; msgDiv.style.color = 'var(--muted)';
+
+  const payload = {
+    name: document.getElementById('subjName').value,
+    section_id: document.getElementById('subjSection').value
+  };
+
+  try {
+    await apiFetch('/teacher/subjects', { method: 'POST', body: JSON.stringify(payload) });
+    showToast('Subject created successfully!');
+    closeSubjectModal();
+    initDashboard(); 
+  } catch (err) {
+    msgDiv.textContent = '❌ ' + err.message; msgDiv.style.color = 'var(--danger)';
+  }
+});
+
+async function deleteSubject(event, subjectId, subjectName) {
+  event.stopPropagation(); 
+  
+  if (!confirm(`Are you sure you want to delete "${subjectName}"? This will permanently delete all associated grades and attendance records.`)) return;
+  
+  try {
+    await apiFetch(`/teacher/subjects/${subjectId}`, { method: 'DELETE' });
+    showToast('Subject deleted.');
+    initDashboard(); 
+  } catch (err) {
+    showToast('Error deleting subject.', 'error');
+  }
+}
+
 async function initDashboard() {
   const subjects = await apiFetch('/teacher/my-subjects');
   mySubjectsData = subjects; 
   const grid = document.getElementById('subjectsGrid');
   
-  if (subjects.length === 0) { grid.innerHTML = '<p>No subjects assigned yet.</p>'; return; }
+  if (subjects.length === 0) { 
+    grid.innerHTML = '<p style="text-align:center; width: 100%; padding: 20px; color: var(--muted);">No subjects assigned yet. Click "+ Create Subject" to start.</p>'; 
+    return; 
+  }
 
   grid.innerHTML = subjects.map(s => `
-    <div class="subject-card" onclick="openClassRecord(${s.id})">
-      <h3>📚 ${s.name}</h3>
+    <div class="subject-card" onclick="openClassRecord(${s.id})" style="position: relative;">
+      
+      <button onclick="deleteSubject(event, ${s.id}, '${s.name.replace(/'/g, "\\'")}')" 
+              style="position: absolute; top: 12px; right: 12px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
+              onmouseover="this.style.background='#fca5a5'" onmouseout="this.style.background='#fee2e2'"
+              title="Delete Subject">
+        🗑️
+      </button>
+
+      <h3 style="padding-right: 30px;">📚 ${s.name}</h3>
       <p>Section: ${s.section}</p>
       <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">Open Class Record →</div>
     </div>

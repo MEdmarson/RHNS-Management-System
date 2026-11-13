@@ -160,6 +160,32 @@ router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
+// --- SUBJECT MANAGEMENT ---
+router.get('/sections', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query('SELECT id, name FROM sections ORDER BY name');
+  res.json(rows);
+}));
+
+router.post('/subjects', asyncRoute(async (req, res) => {
+  const { name, section_id } = req.body;
+  if (!name || !section_id) return res.status(400).json({ error: 'Subject name and section are required' });
+
+  await pool.query(
+    'INSERT INTO subjects (name, section_id, teacher_id) VALUES (?, ?, ?)',
+    [name, section_id, req.user.id]
+  );
+  res.json({ ok: true, message: 'Subject created successfully' });
+}));
+
+router.delete('/subjects/:id', asyncRoute(async (req, res) => {
+  const subjectId = req.params.id;
+  const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [subjectId, req.user.id]);
+  if (!check.length) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
+
+  await pool.query('DELETE FROM subjects WHERE id = ?', [subjectId]);
+  res.json({ ok: true, message: 'Subject deleted.' });
+}));
+
 // --- EXCEL EXPORT ---
 router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const subjectId = Number(req.params.subjectId);
@@ -188,8 +214,6 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
 
   const wsTrans = wb.addWorksheet('Transmutation', { state: 'veryHidden' });
   TRANSMUTATION.forEach((t, i) => wsTrans.getRow(i + 2).values = t);
-  const transFormula = (cell) => `LOOKUP(${cell}, Transmutation!$A$2:$A$42, Transmutation!$B$2:$B$42)`;
-  const descFormula = (cell) => `IF(${cell}="","",IF(${cell}>89,"Advancing",IF(${cell}>79,"Benchmarking",IF(${cell}>74,"Connecting",IF(${cell}>64,"Developing",IF(${cell}>0,"Emerging",0))))))`;
 
   // 2. Build Term Sheets
   for (const term of [1, 2, 3]) {
@@ -259,8 +283,8 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
         row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13,"")` };
         
         row.getCell(23).value = { formula: `IF(OR(J${cursor}="",P${cursor}=""),"",SUM(J${cursor},P${cursor},V${cursor}))` };
-        row.getCell(24).value = { formula: transFormula(`W${cursor}`) };
-        row.getCell(25).value = { formula: descFormula(`X${cursor}`) };
+        row.getCell(24).value = { formula: `IF(W${cursor}="","",IF(W${cursor}>99.49,100,IF(W${cursor}>98.31,99,IF(W${cursor}>97.13,98,IF(W${cursor}>95.95,97,IF(W${cursor}>94.77,96,IF(W${cursor}>93.59,95,IF(W${cursor}>92.41,94,IF(W${cursor}>91.23,93,IF(W${cursor}>90.05,92,IF(W${cursor}>88.87,91,IF(W${cursor}>87.69,90,IF(W${cursor}>86.51,89,IF(W${cursor}>85.33,88,IF(W${cursor}>84.15,87,IF(W${cursor}>82.97,86,IF(W${cursor}>81.79,85,IF(W${cursor}>80.61,84,IF(W${cursor}>79.43,83,IF(W${cursor}>78.25,82,IF(W${cursor}>77.07,81,IF(W${cursor}>75.89,80,IF(W${cursor}>74.71,79,IF(W${cursor}>73.53,78,IF(W${cursor}>72.35,77,IF(W${cursor}>71.17,76,IF(W${cursor}>69.99,75,IF(W${cursor}>65.33,74,IF(W${cursor}>60.66,73,IF(W${cursor}>56,72,IF(W${cursor}>51.33,71,IF(W${cursor}>46.66,70,IF(W${cursor}>42,69,IF(W${cursor}>37.33,68,IF(W${cursor}>32.67,67,IF(W${cursor}>28,66,IF(W${cursor}>23.34,65,IF(W${cursor}>18.67,64,IF(W${cursor}>14,63,IF(W${cursor}>9.34,62,IF(W${cursor}>4.67,61,IF(W${cursor}>0,60,IF(W${cursor}=0,0)))))))))))))))))))))))))))))))))))))))))))` };
+        row.getCell(25).value = { formula: `IF(X${cursor}="","",IF(X${cursor}>89,"Advancing",IF(X${cursor}>79,"Benchmarking",IF(X${cursor}>74,"Connecting",IF(X${cursor}>64,"Developing",IF(X${cursor}>0,"Emerging",0))))))` };
         cursor++;
       });
     };
@@ -302,7 +326,7 @@ router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
       });
       
       row.getCell(8).value = { formula: `IFERROR(ROUND(AVERAGE(E${fCursor}:G${fCursor}),0),"")` };
-      row.getCell(9).value = { formula: descFormula(`H${fCursor}`) };
+      row.getCell(9).value = { formula: `IF(H${fCursor}="","",IF(H${fCursor}>89,"Advancing",IF(H${fCursor}>79,"Benchmarking",IF(H${fCursor}>74,"Connecting",IF(H${fCursor}>64,"Developing",IF(H${fCursor}>0,"Emerging",0))))))` };
       row.getCell(10).value = { formula: `IF(H${fCursor}="","",IF(H${fCursor}>=75,"PASSED","FAILED"))` };
       fCursor++;
     });
