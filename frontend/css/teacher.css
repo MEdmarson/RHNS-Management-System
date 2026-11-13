@@ -1,0 +1,221 @@
+/* --- Specific Styles for the Class Record --- */
+.excel-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.excel-table th, .excel-table td {
+  border: 1px solid #d1d5db;
+  padding: 4px 2px;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.excel-table th { 
+  background: #f3f4f6; 
+  font-weight: 600; 
+  color: #374151; 
+  font-size: 11px;
+}
+
+.excel-table thead tr:nth-child(1) th { background: #e5e7eb; font-size: 12px; }
+.excel-table thead tr:nth-child(2) th { background: #f9fafb; font-size: 10px; }
+
+.excel-table input {
+  width: 100%;
+  max-width: 45px;
+  padding: 4px 2px;
+  text-align: center;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.excel-table input::-webkit-outer-spin-button,
+.excel-table input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.excel-table input:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
+
+.hps-input { 
+  background: #fffbeb; 
+  color: #92400e; 
+  border-color: #d97706 !important; 
+  font-weight: bold; 
+}
+
+.computed-cell { background: #f9fafb; font-weight: bold; font-size: 12px; }
+.descriptor-cell { background: #ecfdf5; color: #065f46; font-weight: 600; font-size: 11px; white-space: normal; }
+.initial-cell { background: #eff6ff; color: #1e3a8a; font-weight: 600; font-size: 12px; }
+
+.excel-table thead th {
+  position: sticky;
+  z-index: 2;
+  height: 26px;
+  box-sizing: border-box;
+}
+.excel-table thead th:not(.name-col) { text-align: center; padding-left: 2px; }
+.excel-table thead th:not(.name-col) { left: auto; border-right: 1px solid #d1d5db; }
+
+.excel-table thead tr:nth-child(1) th { top: 0; }
+.excel-table thead tr:nth-child(2) th { top: 26px; }
+.excel-table thead tr:nth-child(3) th { top: 52px; }
+.excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
+
+.excel-table tbody td:first-child,
+.excel-table thead th.name-col {
+  position: sticky;
+  left: 0;
+  text-align: left;
+  border-right: 2px solid #d1d5db;
+  padding-left: 8px;
+  font-size: 12px;
+  white-space: normal;
+}
+.excel-table tbody td:first-child { background: #fff; z-index: 1; }
+.excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
+
+.excel-table tbody tr:nth-child(even) td:not(.computed-cell):not(.initial-cell):not(.descriptor-cell) { background: #fafafa; }
+.excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
+.excel-table tbody td:first-child { font-weight: 500; }
+.excel-table tbody td:first-child { box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
+.term-grade-cell { font-weight: 800; font-size: 14px; }
+.descriptor-cell.desc-advancing   { background: #dcfce7; color: #166534; }
+.descriptor-cell.desc-benchmarking{ background: #dbeafe; color: #1e40af; }
+.descriptor-cell.desc-connecting  { background: #e0f2fe; color: #075985; }
+.descriptor-cell.desc-developing  { background: #fef3c7; color: #92400e; }
+.descriptor-cell.desc-emerging    { background: #fee2e2; color: #991b1b; }
+.excel-table input:placeholder-shown { background: #fff; }
+.swipe-hint { display: none; font-size: 11px; color: #6b7280; margin: 0 0 6px; }
+
+/* ---------- Final Grade view extras ---------- */
+.final-grade-cell { font-weight: 800; font-size: 14px; background: #ecfdf5; color: #065f46; }
+.remarks-passed { background: #dcfce7; color: #166534; font-weight: 700; }
+.remarks-failed { background: #fee2e2; color: #991b1b; font-weight: 700; }
+
+/* ---------- Attendance Status Buttons ---------- */
+.att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+
+/* Base button style */
+.att-btn { 
+  background: #f3f4f6; 
+  color: var(--text); 
+  border: 1px solid var(--border); 
+  white-space: nowrap; 
+  transition: all 0.15s ease-in-out;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.att-btn:hover { filter: brightness(0.92); }
+
+/* Default (inactive) colors */
+.att-present { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+.att-late    { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+.att-excused { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
+.att-absent  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+
+/* Active states (when clicked) */
+.att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
+.att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
+.att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
+.att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+
+.att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+
+/* Fix for cut-off badges */
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 55px; 
+  font-size: 11px;
+}
+.badge.ok { background: #dcfce7; color: #166534; }
+.badge.warn { background: #fef3c7; color: #92400e; }
+.badge.danger { background: #fee2e2; color: #991b1b; }
+
+/* ---------- Early Warning two-card layout ---------- */
+.warning-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 15px;
+}
+.warning-card { border-top: 4px solid var(--border); }
+.warning-card.failing  { border-top-color: var(--danger); }
+.warning-card.dropping { border-top-color: var(--warning); }
+.warning-card h3 { margin-top: 0; }
+.warning-card .warning-desc { font-size: 13px; color: var(--muted); margin-bottom: 15px; }
+.warning-empty { text-align: center; padding: 20px; color: var(--muted); }
+
+/* ---------- Mobile Responsiveness ---------- */
+@media (max-width: 768px) {
+  .att-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
+  .att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
+
+  .main { padding: 12px 10px 90px; }
+  .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+  .topbar h2 { font-size: 18px; }
+  .user-chip { padding: 5px 10px; font-size: 12px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  #toastContainer { bottom: 80px; right: 10px; left: 10px; }
+
+  .nav-item .nav-icon { font-size: 20px; line-height: 1; }
+  .nav-item .nav-label { font-size: 10.5px; line-height: 1.1; }
+
+  #historyTable td:first-child, #historyTable th:first-child { min-width: 110px !important; max-width: 110px !important; font-size: 11px; padding-left: 6px; }
+  #historyTable td, #historyTable th { min-width: 30px !important; padding: 5px 2px; font-size: 11px; }
+  #historyTable td:last-child, #historyTable th:last-child { min-width: 46px !important; right: 0; }
+  #historyTable td:nth-last-child(2), #historyTable th:nth-last-child(2) { min-width: 46px !important; right: 46px; }
+  #view-gradebook .card { padding: 8px !important; }
+  .gb-toolbar { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+  .gb-title { gap: 10px !important; flex-wrap: wrap; }
+  .gb-title h3 { font-size: 15px; flex: 1; min-width: 0; }
+  .gb-controls { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-items: center; }
+  .gb-select { width: 100% !important; max-width: none !important; min-height: 38px; font-size: 14px; }
+  #gradebookSearch { max-width: none !important; min-height: 40px; font-size: 16px; }
+
+  #saveBtn {
+    position: fixed; right: 14px; bottom: 80px; z-index: 60;
+    padding: 12px 18px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,.28);
+    grid-column: 1 / -1;
+  }
+
+  .swipe-hint { display: block; }
+  .excel-wrapper { min-height: 280px; max-height: calc(100dvh - 330px); border-radius: 6px; overscroll-behavior: contain; }
+
+  .excel-table col:first-child { width: 112px !important; }
+  .excel-table col { width: 42px !important; }
+  .excel-table thead th, .excel-table td { padding: 3px 1px; }
+  .excel-table tbody td:first-child,
+  .excel-table thead th.name-col { padding-left: 5px; font-size: 11px; line-height: 1.2; }
+  .excel-table th { font-size: 10px; }
+  .excel-table input { max-width: 38px; min-height: 34px; font-size: 16px; padding: 2px 0; }
+  .excel-table .hps-input { min-height: 30px; font-size: 14px; }
+  .excel-table thead tr:nth-child(4) th { height: 40px; }
+  .descriptor-cell { font-size: 10px; }
+
+  .warning-grid { grid-template-columns: 1fr; }
+
+  /* Final Grade view: tighter widths on mobile */
+  #gradebookTable.final-mode col:first-child { width: 130px !important; }
+  #gradebookTable.final-mode col { width: 52px !important; }
+}
+
+@media (max-width: 480px) {
+  .excel-table col:first-child { width: 96px !important; }
+  .excel-table tbody td:first-child, .excel-table thead th.name-col { font-size: 10.5px; }
+}
