@@ -23,7 +23,6 @@ fs.createReadStream(fileName)
     const name = data['1'];
     const lrn = data['2'];
 
-    // Only process rows that have a valid LRN and a name
     if (lrn && lrn.trim().length >= 10 && name && name.trim() !== 'MALE' && name.trim() !== 'FEMALE') {
       results.push({ name: name.trim(), lrn: lrn.trim() });
     }
@@ -49,14 +48,15 @@ fs.createReadStream(fileName)
           const defaultPassword = student.lrn; 
           const password_hash = await bcrypt.hash(defaultPassword, 10);
 
-          // STUDENT: email is explicitly set to NULL
+          // FIX: Removed LRN from the users table insert (since it belongs in the students table)
           const [userResult] = await pool.query(
-            'INSERT INTO users (full_name, email, lrn, password_hash, role, is_first_login) VALUES (?, NULL, ?, ?, "student", TRUE)',
-            [student.name, student.lrn, password_hash]
+            'INSERT INTO users (full_name, email, password_hash, role, is_first_login) VALUES (?, NULL, ?, "student", TRUE)',
+            [student.name, password_hash]
           );
           
           const user_id = userResult.insertId;
 
+          // Insert LRN, user_id, and section_id into the students table
           await pool.query(
             'INSERT INTO students (user_id, lrn, section_id, grade_level) VALUES (?, ?, ?, 12)',
             [user_id, student.lrn, section_id]

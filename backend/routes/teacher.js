@@ -63,7 +63,6 @@ router.post('/subjects', asyncRoute(async (req, res) => {
 router.delete('/subjects/:id', asyncRoute(async (req, res) => {
   const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.id]);
   if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
-
   await pool.query('DELETE FROM subjects WHERE id = ?', [req.params.id]);
   res.json({ ok: true, message: 'Subject deleted' });
 }));
@@ -89,7 +88,13 @@ router.post('/grades', asyncRoute(async (req, res) => {
   try {
     const g = req.body;
     
-    // Ensure all values are numbers or 0
+    // SAFETY CHECK: Prevent server crash if student_id is null
+    if (!g.student_id) {
+      console.warn("Skipped saving grade: Missing student_id");
+      return res.json({ ok: true, skipped: true });
+    }
+
+    // Ensure all values are numbers or 0 (Fixes TiDB crashing on empty strings/decimals)
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
     
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
@@ -104,7 +109,8 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
     const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
 
-    const initialGrade = (ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30);
+    // Make sure to round to 2 decimal places so TiDB doesn't complain about precision
+    const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
     const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
     const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
@@ -137,6 +143,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
     res.json({ ok: true, termGrade });
 
   } catch (err) {
+    // THIS WILL SHOW IN YOUR RENDER LOGS
     console.error("\n================ DATABASE ERROR ================");
     console.error("SQL Message:", err.message);
     console.error("Payload received:", req.body);
@@ -145,7 +152,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
   }
 }));
 
-// (The rest of the file: final-grades, attendance, etc. remains exactly the same)
 router.get('/final-grades', asyncRoute(async (req, res) => {
   const { subject } = req.query;
   if (!subject) return res.status(400).json({ error: "Subject ID required" });
@@ -167,6 +173,7 @@ router.get('/final-grades', asyncRoute(async (req, res) => {
   }));
 }));
 
+// --- ATTENDANCE & WARNINGS ---
 router.get('/attendance/:subjectId/:date', asyncRoute(async (req, res) => {
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, a.status,

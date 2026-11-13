@@ -57,7 +57,6 @@ function calculateRow(input) {
 function calculateRowEl(tr) {
   if (currentGradebookMode === 'final') return;
   
-  // FIX: Calculate based directly on the DOM elements within the specific row 'tr'
   const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
   
   const getVal = field => {
@@ -92,7 +91,6 @@ function calculateRowEl(tr) {
 
   const fmt2 = v => v === null ? '' : v.toFixed(2);
   
-  // FIX: Find cells within this specific row using querySelector, not global getElementById
   const set = (selector, text) => { 
     const cell = tr.querySelector(`[id^="${selector}-"]`); 
     if (cell) cell.textContent = text; 
@@ -148,7 +146,7 @@ async function loadGradebook() {
 function renderGradebook() {
   const searchQuery = document.getElementById('gradebookSearch').value.toLowerCase();
   let filtered = currentGradebookData;
-  if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
+  if (searchQuery) filtered = filtered.filter(r => r.full_name && r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
     document.getElementById('gradebookBody').innerHTML = '<tr><td colspan="24" style="text-align:center; padding: 20px;">No students found.</td></tr>';
@@ -156,7 +154,13 @@ function renderGradebook() {
   }
 
   document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
-    // We use the array index for data-idx to ensure uniqueness
+    // FIX: Prevent rendering rows for students that have a missing/null database ID
+    if (!r.student_id) {
+      return `<tr><td colspan="24" style="text-align:center; padding: 15px; color: var(--danger); font-weight: bold; background: #fee2e2;">
+        ⚠️ Error: Student "${r.full_name || 'Unknown'}" is missing a User ID in the database and cannot be graded. Please re-import or fix their record.
+      </td></tr>`;
+    }
+
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
     
     const makeInput = (field) => {
@@ -164,7 +168,6 @@ function renderGradebook() {
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
-    // Note: ID attributes here use the student's ID, but calculateRowEl now targets them safely within the row
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
@@ -301,7 +304,7 @@ async function loadFinalGrades() {
 function renderFinalGrades() {
   const searchQuery = document.getElementById('gradebookSearch').value.toLowerCase();
   let filtered = currentFinalGradeData;
-  if (searchQuery) filtered = filtered.filter(r => r.full_name.toLowerCase().includes(searchQuery));
+  if (searchQuery) filtered = filtered.filter(r => r.full_name && r.full_name.toLowerCase().includes(searchQuery));
 
   if (filtered.length === 0) {
     document.getElementById('gradebookBody').innerHTML =
@@ -350,7 +353,9 @@ async function saveAllGrades() {
   btn.disabled = true;
 
   const term = document.getElementById('termSelect').value;
-  const inputs = document.querySelectorAll('#gradebookBody input');
+  
+  // Target only inputs inside valid rows (that have an ID)
+  const inputs = document.querySelectorAll('#gradebookBody tr[id^="row-"] input');
   
   const hpsValues = {};
   HPS_FIELDS.forEach(f => {
@@ -362,8 +367,18 @@ async function saveAllGrades() {
   inputs.forEach(input => {
     const idx = input.getAttribute('data-idx');
     const field = input.getAttribute('data-field');
+    const student = currentGradebookData[idx];
+
+    // Ensure we don't try to save a student that doesn't exist
+    if (!student || !student.student_id) return;
+
     if (!payload[idx]) {
-      payload[idx] = { student_id: currentGradebookData[idx].student_id, subject_id: currentSubjectId, term: term, ...hpsValues };
+      payload[idx] = { 
+        student_id: student.student_id, 
+        subject_id: currentSubjectId, 
+        term: term, 
+        ...hpsValues 
+      };
     }
     payload[idx][field] = input.value ? parseInt(input.value) : 0;
   });
