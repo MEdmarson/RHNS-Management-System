@@ -1,10 +1,16 @@
 const router = require('express').Router();
 const pool = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
+const ExcelJS = require('exceljs');
 
 router.use(authenticate, authorize('teacher'));
 
-// DepEd Transmutation Table
+// Helper to wrap async routes so we don't repeat try/catch everywhere
+const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
+  console.error(err);
+  res.status(500).json({ error: err.message });
+});
+
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
   [90.05,92],[88.87,91],[87.69,90],[86.51,89],[85.33,88],[84.15,87],[82.97,86],[81.79,85],
@@ -13,304 +19,303 @@ const TRANSMUTATION = [
   [37.33,68],[32.67,67],[28,66],[23.34,65],[18.67,64],[14,63],[9.34,62],[4.67,61],[0,60]
 ];
 
-function transmute(initial) {
-  for (const [min, grade] of TRANSMUTATION) {
-    if (initial > min) return grade;
-  }
-  return 0;
-}
+const SUBJECT_WEIGHTS = {
+  'Academic Electives':                          [0.20, 0.50, 0.30],
+  'Arts Apprenticeship':                         [0.15, 0.70, 0.15],
+  'Arts, Sports, Health and Wellness Electives': [0.20, 0.60, 0.20],
+  'Core Subjects':                               [0.20, 0.50, 0.30],
+  'Creative Production and Innovation':          [0.15, 0.70, 0.15],
+  'Design and Innovation':                       [0.40, 0.60, 0.00],
+  'Field Exposure':                              [0.15, 0.70, 0.15],
+  'Research Electives':                          [0.40, 0.60, 0.00],
+  'TechPro Electives':                           [0.15, 0.65, 0.20],
+  'Work Immersion':                              [0.20, 0.80, 0.00]
+};
 
-// GET subjects assigned to this teacher
-router.get('/my-subjects', async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT sub.id, sub.name, sec.id AS section_id, sec.name AS section
-    FROM subjects sub
-    JOIN sections sec ON sec.id = sub.section_id
-    WHERE sub.teacher_id = ?`, [req.user.id]);
+const transmute = (initial) => (TRANSMUTATION.find(([min]) => initial > min) || [0, 0])[1];
+const normalizeGender = (g) => String(g || '').trim().toLowerCase().startsWith('f') ? 'female' : 'male';
+const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
+
+// --- DASHBOARD & GRADEBOOK ---
+router.get('/my-subjects', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query(`SELECT sub.id, sub.name, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE sub.teacher_id = ?`, [req.user.id]);
   res.json(rows);
-});
+}));
 
-// GET students and grades for a specific subject and term
-router.get('/gradebook', async (req, res) => {
-  const term = req.query.term || 1; 
-  const subjectId = req.query.subject;
-  if (!subjectId) return res.status(400).json({ error: "Subject ID required" });
+router.get('/gradebook', asyncRoute(async (req, res) => {
+  const { term = 1, subject } = req.query;
+  if (!subject) return res.status(400).json({ error: "Subject ID required" });
 
   const [rows] = await pool.query(`
-    SELECT u.id AS student_id, u.full_name, s.lrn, sec.name AS section,
-           sub.id AS subject_id, sub.name AS subject,
-           g.id AS grade_id, g.ww1, g.ww2, g.ww3, g.ww4, g.ww5,
-           g.pt1, g.pt2, g.pt3, g.ex1, g.ex2, g.ex3, 
-           g.term_grade, g.initial_grade, g.descriptor,
-           g.ww1_hps, g.ww2_hps, g.ww3_hps, g.ww4_hps, g.ww5_hps,
-           g.pt1_hps, g.pt2_hps, g.pt3_hps,
-           g.ex1_hps, g.ex2_hps, g.ex3_hps
+    SELECT u.id AS student_id, u.full_name, s.lrn, sec.name AS section, sub.id AS subject_id, sub.name AS subject,
+           g.*
     FROM subjects sub
     JOIN sections sec ON sec.id = sub.section_id
     JOIN students s ON s.section_id = sec.id
     JOIN users u ON u.id = s.user_id
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id AND g.term = ?
-    WHERE sub.teacher_id = ? AND sub.id = ?
-    ORDER BY u.full_name`, [term, req.user.id, subjectId]);
+    WHERE sub.teacher_id = ? AND sub.id = ? ORDER BY u.full_name`, [term, req.user.id, subject]);
   res.json(rows);
-});
+}));
 
-// UPDATE grades
-router.post('/grades', async (req, res) => {
-  const { 
-    student_id, subject_id, term, 
-    ww1, ww2, ww3, ww4, ww5, 
-    pt1, pt2, pt3, 
-    ex1, ex2, ex3,
-    ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
-    pt1_hps, pt2_hps, pt3_hps,
-    ex1_hps, ex2_hps, ex3_hps
-  } = req.body;
+router.post('/grades', asyncRoute(async (req, res) => {
+  const g = req.body;
+  const sum = (keys) => keys.reduce((a, k) => a + (Number(g[k]) || 0), 0);
+  const getPs = (tot, hpsKeys) => (tot / (sum(hpsKeys) || 1)) * 100;
+  const getWs = (ps, weight) => ps * weight;
 
-  const wwTotal = [ww1, ww2, ww3, ww4, ww5].reduce((a, b) => a + (Number(b) || 0), 0);
-  const ptTotal = [pt1, pt2, pt3].reduce((a, b) => a + (Number(b) || 0), 0);
-  const exTotal = [ex1, ex2, ex3].reduce((a, b) => a + (Number(b) || 0), 0);
+  const wwPs = getPs(sum(['ww1','ww2','ww3','ww4','ww5']), ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps']);
+  const ptPs = getPs(sum(['pt1','pt2','pt3']), ['pt1_hps','pt2_hps','pt3_hps']);
+  const exPs = getPs(sum(['ex1','ex2','ex3']), ['ex1_hps','ex2_hps','ex3_hps']);
 
-  const wwHpsTotal = [ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-  const ptHpsTotal = [pt1_hps, pt2_hps, pt3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-  const exHpsTotal = [ex1_hps, ex2_hps, ex3_hps].reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-
-  const wwPs = (wwTotal / wwHpsTotal) * 100;
-  const ptPs = (ptTotal / ptHpsTotal) * 100;
-  const exPs = (exTotal / exHpsTotal) * 100;
-
-  const wwWs = wwPs * 0.20; 
-  const ptWs = ptPs * 0.50; 
-  const exWs = exPs * 0.30; 
-
-  const initialGrade = wwWs + ptWs + exWs;
+  const initialGrade = getWs(wwPs, 0.20) + getWs(ptPs, 0.50) + getWs(exPs, 0.30);
   const termGrade = transmute(initialGrade);
+  const descriptor = termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-  let descriptor = 'Emerging';
-  if (termGrade > 89) descriptor = 'Advancing';
-  else if (termGrade > 79) descriptor = 'Benchmarking';
-  else if (termGrade > 74) descriptor = 'Connecting';
-  else if (termGrade > 64) descriptor = 'Developing';
+  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k]), initialGrade, termGrade, descriptor, ...['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'].map(k => g[k])];
+  const cols = ['student_id','subject_id','term','ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3','initial_grade','term_grade','descriptor','ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
 
-  try {
-    await pool.query(`
-      INSERT INTO grades (
-        student_id, subject_id, term, 
-        ww1, ww2, ww3, ww4, ww5, 
-        pt1, pt2, pt3, 
-        ex1, ex2, ex3, initial_grade, term_grade, descriptor,
-        ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
-        pt1_hps, pt2_hps, pt3_hps,
-        ex1_hps, ex2_hps, ex3_hps
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
-        pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3),
-        ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
-        initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
-        ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
-        pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps),
-        ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)`,
-      [student_id, subject_id, term, 
-       ww1, ww2, ww3, ww4, ww5, 
-       pt1, pt2, pt3, 
-       ex1, ex2, ex3, initialGrade, termGrade, descriptor,
-       ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
-       pt1_hps, pt2_hps, pt3_hps,
-       ex1_hps, ex2_hps, ex3_hps]);
+  await pool.query(`INSERT INTO grades (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')}) ON DUPLICATE KEY UPDATE ${cols.slice(3).map(c=>`${c}=VALUES(${c})`).join(',')}`, vals);
+  res.json({ ok: true, termGrade });
+}));
 
-    res.json({ ok: true, termGrade });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+router.get('/final-grades', asyncRoute(async (req, res) => {
+  const { subject } = req.query;
+  if (!subject) return res.status(400).json({ error: "Subject ID required" });
 
-// GET final grades
-router.get('/final-grades', async (req, res) => {
-  const subjectId = req.query.subject;
-  if (!subjectId) return res.status(400).json({ error: "Subject ID required" });
+  const [rows] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name,
+           MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
+           MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
+           MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3
+    FROM subjects sub JOIN sections sec ON sec.id = sub.section_id JOIN students s ON s.section_id = sec.id JOIN users u ON u.id = s.user_id
+    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
+    WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name ORDER BY u.full_name`, [req.user.id, subject]);
 
-  try {
-    const [rows] = await pool.query(`
-      SELECT u.id AS student_id, u.full_name,
-             MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
-             MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
-             MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3
-      FROM subjects sub
-      JOIN sections sec ON sec.id = sub.section_id
-      JOIN students s  ON s.section_id = sec.id
-      JOIN users u     ON u.id = s.user_id
-      LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-      WHERE sub.teacher_id = ? AND sub.id = ?
-      GROUP BY u.id, u.full_name
-      ORDER BY u.full_name
-    `, [req.user.id, subjectId]);
+  res.json(rows.map(r => {
+    const present = [r.term1, r.term2, r.term3].filter(v => v !== null).map(Number);
+    const final = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
+    const desc = final === null ? '' : final > 89 ? 'Advancing' : final > 79 ? 'Benchmarking' : final > 74 ? 'Connecting' : final > 64 ? 'Developing' : 'Emerging';
+    return { ...r, final_grade: final, descriptor: desc };
+  }));
+}));
 
-    const out = rows.map(r => {
-      const t1 = r.term1 === null ? null : Number(r.term1);
-      const t2 = r.term2 === null ? null : Number(r.term2);
-      const t3 = r.term3 === null ? null : Number(r.term3);
-      
-      const present = [t1, t2, t3].filter(v => v !== null && v !== undefined);
-      
-      const final_grade = present.length 
-        ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) 
-        : null;
+// --- ATTENDANCE & WARNINGS ---
+router.get('/attendance/:subjectId/:date', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name, a.status,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'late') AS days_late,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'excused') AS days_excused,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
+    FROM subjects sub JOIN students s ON s.section_id = sub.section_id JOIN users u ON u.id = s.user_id
+    LEFT JOIN attendance a ON a.student_id = u.id AND a.date = ? AND a.section_id = sub.section_id
+    WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name, a.status ORDER BY u.full_name`, [req.params.date, req.user.id, req.params.subjectId]);
+  res.json(rows);
+}));
 
-      let descriptor = '';
-      if (final_grade !== null) {
-        if (final_grade > 89)      descriptor = 'Advancing';
-        else if (final_grade > 79) descriptor = 'Benchmarking';
-        else if (final_grade > 74) descriptor = 'Connecting';
-        else if (final_grade > 64) descriptor = 'Developing';
-        else if (final_grade > 0)  descriptor = 'Emerging';
-      }
-
-      return {
-        student_id: r.student_id,
-        full_name: r.full_name,
-        term1: r.term1,
-        term2: r.term2,
-        term3: r.term3,
-        final_grade,
-        descriptor
-      };
-    });
-
-    res.json(out);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- ATTENDANCE ---
-router.get('/attendance/:subjectId/:date', async (req, res) => {
-  const { subjectId, date } = req.params;
-  try {
-    const [rows] = await pool.query(`
-      SELECT u.id AS student_id, u.full_name, a.status,
-             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
-             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'late') AS days_late,
-             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'excused') AS days_excused,
-             (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
-      FROM subjects sub 
-      JOIN students s ON s.section_id = sub.section_id
-      JOIN users u ON u.id = s.user_id
-      LEFT JOIN attendance a ON a.student_id = u.id AND a.date = ? AND a.section_id = sub.section_id
-      WHERE sub.teacher_id = ? AND sub.id = ?
-      GROUP BY u.id, u.full_name, a.status 
-      ORDER BY u.full_name`, [date, req.user.id, subjectId]);
-    res.json(rows);
-  } catch (err) { 
-    console.error(err);
-    res.status(500).json({ error: err.message }); 
-  }
-});
-
-router.post('/attendance', async (req, res) => {
+router.post('/attendance', asyncRoute(async (req, res) => {
   const { student_id, section_id, date, status } = req.body;
-  try {
-    await pool.query(`
-      INSERT INTO attendance (student_id, section_id, date, status, recorded_by)
-      VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`,
-      [student_id, section_id, date, status, req.user.id]);
-    res.json({ ok: true });
-  } catch (err) { 
-    console.error(err);
-    res.status(500).json({ error: err.message }); 
-  }
-});
+  await pool.query(`INSERT INTO attendance (student_id, section_id, date, status, recorded_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`, [student_id, section_id, date, status, req.user.id]);
+  res.json({ ok: true });
+}));
 
-router.get('/attendance-history/:subjectId', async (req, res) => {
-  const { subjectId } = req.params;
-  const { month, year } = req.query;
-  try {
+router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name, a.date, a.status
+    FROM subjects sub JOIN students s ON s.section_id = sub.section_id JOIN users u ON u.id = s.user_id
+    JOIN attendance a ON a.student_id = u.id AND a.section_id = sub.section_id
+    WHERE sub.teacher_id = ? AND sub.id = ? AND MONTH(a.date) = ? AND YEAR(a.date) = ? ORDER BY u.full_name, a.date`, [req.user.id, req.params.subjectId, req.query.month, req.query.year]);
+  res.json(rows);
+}));
+
+router.get('/at-risk', asyncRoute(async (req, res) => {
+  const [rows] = await pool.query(`
+    SELECT u.id, u.full_name, ROUND(AVG(g.term_grade), 2) AS avg_grade,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present') AS raw_present,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late') AS raw_late,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused') AS raw_excused,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent') AS raw_absent
+    FROM users u JOIN students s ON s.user_id = u.id JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
+    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
+    GROUP BY u.id, u.full_name HAVING (avg_grade < 75) OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
+  res.json(rows);
+}));
+
+router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
+  const { sectionId } = req.params;
+  const [authCheck] = await pool.query(`SELECT 1 FROM subjects WHERE section_id = ? AND teacher_id = ? LIMIT 1`, [sectionId, req.user.id]);
+  if (!authCheck.length) return res.status(403).json({ error: "Unauthorized" });
+
+  const m = Number(req.query.month) || (new Date().getMonth() + 1);
+  const y = Number(req.query.year) || new Date().getFullYear();
+
+  const [rows] = await pool.query(`
+    SELECT s.lrn, u.full_name,
+           COALESCE(SUM(a.status = 'present'), 0) AS days_present, COALESCE(SUM(a.status = 'late'), 0) AS days_late,
+           COALESCE(SUM(a.status = 'excused'), 0) AS days_excused, COALESCE(SUM(a.status = 'absent'), 0) AS days_absent
+    FROM users u JOIN students s ON s.user_id = u.id
+    LEFT JOIN attendance a ON a.student_id = u.id AND a.section_id = s.section_id AND MONTH(a.date) = ? AND YEAR(a.date) = ?
+    WHERE s.section_id = ? GROUP BY u.id, s.lrn, u.full_name ORDER BY u.full_name`, [m, y, sectionId]);
+  res.json(rows);
+}));
+
+// --- EXCEL EXPORT ---
+router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
+  const subjectId = Number(req.params.subjectId);
+  const subjectType = req.query.type || 'Core Subjects';
+  const weights = SUBJECT_WEIGHTS[subjectType] || SUBJECT_WEIGHTS['Core Subjects'];
+
+  const [[meta]] = await pool.query(`SELECT sub.name AS subject_name, sec.name AS section, u.full_name AS teacher_name FROM subjects sub JOIN sections sec ON sec.id = sub.section_id JOIN users u ON u.id = sub.teacher_id WHERE sub.teacher_id = ? AND sub.id = ?`, [req.user.id, subjectId]);
+  if (!meta) return res.status(404).json({ error: 'Subject not found' });
+
+  const termRows = {};
+  for (const term of [1, 2, 3]) {
     const [rows] = await pool.query(`
-      SELECT u.id AS student_id, u.full_name, a.date, a.status
-      FROM subjects sub 
-      JOIN students s ON s.section_id = sub.section_id
-      JOIN users u ON u.id = s.user_id
-      JOIN attendance a ON a.student_id = u.id AND a.section_id = sub.section_id
-      WHERE sub.teacher_id = ? AND sub.id = ? AND MONTH(a.date) = ? AND YEAR(a.date) = ?
-      ORDER BY u.full_name, a.date`, [req.user.id, subjectId, month, year]);
-    res.json(rows);
-  } catch (err) { 
-    console.error(err);
-    res.status(500).json({ error: err.message }); 
+      SELECT u.id AS student_id, u.full_name, s.lrn, s.gender, g.*
+      FROM subjects sub JOIN sections sec ON sec.id = sub.section_id JOIN students s ON s.section_id = sec.id JOIN users u ON u.id = s.user_id
+      LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id AND g.term = ? WHERE sub.teacher_id = ? AND sub.id = ? ORDER BY u.full_name`, [term, req.user.id, subjectId]);
+    termRows[term] = rows;
   }
-});
 
-// --- WARNINGS ---
-router.get('/at-risk', async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT u.id, u.full_name,
-             ROUND(AVG(g.term_grade), 2) AS avg_grade,
-             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present') AS raw_present,
-             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late')    AS raw_late,
-             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused') AS raw_excused,
-             (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent')  AS raw_absent
-      FROM users u 
-      JOIN students s ON s.user_id = u.id
-      JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
-      LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-      GROUP BY u.id, u.full_name 
-      HAVING (avg_grade < 75) 
-          OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'RNHS Teacher Portal';
+
+  // 1. Setup Sheet2 (Lookup) & Hidden Transmutation Sheet
+  const wsLookup = wb.addWorksheet('Sheet2');
+  wsLookup.getRow(1).values = ['SUBJECT TYPE', 'WWs', 'PTs', 'STs-TE']; wsLookup.getRow(1).font = { bold: true };
+  Object.entries(SUBJECT_WEIGHTS).forEach(([k, w], i) => wsLookup.getRow(i + 2).values = [k, w[0], w[1], w[2]]);
+
+  const wsTrans = wb.addWorksheet('Transmutation', { state: 'veryHidden' });
+  TRANSMUTATION.forEach((t, i) => wsTrans.getRow(i + 2).values = t);
+  const transFormula = (cell) => `LOOKUP(${cell}, Transmutation!$A$2:$A$42, Transmutation!$B$2:$B$42)`;
+  const descFormula = (cell) => `IF(${cell}="","",IF(${cell}>89,"Advancing",IF(${cell}>79,"Benchmarking",IF(${cell}>74,"Connecting",IF(${cell}>64,"Developing",IF(${cell}>0,"Emerging",0))))))`;
+
+  // 2. Build Term Sheets
+  for (const term of [1, 2, 3]) {
+    const ws = wb.addWorksheet(`TERM ${term}`, { views: [{ state: 'frozen', xSplit: 2, ySplit: 16 }] });
+    const widths = { A: 6, B: 32, C: 6, D: 6, E: 6, F: 6, G: 6, H: 8, I: 8, J: 8, K: 6, L: 6, M: 6, N: 8, O: 8, P: 8, Q: 6, R: 6, S: 6, T: 8, U: 8, V: 8, W: 12, X: 12, Y: 15 };
+    Object.entries(widths).forEach(([k, v]) => { ws.getColumn(k).width = v; });
+
+    // Headers
+    ws.mergeCells('A1:Y1'); ws.getCell('A1').value = `CLASS RECORD - TERM ${term}`; ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('A3:Y3'); ws.getCell('A3').value = '(Pursuant to DepEd Order 15 series of 2026)'; ws.getCell('A3').font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+    
+    const headerData = [['C5','REGION:'], ['H5','I'], ['N5','DIVISION'], ['Q5','PANGASINAN II'], ['T5','SCHOOL ID'], ['W5','300341'], ['C7','SCHOOL NAME:'], ['H7','ROSALES NATIONAL HIGH SCHOOL'], ['S7','SCHOOL YEAR:'], ['W7','2026-2027'],
+      ['A10',`TERM ${term}`], ['C10','GRADE LEVEL'], ['I10','11'], ['N10','TEACHER:'], ['Q10',meta.teacher_name], ['U10','SUBJECT:'], ['W10',meta.subject_name],
+      ['C11','SECTION'], ['I11',meta.section], ['N11','TRACK:'], ['Q11','ACADEMIC'], ['U11','SUBJECT TYPE:'], ['W11',subjectType]];
+    headerData.forEach(([c, v]) => ws.getCell(c).value = v);
+
+    ws.getCell('C13').value = { formula: `VLOOKUP(W11,Sheet2!$A$2:$D$11,2,TRUE)` };
+    ws.getCell('K13').value = { formula: `VLOOKUP(W11,Sheet2!$A$2:$D$11,3,TRUE)` };
+    ws.getCell('Q13').value = { formula: `VLOOKUP(W11,Sheet2!$A$2:$D$11,4,TRUE)` };
+
+    const catHeader = (range, text, color) => { ws.mergeCells(range); ws.getCell(range.split(':')[0]).value = text; ws.getCell(range.split(':')[0]).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }; ws.getCell(range.split(':')[0]).font = { bold: true }; };
+    catHeader('C12:J12', 'WRITTEN/ORAL WORKS (WWs)', 'FFE0E7FF');
+    catHeader('K12:P12', 'PRODUCT/PERFORMANCE TASKS (PTs)', 'FFDCFCE7');
+    catHeader('Q12:V12', 'EXAMINATIONS (EXs)', 'FFFEF3C7');
+
+    ['1','2','3','4','5','TOTAL','PS','WS'].forEach((h, i) => ws.getRow(14).getCell(3 + i).value = h);
+    ['1','2','3','TOTAL','PS','WS'].forEach((h, i) => ws.getRow(14).getCell(11 + i).value = h);
+    ['SA1','SA2','TE','TOTAL','PS','WS'].forEach((h, i) => ws.getRow(14).getCell(17 + i).value = h);
+    ws.getRow(14).font = { bold: true }; ws.getRow(14).alignment = { horizontal: 'center' };
+
+    ws.getCell('B15').value = 'HIGHEST POSSIBLE SCORE'; ws.getCell('B15').font = { bold: true };
+    const hpsRef = termRows[term][0] || {};
+    ['ww1','ww2','ww3','ww4','ww5'].forEach((f, i) => ws.getRow(15).getCell(3 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
+    ['pt1','pt2','pt3'].forEach((f, i) => ws.getRow(15).getCell(11 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
+    ['ex1','ex2','ex3'].forEach((f, i) => ws.getRow(15).getCell(17 + i).value = val(hpsRef[`${f}_hps`]) ?? 100);
+    
+    ws.getCell('H15').value = { formula: 'SUM(C15:G15)' }; ws.getCell('I15').value = 100; ws.getCell('J15').value = { formula: 'I15*$C$13' };
+    ws.getCell('N15').value = { formula: 'SUM(K15:M15)' }; ws.getCell('O15').value = 100; ws.getCell('P15').value = { formula: 'O15*$K$13' };
+    ws.getCell('T15').value = { formula: 'SUM(Q15:S15)' }; ws.getCell('U15').value = 100; ws.getCell('V15').value = { formula: 'U15*$Q$13' };
+
+    ws.getCell('B16').value = "LEARNERS' NAMES"; ws.getCell('W16').value = 'Initial Grade'; ws.getCell('X16').value = 'Term Grade'; ws.getCell('Y16').value = 'Descriptor'; ws.getRow(16).font = { bold: true };
+
+    // Student Blocks
+    const male = termRows[term].filter(r => normalizeGender(r.gender) === 'male');
+    const female = termRows[term].filter(r => normalizeGender(r.gender) === 'female');
+    let cursor = 17;
+
+    const writeBlock = (label, list) => {
+      ws.getCell(`A${cursor}`).value = label; ws.getCell(`A${cursor}`).font = { bold: true, italic: true }; cursor++;
+      list.forEach((s, i) => {
+        const row = ws.getRow(cursor);
+        row.getCell(1).value = i + 1; row.getCell(2).value = s.full_name;
+        for (let c = 3; c <= 7; c++) row.getCell(c).value = val(s[`ww${c-2}`]);
+        for (let c = 11; c <= 13; c++) row.getCell(c).value = val(s[`pt${c-10}`]);
+        for (let c = 17; c <= 19; c++) row.getCell(c).value = val(s[`ex${c-16}`]);
+        
+        row.getCell(8).value = { formula: `SUM(C${cursor}:G${cursor})` };
+        row.getCell(9).value = { formula: `IF(H${cursor}="","",H${cursor}/$H$15*100)` };
+        row.getCell(10).value = { formula: `IFERROR(I${cursor}*$C$13,"")` };
+        
+        row.getCell(14).value = { formula: `SUM(K${cursor}:M${cursor})` };
+        row.getCell(15).value = { formula: `IF(N${cursor}="","",N${cursor}/$N$15*100)` };
+        row.getCell(16).value = { formula: `IFERROR(O${cursor}*$K$13,"")` };
+        
+        row.getCell(20).value = { formula: `SUM(Q${cursor}:S${cursor})` };
+        row.getCell(21).value = { formula: `IF(T${cursor}="","",T${cursor}/$T$15*100)` };
+        row.getCell(22).value = { formula: `IFERROR(U${cursor}*$Q$13,"")` };
+        
+        row.getCell(23).value = { formula: `IF(OR(J${cursor}="",P${cursor}=""),"",SUM(J${cursor},P${cursor},V${cursor}))` };
+        row.getCell(24).value = { formula: transFormula(`W${cursor}`) };
+        row.getCell(25).value = { formula: descFormula(`X${cursor}`) };
+        cursor++;
+      });
+    };
+
+    writeBlock('MALE', male); writeBlock('FEMALE', female);
+
+    const sig = cursor + 1;
+    ws.getCell(`A${sig}`).value = 'Prepared by:'; ws.getCell(`F${sig}`).value = 'Checked by:'; ws.getCell(`T${sig}`).value = 'Approved:';
+    ws.getCell(`B${sig + 1}`).value = meta.teacher_name; ws.getCell(`I${sig + 1}`).value = 'CONRADO C. AREOLA JR.'; ws.getCell(`V${sig + 1}`).value = 'ROWENA LEA G. MORENO';
+    ws.getCell(`B${sig + 2}`).value = 'Subject Teacher'; ws.getCell(`I${sig + 2}`).value = 'SHS OIC Assistant Principal'; ws.getCell(`V${sig + 2}`).value = 'Principal IV';
   }
-});
 
-// --- SF2 (UPDATED: monthly auto-generation + per-section security) ---
-router.get('/sf2/:sectionId', async (req, res) => {
-  try {
-    const { sectionId } = req.params;
-    const { month, year } = req.query;
+  // 3. Build Final Grade Sheet
+  const wsFinal = wb.addWorksheet('FINAL GRADE');
+  const fWidths = { A: 6, B: 32, E: 12, F: 12, G: 12, H: 15, I: 18, J: 15 };
+  Object.entries(fWidths).forEach(([k, v]) => { wsFinal.getColumn(k).width = v; });
 
-    // Default to current month/year if not provided
-    const now = new Date();
-    const m = Number(month) || (now.getMonth() + 1);
-    const y = Number(year)  || now.getFullYear();
+  wsFinal.mergeCells('A2:J2'); wsFinal.getCell('A2').value = 'CLASS RECORD - FINAL GRADES'; wsFinal.getCell('A2').font = { bold: true, size: 14 };
+  const fHeader = [['B5','REGION'],['C5','I'],['E5','DIVISION'],['F5','PANGASINAN II'],['H5','SCHOOL ID'],['I5','300341'],['B6','SCHOOL NAME'],['C6','ROSALES NATIONAL HIGH SCHOOL'],['H6','SCHOOL YEAR'],['I6','2026-2027'],
+    ['A9','GRADE LEVEL'],['C9','11'],['F9','SUBJECT'],['G9',meta.subject_name],['A10','SECTION'],['C10',meta.section],['F10','TEACHER'],['G10',meta.teacher_name]];
+  fHeader.forEach(([c, v]) => wsFinal.getCell(c).value = v);
 
-    // 1. Verify the teacher actually handles this section
-    const [authCheck] = await pool.query(`
-      SELECT 1 FROM subjects sub
-      WHERE sub.section_id = ? AND sub.teacher_id = ? LIMIT 1`,
-      [sectionId, req.user.id]);
+  wsFinal.getRow(12).values = ['', '', '', '', 'TERM GRADES', '', '', 'FINAL GRADE', 'DESCRIPTOR', 'REMARK']; wsFinal.getRow(12).font = { bold: true };
+  wsFinal.getRow(13).values = ['', '', '', '', 'TERM 1', 'TERM 2', 'TERM 3', '', '', '']; wsFinal.getRow(13).font = { bold: true };
 
-    if (!authCheck.length) {
-      return res.status(403).json({ error: "Unauthorized access to this section's SF2" });
-    }
+  const fMale = termRows[1].filter(r => normalizeGender(r.gender) === 'male');
+  const fFemale = termRows[1].filter(r => normalizeGender(r.gender) === 'female');
+  let fCursor = 14;
 
-    // 2. Fetch per-student attendance counts for the given month only.
-    //    LEFT JOIN keeps students with zero records in the result.
-    const [rows] = await pool.query(`
-      SELECT s.lrn, u.full_name,
-             COALESCE(SUM(a.status = 'present'), 0) AS days_present,
-             COALESCE(SUM(a.status = 'late'),    0) AS days_late,
-             COALESCE(SUM(a.status = 'excused'), 0) AS days_excused,
-             COALESCE(SUM(a.status = 'absent'),  0) AS days_absent
-      FROM users u
-      JOIN students s ON s.user_id = u.id
-      LEFT JOIN attendance a
-             ON a.student_id = u.id
-            AND a.section_id = s.section_id
-            AND MONTH(a.date) = ?
-            AND YEAR(a.date)  = ?
-      WHERE s.section_id = ?
-      GROUP BY u.id, s.lrn, u.full_name
-      ORDER BY u.full_name`,
-      [m, y, sectionId]);
+  const writeFinalBlock = (label, list) => {
+    wsFinal.getCell(`A${fCursor}`).value = label; wsFinal.getCell(`A${fCursor}`).font = { bold: true, italic: true }; fCursor++;
+    list.forEach((s, i) => {
+      const row = wsFinal.getRow(fCursor);
+      row.getCell(1).value = i + 1; row.getCell(2).value = s.full_name;
+      
+      [1, 2, 3].forEach(t => {
+        const termRow = termRows[t].find(r => r.student_id === s.student_id);
+        row.getCell(4 + t).value = val(termRow?.term_grade);
+      });
+      
+      row.getCell(8).value = { formula: `IFERROR(ROUND(AVERAGE(E${fCursor}:G${fCursor}),0),"")` };
+      row.getCell(9).value = { formula: descFormula(`H${fCursor}`) };
+      row.getCell(10).value = { formula: `IF(H${fCursor}="","",IF(H${fCursor}>=75,"PASSED","FAILED"))` };
+      fCursor++;
+    });
+  };
 
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  writeFinalBlock('MALE', fMale); writeFinalBlock('FEMALE', fFemale);
+
+  // 4. Send Response
+  const safe = (str) => str.replace(/[^a-z0-9]+/gi, '_');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="ClassRecord_${safe(meta.subject_name)}_${safe(meta.section)}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+}));
 
 module.exports = router;
