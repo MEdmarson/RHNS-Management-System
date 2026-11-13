@@ -72,7 +72,14 @@ router.post('/grades', asyncRoute(async (req, res) => {
   const termGrade = transmute(initialGrade);
   const descriptor = termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k]), initialGrade, termGrade, descriptor, ...['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'].map(k => g[k])];
+  // FIX: Ensure HPS values are strictly numbers (0 is valid, undefined becomes 0)
+  const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
+  const normalizedHps = hpsFields.map(k => {
+    const v = g[k];
+    return (v === '' || v === null || v === undefined) ? 0 : Number(v);
+  });
+
+  const vals = [g.student_id, g.subject_id, g.term, ...['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].map(k => g[k]), initialGrade, termGrade, descriptor, ...normalizedHps];
   const cols = ['student_id','subject_id','term','ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3','initial_grade','term_grade','descriptor','ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
 
   await pool.query(`INSERT INTO grades (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')}) ON DUPLICATE KEY UPDATE ${cols.slice(3).map(c=>`${c}=VALUES(${c})`).join(',')}`, vals);
@@ -161,6 +168,7 @@ router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
 }));
 
 // --- EXCEL EXPORT ---
+// Note: The route logic remains exactly the same as your original teacher.js file.
 router.get('/class-record/:subjectId/export', asyncRoute(async (req, res) => {
   const subjectId = Number(req.params.subjectId);
   const subjectType = req.query.type || 'Core Subjects';

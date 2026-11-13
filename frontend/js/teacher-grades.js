@@ -113,12 +113,15 @@ async function loadGradebook() {
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   currentGradebookData = rows;
 
-  if (rows.length > 0 && rows[0].ww1_hps !== null && rows[0].ww1_hps !== undefined) {
-    const r = rows[0];
+  // FIX: Find the first row that actually has HPS data, not just the first student
+  const hpsRow = rows.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined);
+  
+  if (hpsRow) {
     HPS_FIELDS.forEach(f => {
-      document.getElementById(`hps-${f}`).value = r[`${f}_hps`];
+      document.getElementById(`hps-${f}`).value = hpsRow[`${f}_hps`];
     });
   } else {
+    // Only default to 100 if the database has absolutely no HPS data
     document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
   }
   updateHpsTotals();
@@ -333,8 +336,10 @@ async function saveAllGrades() {
   const inputs = document.querySelectorAll('#gradebookBody input');
   
   const hpsValues = {};
-  ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'].forEach(f => {
-    hpsValues[`${f}_hps`] = parseInt(document.getElementById(`hps-${f}`).value) || 0;
+  HPS_FIELDS.forEach(f => {
+    // Ensure empty values become 0, and valid numbers stay numbers
+    const el = document.getElementById(`hps-${f}`);
+    hpsValues[`${f}_hps`] = el.value === '' ? 0 : parseInt(el.value) || 0;
   });
 
   const payload = {};
