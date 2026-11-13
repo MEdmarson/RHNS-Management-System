@@ -116,53 +116,39 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// Save only HPS without touching student scores (No longer used by frontend, but kept for safety)
-router.post('/grades/hps', asyncRoute(async (req, res) => {
-  const { subject_id, term, hps } = req.body;
-  try {
-    const [existing] = await pool.query(
-      'SELECT student_id FROM grades WHERE subject_id = ? AND term = ? LIMIT 1',
-      [subject_id, term]
-    );
-    if (existing.length === 0) return res.json({ ok: true, message: 'HPS will be saved with the first student grade.' });
-
-    const hpsFields = ['ww1_hps','ww2_hps','ww3_hps','ww4_hps','ww5_hps','pt1_hps','pt2_hps','pt3_hps','ex1_hps','ex2_hps','ex3_hps'];
-    const updates = hpsFields.map(f => `${f} = ?`).join(', ');
-    const values = hpsFields.map(f => hps[f] || 0);
-    
-    await pool.query(
-      `UPDATE grades SET ${updates} WHERE subject_id = ? AND term = ?`,
-      [...values, subject_id, term]
-    );
-    res.json({ ok: true, message: 'HPS updated successfully' });
-  } catch (err) {
-    console.error("HPS Save Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-}));
-
 router.post('/grades', asyncRoute(async (req, res) => {
   try {
     const g = req.body;
     if (!g.student_id) return res.json({ ok: true, skipped: true });
 
-    const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
-    
+    // Helper: Converts to number, but keeps 'null' if it's empty
+    const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+    const calcN = (v) => n(v) || 0; // Helper for math (treats null as 0)
+
     const ww1 = n(g.ww1), ww2 = n(g.ww2), ww3 = n(g.ww3), ww4 = n(g.ww4), ww5 = n(g.ww5);
     const pt1 = n(g.pt1), pt2 = n(g.pt2), pt3 = n(g.pt3);
     const ex1 = n(g.ex1), ex2 = n(g.ex2), ex3 = n(g.ex3);
     
-    const ww_hps = n(g.ww1_hps) + n(g.ww2_hps) + n(g.ww3_hps) + n(g.ww4_hps) + n(g.ww5_hps);
-    const pt_hps = n(g.pt1_hps) + n(g.pt2_hps) + n(g.pt3_hps);
-    const ex_hps = n(g.ex1_hps) + n(g.ex2_hps) + n(g.ex3_hps);
+    const ww_hps = calcN(g.ww1_hps) + calcN(g.ww2_hps) + calcN(g.ww3_hps) + calcN(g.ww4_hps) + calcN(g.ww5_hps);
+    const pt_hps = calcN(g.pt1_hps) + calcN(g.pt2_hps) + calcN(g.pt3_hps);
+    const ex_hps = calcN(g.ex1_hps) + calcN(g.ex2_hps) + calcN(g.ex3_hps);
 
-    const ww_ps = ww_hps === 0 ? 0 : ((ww1+ww2+ww3+ww4+ww5) / ww_hps) * 100;
-    const pt_ps = pt_hps === 0 ? 0 : ((pt1+pt2+pt3) / pt_hps) * 100;
-    const ex_ps = ex_hps === 0 ? 0 : ((ex1+ex2+ex3) / ex_hps) * 100;
+    // If all scores are null, don't calculate a grade (keep it null)
+    const hasAnyGrade = [ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3].some(v => v !== null);
 
-    const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
-    const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
-    const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
+    let initialGrade = null;
+    let termGrade = null;
+    let descriptor = null;
+
+    if (hasAnyGrade) {
+      const ww_ps = ww_hps === 0 ? 0 : ((calcN(ww1)+calcN(ww2)+calcN(ww3)+calcN(ww4)+calcN(ww5)) / ww_hps) * 100;
+      const pt_ps = pt_hps === 0 ? 0 : ((calcN(pt1)+calcN(pt2)+calcN(pt3)) / pt_hps) * 100;
+      const ex_ps = ex_hps === 0 ? 0 : ((calcN(ex1)+calcN(ex2)+calcN(ex3)) / ex_hps) * 100;
+
+      initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
+      termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+      descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
+    }
 
     const sql = `
       INSERT INTO grades (
@@ -185,8 +171,8 @@ router.post('/grades', asyncRoute(async (req, res) => {
       g.student_id, g.subject_id, g.term,
       ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
       initialGrade, termGrade, descriptor,
-      n(g.ww1_hps), n(g.ww2_hps), n(g.ww3_hps), n(g.ww4_hps), n(g.ww5_hps),
-      n(g.pt1_hps), n(g.pt2_hps), n(g.pt3_hps), n(g.ex1_hps), n(g.ex2_hps), n(g.ex3_hps)
+      calcN(g.ww1_hps), calcN(g.ww2_hps), calcN(g.ww3_hps), calcN(g.ww4_hps), calcN(g.ww5_hps),
+      calcN(g.pt1_hps), calcN(g.pt2_hps), calcN(g.pt3_hps), calcN(g.ex1_hps), calcN(g.ex2_hps), calcN(g.ex3_hps)
     ];
 
     await pool.query(sql, vals);

@@ -25,7 +25,6 @@ function changeSubjectType() {
   updateHpsTotals();
 }
 
-// Removed auto-save. This just recalculates the screen.
 function updateHpsTotals() {
   if (currentGradebookMode === 'final') return; 
   const getVal = id => { const el = document.getElementById(id); return el ? (parseInt(el.value) || 0) : 0; };
@@ -162,7 +161,6 @@ function renderGradebook() {
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id || item.full_name === r.full_name);
     const rowId = r.student_id || `idx-${originalIndex}`;
     
-    // Ensure inputs show '0' if value is 0, but empty string if null
     const makeInput = (field) => {
       const val = r[field] === null || r[field] === undefined ? '' : r[field];
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
@@ -381,7 +379,9 @@ async function saveAllGrades() {
       };
     }
     
-    payload[idx][field] = input.value === '' ? 0 : parseInt(input.value) || 0;
+    // THE FIX: Send null instead of 0 if input is empty
+    const rawValue = input.value.trim();
+    payload[idx][field] = rawValue === '' ? null : parseInt(rawValue) || 0;
   });
 
   try {
