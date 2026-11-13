@@ -56,13 +56,20 @@ function calculateRow(input) {
 
 function calculateRowEl(tr) {
   if (currentGradebookMode === 'final') return;
-  const studentId = tr.id.replace('row-', '');
+  
+  // FIX: Calculate based directly on the DOM elements within the specific row 'tr'
   const num = v => (v === '' || v === null || isNaN(v)) ? 0 : v;
+  
   const getVal = field => {
     const el = tr.querySelector(`input[data-field="${field}"]`);
     return el ? num(parseInt(el.value)) : 0;
   };
-  const getHps = f => { const el = document.getElementById(`hps-${f}`); return el ? (parseInt(el.value) || 0) : 0; };
+  
+  const getHps = f => { 
+    const el = document.getElementById(`hps-${f}`); 
+    return el ? (parseInt(el.value) || 0) : 0; 
+  };
+  
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
 
   const group = (fields, weight) => {
@@ -84,7 +91,12 @@ function calculateRowEl(tr) {
   const termGrade = initial === null ? null : transmute(initial);
 
   const fmt2 = v => v === null ? '' : v.toFixed(2);
-  const set = (id, text) => { document.getElementById(`${id}-${studentId}`).textContent = text; };
+  
+  // FIX: Find cells within this specific row using querySelector, not global getElementById
+  const set = (selector, text) => { 
+    const cell = tr.querySelector(`[id^="${selector}-"]`); 
+    if (cell) cell.textContent = text; 
+  };
 
   set('ww-total', ww.total || '');  set('ww-ps', fmt2(ww.ps));  set('ww-ws', fmt2(ww.ws));
   set('pt-total', pt.total || '');  set('pt-ps', fmt2(pt.ps));  set('pt-ws', fmt2(pt.ws));
@@ -93,8 +105,11 @@ function calculateRowEl(tr) {
   set('initial', hasGrade ? Math.round(initial) : '');
   set('term', hasGrade ? termGrade : '');
   set('desc', hasGrade ? getDescriptor(termGrade) : '');
-  const dEl = document.getElementById(`desc-${studentId}`);
-  dEl.className = 'descriptor-cell' + (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : '');
+  
+  const dEl = tr.querySelector('[id^="desc-"]');
+  if (dEl) {
+    dEl.className = 'descriptor-cell' + (hasGrade ? ' desc-' + getDescriptor(termGrade).toLowerCase() : '');
+  }
 }
 
 async function loadGradebook() {
@@ -113,7 +128,7 @@ async function loadGradebook() {
   const rows = await apiFetch(`/teacher/gradebook?term=${term}&subject=${currentSubjectId}`);
   currentGradebookData = rows;
 
-  // FIX: Find the first row that actually has HPS data, not just the first student
+  // Find the first row that actually has HPS data
   const hpsRow = rows.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined);
   
   if (hpsRow) {
@@ -141,6 +156,7 @@ function renderGradebook() {
   }
 
   document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
+    // We use the array index for data-idx to ensure uniqueness
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id);
     
     const makeInput = (field) => {
@@ -148,6 +164,7 @@ function renderGradebook() {
       return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
+    // Note: ID attributes here use the student's ID, but calculateRowEl now targets them safely within the row
     return `
     <tr id="row-${r.student_id}">
       <td style="text-align:left;">${r.full_name}</td>
@@ -337,7 +354,6 @@ async function saveAllGrades() {
   
   const hpsValues = {};
   HPS_FIELDS.forEach(f => {
-    // Ensure empty values become 0, and valid numbers stay numbers
     const el = document.getElementById(`hps-${f}`);
     hpsValues[`${f}_hps`] = el.value === '' ? 0 : parseInt(el.value) || 0;
   });
