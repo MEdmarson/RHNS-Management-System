@@ -103,18 +103,6 @@ tr:hover td { background: #f9fafb; }
 .btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { background: #f9fafb; }
 
-/* SPREADSHEET STYLES */
-.excel-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; table-layout: fixed; }
-.excel-table th, .excel-table td { border: 1px solid #d1d5db; padding: 6px 2px; text-align: center; white-space: nowrap; overflow: hidden; }
-.excel-table th { background: #f3f4f6; font-weight: 600; color: #374151; }
-.excel-table input { width: 100%; max-width: 60px; box-sizing: border-box; padding: 6px; text-align: center; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; -moz-appearance: textfield; appearance: textfield; }
-.excel-table input::-webkit-outer-spin-button, .excel-table input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.excel-table input:focus { outline: 2px solid var(--primary); background: #fdf4ff; }
-.term-grade-cell { font-weight: bold; background: #f9fafb; font-size: 14px; }
-.hps-input { background: #fffbeb; color: #92400e; border-color: #d97706 !important; font-weight: bold; }
-.excel-table td:first-child, .excel-table th:first-child { position: sticky; left: 0; background: #fff; text-align: left; z-index: 1; border-right: 2px solid #d1d5db; padding-left: 10px; }
-.excel-table th:first-child { background: #f3f4f6; }
-
 /* INPUT VALIDATION */
 .invalid-input { border: 2px solid var(--danger) !important; background-color: #fef2f2 !important; }
 
@@ -172,7 +160,6 @@ tr:hover td { background: #f9fafb; }
   
   .card { padding: 12px; }
   .stats-grid { grid-template-columns: 1fr; }
-  .excel-table th, .excel-table td { padding: 8px 4px; font-size: 12px; }
   
   .hide-mobile { display: none !important; }
   .mobile-stats { display: flex !important; gap: 5px; margin-top: 5px; flex-wrap: wrap; }

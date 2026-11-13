@@ -75,23 +75,46 @@
 .excel-table thead tr:nth-child(3) th { top: 52px; }
 .excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
 
-.excel-table tbody td:first-child,
+/* 
+  FIXED: Explicitly separated the thead name column and the tbody name column 
+  to prevent the browser from merging their layout rules, which caused 
+  the input fields to jump to the first row.
+*/
+.excel-table tbody td:first-child {
+  position: sticky;
+  left: 0;
+  background: #fff; 
+  z-index: 1;
+  text-align: left;
+  border-right: 2px solid #d1d5db;
+  padding-left: 8px;
+  font-weight: 500;
+  box-shadow: 2px 0 4px -2px rgba(0,0,0,.15);
+  min-height: 38px;
+  vertical-align: middle;
+  white-space: normal;
+}
+
 .excel-table thead th.name-col {
   position: sticky;
   left: 0;
+  background: #f3f4f6;
+  z-index: 4;
   text-align: left;
   border-right: 2px solid #d1d5db;
   padding-left: 8px;
   font-size: 12px;
   white-space: normal;
 }
-.excel-table tbody td:first-child { background: #fff; z-index: 1; }
-.excel-table thead th.name-col { background: #f3f4f6; z-index: 4; }
+
+/* Ensure inputs don't overflow the row boundaries */
+.excel-table td {
+  position: relative;
+  vertical-align: middle;
+}
 
 .excel-table tbody tr:nth-child(even) td:not(.computed-cell):not(.initial-cell):not(.descriptor-cell) { background: #fafafa; }
 .excel-table tbody tr:hover td:not(.descriptor-cell) { background: #f0f5ff; }
-.excel-table tbody td:first-child { font-weight: 500; }
-.excel-table tbody td:first-child { box-shadow: 2px 0 4px -2px rgba(0,0,0,.15); }
 .term-grade-cell { font-weight: 800; font-size: 14px; }
 .descriptor-cell.desc-advancing   { background: #dcfce7; color: #166534; }
 .descriptor-cell.desc-benchmarking{ background: #dbeafe; color: #1e40af; }
