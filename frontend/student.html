@@ -119,9 +119,7 @@
         <p>Here is a summary of your academic performance and attendance.</p>
       </div>
 
-      <div class="stats-grid" id="stats">
-        <!-- Subjects and Absences only -->
-      </div>
+      <div class="stats-grid" id="stats"></div>
 
       <div class="card">
         <h3>📖 Active Subjects</h3>
@@ -190,9 +188,7 @@
   <div class="modal-content">
     <span class="close-btn" onclick="closeSubjectModal()">&times;</span>
     <h3 id="modalSubjectTitle" style="margin-bottom: 20px; color: var(--primary);">Subject Details</h3>
-    <div id="modalContent">
-      <!-- Table will be injected here -->
-    </div>
+    <div id="modalContent"></div>
   </div>
 </div>
 
@@ -229,25 +225,13 @@
         return;
       }
 
-      // Build the HTML table
       let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
-      html += '<thead><tr>';
-      html += '<th>Term</th>';
-      html += '<th class="bg-ww">WW Scores</th>';
-      html += '<th class="bg-pt">PT Scores</th>';
-      html += '<th class="bg-ex">EX Scores</th>';
-      html += '<th>Initial</th>';
-      html += '<th>Term Grade</th>';
-      html += '</tr></thead><tbody>';
+      html += '<thead><tr><th>Term</th><th class="bg-ww">WW Scores</th><th class="bg-pt">PT Scores</th><th class="bg-ex">EX Scores</th><th>Initial</th><th>Term Grade</th></tr></thead><tbody>';
 
       grades.forEach(g => {
-        // Format WW scores
         const ww = [g.ww1, g.ww2, g.ww3, g.ww4, g.ww5].map(v => v !== null ? v : '-').join(' / ');
-        // Format PT scores
         const pt = [g.pt1, g.pt2, g.pt3].map(v => v !== null ? v : '-').join(' / ');
-        // Format EX scores
         const ex = [g.ex1, g.ex2, g.ex3].map(v => v !== null ? v : '-').join(' / ');
-        
         const desc = g.descriptor || '-';
         const descColor = desc === 'Advancing' ? 'green' : desc === 'Benchmarking' ? 'blue' : desc === 'Connecting' ? '#0369a1' : desc === 'Developing' ? '#b45309' : desc === 'Emerging' ? 'red' : 'inherit';
 
@@ -257,13 +241,9 @@
           <td class="bg-pt" style="text-align:center;">${pt}</td>
           <td class="bg-ex" style="text-align:center;">${ex}</td>
           <td style="text-align:center;">${g.initial_grade || '-'}</td>
-          <td style="text-align:center; font-weight:bold; font-size:14px;">
-            ${g.term_grade || '-'} <br>
-            <span style="font-size:11px; color:${descColor}; font-weight:600;">${desc}</span>
-          </td>
+          <td style="text-align:center; font-weight:bold; font-size:14px;">${g.term_grade || '-'} <br><span style="font-size:11px; color:${descColor}; font-weight:600;">${desc}</span></td>
         </tr>`;
       });
-
       html += '</tbody></table></div>';
       document.getElementById('modalContent').innerHTML = html;
     }).catch(err => {
@@ -276,56 +256,59 @@
   }
 
   async function loadDashboard() {
-    const subjects = await apiFetch('/student/subjects');
-    const attendance = await apiFetch('/student/attendance');
+    try {
+      const subjects = await apiFetch('/student/subjects');
+      const attendance = await apiFetch('/student/attendance');
 
-    const absences = parseInt(attendance.absent) || 0;
+      const absences = parseInt(attendance.absent) || 0;
 
-    // Top Stats (Removed General Average)
-    document.getElementById('stats').innerHTML = `
-      <div class="stat-card" style="border-left-color: var(--warning);">
-        <h4>Subjects Enrolled</h4>
-        <div class="value">${subjects.filter(s => s.is_active).length}</div>
-      </div>
-      <div class="stat-card" style="border-left-color: ${absences > 4 ? 'var(--danger)' : 'var(--success)'};">
-        <h4>Total Absences</h4>
-        <div class="value">${absences}</div>
-      </div>
-    `;
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card" style="border-left-color: var(--warning);">
+          <h4>Subjects Enrolled</h4>
+          <div class="value">${subjects.filter(s => s.is_active).length}</div>
+        </div>
+        <div class="stat-card" style="border-left-color: ${absences > 4 ? 'var(--danger)' : 'var(--success)'};">
+          <h4>Total Absences</h4>
+          <div class="value">${absences}</div>
+        </div>
+      `;
 
-    const active = subjects.filter(s => s.is_active);
-    const past = subjects.filter(s => !s.is_active);
+      const active = subjects.filter(s => s.is_active);
+      const past = subjects.filter(s => !s.is_active);
 
-    // Render Active Subjects
-    document.getElementById('activeSubjectsBody').innerHTML = active.map(s => {
-      let statusPill = '<span class="status-pill in-progress">In Progress</span>';
-      if (s.term_grade !== null && s.term_grade > 0) {
-        if (s.term_grade >= 75) statusPill = '<span class="status-pill passed">Passed</span>';
-        else statusPill = '<span class="status-pill failed">Failed</span>';
-      }
+      document.getElementById('activeSubjectsBody').innerHTML = active.map(s => {
+        let statusPill = '<span class="status-pill in-progress">In Progress</span>';
+        if (s.term_grade !== null && s.term_grade > 0) {
+          if (s.term_grade >= 75) statusPill = '<span class="status-pill passed">Passed</span>';
+          else statusPill = '<span class="status-pill failed">Failed</span>';
+        }
 
-      return `
+        return `
+          <tr class="clickable-row" onclick="openSubjectModal(${s.subject_id}, '${s.subject.replace(/'/g, "\\'")}')">
+            <td><strong>${s.subject}</strong></td>
+            <td>${s.teacher}</td>
+            <td style="text-align:center;">${s.term1 || '—'}</td>
+            <td style="text-align:center;">${s.term2 || '—'}</td>
+            <td style="text-align:center;">${s.term3 || '—'}</td>
+            <td>${statusPill}</td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--muted);">No active subjects.</td></tr>';
+
+      document.getElementById('pastSubjectsBody').innerHTML = past.map(s => `
         <tr class="clickable-row" onclick="openSubjectModal(${s.subject_id}, '${s.subject.replace(/'/g, "\\'")}')">
           <td><strong>${s.subject}</strong></td>
           <td>${s.teacher}</td>
-          <td style="text-align:center;">${s.term1 || '—'}</td>
-          <td style="text-align:center;">${s.term2 || '—'}</td>
-          <td style="text-align:center;">${s.term3 || '—'}</td>
-          <td>${statusPill}</td>
+          <td style="text-align:center;">Grade ${s.grade_level}</td>
+          <td style="text-align:center; font-weight:bold;">${s.term_grade || '—'}</td>
+          <td><span class="status-pill ${s.status === 'Passed' ? 'passed' : 'failed'}">${s.status}</span></td>
         </tr>
-      `;
-    }).join('') || '<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--muted);">No active subjects.</td></tr>';
+      `).join('') || '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--muted);">No past subjects found.</td></tr>';
 
-    // Render Past Subjects
-    document.getElementById('pastSubjectsBody').innerHTML = past.map(s => `
-      <tr class="clickable-row" onclick="openSubjectModal(${s.subject_id}, '${s.subject.replace(/'/g, "\\'")}')">
-        <td><strong>${s.subject}</strong></td>
-        <td>${s.teacher}</td>
-        <td style="text-align:center;">Grade ${s.grade_level}</td>
-        <td style="text-align:center; font-weight:bold;">${s.term_grade || '—'}</td>
-        <td><span class="status-pill ${s.status === 'Passed' ? 'passed' : 'failed'}">${s.status}</span></td>
-      </tr>
-    `).join('') || '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--muted);">No past subjects found.</td></tr>';
+    } catch (err) {
+      console.error(err);
+      document.getElementById('activeSubjectsBody').innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px; color:red;">Failed to load subjects: ${err.message}</td></tr>`;
+    }
   }
 
   async function loadAttendance() {

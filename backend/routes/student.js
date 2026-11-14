@@ -11,8 +11,6 @@ router.get('/subjects', async (req, res) => {
       SELECT sub.id AS subject_id, 
              sub.name AS subject, 
              t.full_name AS teacher,
-             sub.grade_level,
-             sub.is_active,
              MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
              MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
              MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3,
@@ -22,35 +20,40 @@ router.get('/subjects', async (req, res) => {
       JOIN users t ON t.id = sub.teacher_id
       LEFT JOIN grades g ON g.subject_id = sub.id AND g.student_id = ?
       WHERE s.user_id = ?
-      GROUP BY sub.id, sub.name, t.full_name, sub.grade_level, sub.is_active
+      GROUP BY sub.id, sub.name, t.full_name
     `, [req.user.id, req.user.id]);
     
     const out = rows.map(r => {
       const present = [r.term1, r.term2, r.term3].filter(v => v !== null && v > 0);
       const avg = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
       
-      // Determine status
+      // If there is a Term 3 grade, we assume the subject is completed.
+      // Otherwise, it is still "In Progress".
+      const isCompleted = r.term3 !== null && r.term3 > 0;
+      
       let status = 'In Progress';
-      if (r.is_active === false) status = 'Completed';
-      if (avg !== null && avg < 75) status = 'Failed';
+      if (isCompleted) {
+        status = avg >= 75 ? 'Passed' : 'Failed';
+      }
 
       return {
         subject_id: r.subject_id,
         subject: r.subject,
         teacher: r.teacher,
-        grade_level: r.grade_level || 11,
+        grade_level: 11, // Hardcoded fallback, or pull from students table if needed
         term1: r.term1,
         term2: r.term2,
         term3: r.term3,
         term_grade: avg,
         status: status,
-        is_active: r.is_active !== false, // Default to true if null
+        is_active: !isCompleted, // Active if no Term 3 grade yet
         missing_requirements: r.missing_requirements
       };
     });
 
     res.json(out);
   } catch (err) {
+    console.error("Student Subjects Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -59,7 +62,6 @@ router.get('/subjects', async (req, res) => {
 router.get('/subjects/:subjectId/details', async (req, res) => {
   const { subjectId } = req.params;
   try {
-    // 1. Verify the student is in this section
     const [authCheck] = await pool.query(`
       SELECT 1 FROM subjects sub
       JOIN students s ON s.section_id = sub.section_id
@@ -68,11 +70,8 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
 
     if (!authCheck.length) return res.status(403).json({ error: 'Unauthorized' });
 
-    // 2. Fetch grades for all 3 terms
     const [grades] = await pool.query(`
       SELECT term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, 
-             ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
-             pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps,
              initial_grade, term_grade, descriptor
       FROM grades WHERE subject_id = ? AND student_id = ?
       ORDER BY term ASC
