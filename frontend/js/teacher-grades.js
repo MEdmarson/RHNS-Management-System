@@ -51,6 +51,10 @@ function recalcAllRows() {
 }
 
 function calculateRow(input) {
+  // Remove the missing class when user types a value
+  if (input.value.trim() !== '') {
+    input.classList.remove('missing-req');
+  }
   calculateRowEl(input.closest('tr'));
 }
 
@@ -163,7 +167,21 @@ function renderGradebook() {
     
     const makeInput = (field) => {
       const val = r[field] === null || r[field] === undefined ? '' : r[field];
-      return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-idx="${originalIndex}" data-field="${field}" value="${val}" oninput="calculateRow(this)" onchange="markUnsaved()">`;
+      
+      // NEW LOGIC: Check if HPS > 0 and input is empty to mark as missing requirement
+      const hpsId = `hps-${field}`;
+      const hpsEl = document.getElementById(hpsId);
+      const hpsVal = hpsEl ? parseInt(hpsEl.value) || 0 : 0;
+      const isMissing = (val === '' && hpsVal > 0);
+      
+      const missingClass = isMissing ? 'missing-req' : '';
+      const placeholder = isMissing ? 'Missing' : '';
+
+      return `<input type="number" inputmode="numeric" pattern="[0-9]*" min="0" 
+                     data-idx="${originalIndex}" data-field="${field}" 
+                     value="${val}" placeholder="${placeholder}"
+                     class="${missingClass}"
+                     oninput="calculateRow(this)" onchange="markUnsaved()">`;
     };
 
     return `
@@ -322,10 +340,15 @@ function renderFinalGrades() {
     const remarkClass = remarks === 'PASSED' ? 'remarks-passed' : (remarks === 'FAILED' ? 'remarks-failed' : '');
     const descriptor = r.descriptor || '';
     const descClass = descriptor ? ' desc-' + descriptor.toLowerCase() : '';
+    
+    // Check for INC
+    const incBadge = r.missing_requirements 
+      ? `<br><span style="font-size:10px; color:var(--danger);">INC: ${r.missing_requirements}</span>` 
+      : '';
 
     return `
     <tr>
-      <td style="text-align:left; font-weight:500;">${r.full_name}</td>
+      <td style="text-align:left; font-weight:500;">${r.full_name} ${incBadge}</td>
       <td class="initial-cell">${fmt(r.term1)}</td>
       <td class="initial-cell">${fmt(r.term2)}</td>
       <td class="initial-cell">${fmt(r.term3)}</td>
@@ -379,7 +402,6 @@ async function saveAllGrades() {
       };
     }
     
-    // THE FIX: Send null instead of 0 if input is empty
     const rawValue = input.value.trim();
     payload[idx][field] = rawValue === '' ? null : parseInt(rawValue) || 0;
   });

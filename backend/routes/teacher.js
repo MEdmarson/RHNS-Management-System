@@ -150,11 +150,27 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_hps = calcN(g.pt1_hps) + calcN(g.pt2_hps) + calcN(g.pt3_hps);
     const ex_hps = calcN(g.ex1_hps) + calcN(g.ex2_hps) + calcN(g.ex3_hps);
 
+    // NEW: Detect Missing Requirements (Blank scores that should have an HPS > 0)
+    let missing = [];
+    if (g.ww1_hps > 0 && ww1 === null) missing.push('WW1');
+    if (g.ww2_hps > 0 && ww2 === null) missing.push('WW2');
+    if (g.ww3_hps > 0 && ww3 === null) missing.push('WW3');
+    if (g.ww4_hps > 0 && ww4 === null) missing.push('WW4');
+    if (g.ww5_hps > 0 && ww5 === null) missing.push('WW5');
+    if (g.pt1_hps > 0 && pt1 === null) missing.push('PT1');
+    if (g.pt2_hps > 0 && pt2 === null) missing.push('PT2');
+    if (g.pt3_hps > 0 && pt3 === null) missing.push('PT3');
+    if (g.ex1_hps > 0 && ex1 === null) missing.push('EX1');
+    if (g.ex2_hps > 0 && ex2 === null) missing.push('EX2');
+    if (g.ex3_hps > 0 && ex3 === null) missing.push('EX3');
+    
+    // If all scores are blank, they have no grade yet (null)
     const hasAnyGrade = [ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3].some(v => v !== null);
 
     let initialGrade = null;
     let termGrade = null;
     let descriptor = null;
+    let missingReq = missing.length > 0 ? missing.join(', ') : null;
 
     if (hasAnyGrade) {
       const ww_ps = ww_hps === 0 ? 0 : ((calcN(ww1)+calcN(ww2)+calcN(ww3)+calcN(ww4)+calcN(ww5)) / ww_hps) * 100;
@@ -170,14 +186,15 @@ router.post('/grades', asyncRoute(async (req, res) => {
       INSERT INTO grades (
         student_id, subject_id, term,
         ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
-        initial_grade, term_grade, descriptor,
+        initial_grade, term_grade, descriptor, missing_requirements,
         ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
         pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE 
         ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
         pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
         initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
+        missing_requirements=VALUES(missing_requirements),
         ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
         pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps), 
         ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)
@@ -186,7 +203,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const vals = [
       g.student_id, g.subject_id, g.term,
       ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
-      initialGrade, termGrade, descriptor,
+      initialGrade, termGrade, descriptor, missingReq,
       calcN(g.ww1_hps), calcN(g.ww2_hps), calcN(g.ww3_hps), calcN(g.ww4_hps), calcN(g.ww5_hps),
       calcN(g.pt1_hps), calcN(g.pt2_hps), calcN(g.pt3_hps), calcN(g.ex1_hps), calcN(g.ex2_hps), calcN(g.ex3_hps)
     ];
@@ -207,7 +224,8 @@ router.get('/final-grades', asyncRoute(async (req, res) => {
     SELECT u.id AS student_id, u.full_name,
            MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
            MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
-           MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3
+           MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3,
+           MAX(g.missing_requirements) AS missing_requirements
     FROM subjects sub JOIN sections sec ON sec.id = sub.section_id JOIN students s ON s.section_id = sec.id JOIN users u ON u.id = s.user_id
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
     WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name ORDER BY u.full_name`, [req.user.id, subject]);
@@ -254,6 +272,7 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
     SELECT u.id, u.full_name, 
            ROUND(AVG(g.term_grade), 2) AS avg_grade,
            COUNT(DISTINCT g.term_grade) AS graded_count,
+           MAX(g.missing_requirements) AS missing_requirements,
            (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_present,
            (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late,
            (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_excused,

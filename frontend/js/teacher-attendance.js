@@ -167,16 +167,23 @@ async function loadAttendanceHistory() {
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
 
-  const failing = rows.filter(r =>
-    r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75
-  );
-  document.getElementById('failingBody').innerHTML = failing.map(r => `
+  // Filter for failing (grade < 75)
+  const failing = rows.filter(r => r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75);
+  
+  document.getElementById('failingBody').innerHTML = failing.map(r => {
+    // If they have missing requirements, display a warning badge
+    const missingBadge = r.missing_requirements 
+      ? `<br><span style="font-size:10px; color:var(--danger);">Missing: ${r.missing_requirements}</span>` 
+      : '';
+      
+    return `
     <tr>
-      <td>${r.full_name}</td>
+      <td>${r.full_name} ${missingBadge}</td>
       <td><span class="badge danger">${r.avg_grade}</span></td>
-    </tr>
-  `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
 
+  // Filter for dropping (absences > 4)
   const dropping = rows.filter(r => {
     const t = computeAttendance({
       present: Number(r.raw_present) || 0,

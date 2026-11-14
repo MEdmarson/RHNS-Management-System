@@ -253,3 +253,17 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
   .excel-table col:first-child { width: 96px !important; }
   .excel-table tbody td:first-child, .excel-table thead th.name-col { font-size: 10.5px; }
 }
+
+/* Highlight missing requirements */
+.excel-table input.missing-req {
+  border: 2px solid var(--danger) !important;
+  background-color: #fef2f2 !important; /* Light red background */
+}
+
+/* Add a visual indicator inside the cell */
+.excel-table input.missing-req::placeholder {
+  color: var(--danger);
+  content: "Missing"; 
+  font-weight: bold;
+  font-size: 10px;
+}
