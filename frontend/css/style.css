@@ -176,6 +176,8 @@ tr:hover td { background: #f9fafb; }
     border-top: 3px solid transparent;
     color: #fecaca;
   }
+  .status-pill.inc { background: #fef3c7; color: #92400e; }
+  .term-inc { color: #92400e; font-weight: 700; font-size: 12px; cursor: help; border-bottom: 1px dotted #92400e; }
   
   .main { padding: 16px; padding-bottom: 90px; max-height: none; overflow-y: auto; }
   .topbar { flex-direction: column; align-items: flex-start; gap: 10px; }
