@@ -85,7 +85,7 @@ router.get('/subjects', async (req, res) => {
       (bySubject[g.subject_id] ||= []).push(g);
     }
 
-    const showRaw = process.env.STUDENT_SHOW_RAW === 'false';
+    const showRaw = process.env.STUDENT_SHOW_RAW !== 'false';
 
     const out = subjects.map(sub => {
       const gs = bySubject[sub.subject_id] || [];
@@ -177,7 +177,7 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
       ORDER BY term ASC
     `, [subjectId, req.user.id]);
 
-    const showRaw = process.env.STUDENT_SHOW_RAW === 'true';
+    const showRaw = process.env.STUDENT_SHOW_RAW !== 'false';
 
     const result = grades.map(g => {
       const analysis = analyzeTerm(g);
