@@ -176,116 +176,178 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   res.send(csvContent);
 }));
 
-// --- IMPORT GRADES FROM CSV (BULLETPROOF MULTI-MATCH) ---
+// --- IMPORT GRADES FROM CSV ---
+// Parse CSV text -> array of row objects (headers are upper-cased / trimmed / BOM-stripped)
+const parseCsv = (text) => new Promise((resolve, reject) => {
+  const rows = [];
+  Readable.from([text])
+    .pipe(csv({
+      // NOTE: do NOT pass `headers: true` — csv-parser expects an array or false.
+      // Leaving it out makes it read the first line as the header row.
+      mapHeaders: ({ header }) => header.replace(/^\uFEFF/, '').trim().toUpperCase(),
+      mapValues: ({ value }) => (typeof value === 'string' ? value.trim() : value)
+    }))
+    .on('data', (r) => rows.push(r))
+    .on('end', () => resolve(rows))
+    .on('error', reject);
+});
+
+// "BAÑAGA, MHIKE DAVE S." and "BANAGA MHIKE DAVE S" -> same key
+const normName = (s) => String(s || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const normLrn = (s) => String(s || '').replace(/\D/g, '');
+
 router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
   const { subject_id, term } = req.body;
-  if (!subject_id || !term) return res.status(400).json({ error: "Subject and Term required" });
+  if (!subject_id || !term) return res.status(400).json({ error: 'Subject and Term required' });
 
-  const results = [];
-  const buffer = req.file.buffer.toString('utf8');
+  // 1. Subject must belong to this teacher
+  const [subj] = await pool.query(
+    'SELECT section_id FROM subjects WHERE id = ? AND teacher_id = ?',
+    [subject_id, req.user.id]
+  );
+  if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
 
-  const parser = csv({ headers: true });
-  parser.on('data', (data) => results.push(data));
-  
-  parser.on('end', async () => {
-    let successCount = 0;
-    let failCount = 0;
+  // 2. Parse the CSV
+  const rows = await parseCsv(req.file.buffer.toString('utf8'));
+  console.log(`[import] parsed ${rows.length} rows. Columns:`, rows[0] ? Object.keys(rows[0]) : 'none');
+  if (!rows.length || !('LRN' in rows[0])) {
+    return res.status(400).json({
+      error: 'Could not read the CSV. First row must contain: LRN, Full Name, WW1..WW5, PT1..PT3, SA1, SA2, TE'
+    });
+  }
 
-    // 1. Get existing HPS from database (default to 100 if empty)
-    const [existing] = await pool.query('SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps FROM grades WHERE subject_id = ? AND term = ? LIMIT 1', [subject_id, term]);
-    
-    const hps = existing[0] || {
-      ww1_hps: 100, ww2_hps: 100, ww3_hps: 100, ww4_hps: 100, ww5_hps: 100,
-      pt1_hps: 100, pt2_hps: 100, pt3_hps: 100,
-      ex1_hps: 100, ex2_hps: 100, ex3_hps: 100
-    };
+  // 3. Load the section's students ONCE and build lookup maps (1 query instead of 3 per row)
+  const [students] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name, s.lrn
+    FROM students s JOIN users u ON u.id = s.user_id
+    WHERE s.section_id = ?
+  `, [subj[0].section_id]);
 
-    const calcN = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v);
-    const ww_hps = calcN(hps.ww1_hps) + calcN(hps.ww2_hps) + calcN(hps.ww3_hps) + calcN(hps.ww4_hps) + calcN(hps.ww5_hps);
-    const pt_hps = calcN(hps.pt1_hps) + calcN(hps.pt2_hps) + calcN(hps.pt3_hps);
-    const ex_hps = calcN(hps.ex1_hps) + calcN(hps.ex2_hps) + calcN(hps.ex3_hps);
+  const byLrn = new Map(), byName = new Map();
+  students.forEach((s) => {
+    if (s.lrn) byLrn.set(normLrn(s.lrn), s.student_id);
+    byName.set(normName(s.full_name), s.student_id);
+  });
 
-    for (const row of results) {
-      if (!row.LRN || row.LRN.trim() === '' || row.LRN === 'MALE' || row.LRN === 'FEMALE') continue;
+  // 4. HPS: use the saved HPS for this subject/term (prefer a row where HPS is actually set)
+  const [existing] = await pool.query(`
+    SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
+    FROM grades
+    WHERE subject_id = ? AND term = ?
+    ORDER BY (COALESCE(ww1_hps,0)+COALESCE(ww2_hps,0)+COALESCE(ww3_hps,0)+COALESCE(ww4_hps,0)+COALESCE(ww5_hps,0)
+            + COALESCE(pt1_hps,0)+COALESCE(pt2_hps,0)+COALESCE(pt3_hps,0)
+            + COALESCE(ex1_hps,0)+COALESCE(ex2_hps,0)+COALESCE(ex3_hps,0)) DESC
+    LIMIT 1
+  `, [subject_id, term]);
 
-      try {
-        let cleanLrn = row.LRN.trim().replace(/"/g, '');
-        const fullName = row['Full Name'] ? row['Full Name'].trim().replace(/"/g, '') : '';
+  const num = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+  const z = (v) => num(v) || 0;
 
-        // Try LRN exact match
-        let [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [cleanLrn]);
+  const hps = existing[0] || {};
+  const H = {
+    ww1: z(hps.ww1_hps), ww2: z(hps.ww2_hps), ww3: z(hps.ww3_hps), ww4: z(hps.ww4_hps), ww5: z(hps.ww5_hps),
+    pt1: z(hps.pt1_hps), pt2: z(hps.pt2_hps), pt3: z(hps.pt3_hps),
+    ex1: z(hps.ex1_hps), ex2: z(hps.ex2_hps), ex3: z(hps.ex3_hps)
+  };
+  const ww_hps = H.ww1 + H.ww2 + H.ww3 + H.ww4 + H.ww5;
+  const pt_hps = H.pt1 + H.pt2 + H.pt3;
+  const ex_hps = H.ex1 + H.ex2 + H.ex3;
+  const hpsMissing = (ww_hps + pt_hps + ex_hps) === 0;
 
-        // FALLBACK 1: If scientific notation (1.07E+11), try prefix match
-        if (!student.length && (cleanLrn.includes('E+') || cleanLrn.includes('e+'))) {
-          const baseNumber = Math.floor(Number(cleanLrn));
-          const prefix = String(baseNumber).substring(0, 7); // Take first 7 digits
-          [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn LIKE ?', [`${prefix}%`]);
-        }
+  const sql = `
+    INSERT INTO grades (
+      student_id, subject_id, term,
+      ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3,
+      initial_grade, term_grade, descriptor, missing_requirements,
+      ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
+      pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
+      pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3),
+      ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
+      initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
+      missing_requirements=VALUES(missing_requirements),
+      ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
+      pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps),
+      ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)
+  `;
 
-        // FALLBACK 2: Match by Full Name
-        if (!student.length && fullName) {
-          [student] = await pool.query('SELECT user_id AS student_id FROM users WHERE TRIM(full_name) = ? AND role = "student"', [fullName]);
-        }
+  let successCount = 0;
+  const notFound = [];
+  const errors = [];
 
-        if (!student.length) { 
-          console.log(`Skipped: Could not find "${fullName}" (LRN: ${cleanLrn})`);
-          failCount++; 
-          continue; 
-        }
-        
-        const studentId = student[0].student_id;
-        const n = (v) => (v === '' || v === undefined || isNaN(Number(v))) ? null : Number(v);
-        
-        // Read CSV columns (SA1, SA2, TE)
-        const ww1 = n(row.WW1), ww2 = n(row.WW2), ww3 = n(row.WW3), ww4 = n(row.WW4), ww5 = n(row.WW5);
-        const pt1 = n(row.PT1), pt2 = n(row.PT2), pt3 = n(row.PT3);
-        const ex1 = n(row.SA1), ex2 = n(row.SA2), ex3 = n(row.TE);
+  for (const row of rows) {
+    const lrnRaw = row['LRN'] || '';
+    const nameRaw = row['FULL NAME'] || '';
 
-        // Calculate Grades
-        const ww_ps = ww_hps === 0 ? 0 : ((calcN(ww1)+calcN(ww2)+calcN(ww3)+calcN(ww4)+calcN(ww5)) / ww_hps) * 100;
-        const pt_ps = pt_hps === 0 ? 0 : ((calcN(pt1)+calcN(pt2)+calcN(pt3)) / pt_hps) * 100;
-        const ex_ps = ex_hps === 0 ? 0 : ((calcN(ex1)+calcN(ex2)+calcN(ex3)) / ex_hps) * 100;
+    // skip blank lines and the MALE / FEMALE divider rows
+    if (!lrnRaw && !nameRaw) continue;
+    if (/^(MALE|FEMALE)$/i.test(lrnRaw) && !nameRaw) continue;
 
-        const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
-        const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
-        const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
-
-        const sql = `
-          INSERT INTO grades (student_id, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, initial_grade, term_grade, descriptor, ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE 
-            ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
-            pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), 
-            ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
-            initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor),
-            ww1_hps=VALUES(ww1_hps), ww2_hps=VALUES(ww2_hps), ww3_hps=VALUES(ww3_hps), ww4_hps=VALUES(ww4_hps), ww5_hps=VALUES(ww5_hps),
-            pt1_hps=VALUES(pt1_hps), pt2_hps=VALUES(pt2_hps), pt3_hps=VALUES(pt3_hps), 
-            ex1_hps=VALUES(ex1_hps), ex2_hps=VALUES(ex2_hps), ex3_hps=VALUES(ex3_hps)
-        `;
-
-        await pool.query(sql, [
-          studentId, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, initialGrade, termGrade, descriptor,
-          calcN(hps.ww1_hps), calcN(hps.ww2_hps), calcN(hps.ww3_hps), calcN(hps.ww4_hps), calcN(hps.ww5_hps),
-          calcN(hps.pt1_hps), calcN(hps.pt2_hps), calcN(hps.pt3_hps), calcN(hps.ex1_hps), calcN(hps.ex2_hps), calcN(hps.ex3_hps)
-        ]);
-        successCount++;
-      } catch (err) {
-        console.error(`Failed importing "${row.LRN}":`, err.message);
-        failCount++;
-      }
+    // match by LRN first, then by normalized name
+    const studentId = byLrn.get(normLrn(lrnRaw)) || byName.get(normName(nameRaw));
+    if (!studentId) {
+      notFound.push(nameRaw || lrnRaw);
+      continue;
     }
 
-    res.json({ ok: true, message: `Successfully imported ${successCount} students. Failed: ${failCount}` });
-  });
+    try {
+      const v = {
+        ww1: num(row.WW1), ww2: num(row.WW2), ww3: num(row.WW3), ww4: num(row.WW4), ww5: num(row.WW5),
+        pt1: num(row.PT1), pt2: num(row.PT2), pt3: num(row.PT3),
+        ex1: num(row.SA1), ex2: num(row.SA2), ex3: num(row.TE)
+      };
 
-  parser.on('error', (err) => {
-    res.status(500).json({ error: "Failed to parse CSV file." });
-  });
-  
-  const stream = Readable.from(buffer);
-  stream.pipe(parser);
+      const missing = Object.keys(v).filter((k) => H[k] > 0 && v[k] === null).map((k) => k.toUpperCase());
+      const hasAny = Object.values(v).some((x) => x !== null);
+
+      let initialGrade = null, termGrade = null, descriptor = null;
+      if (hasAny) {
+        const ww_ps = ww_hps ? ((z(v.ww1) + z(v.ww2) + z(v.ww3) + z(v.ww4) + z(v.ww5)) / ww_hps) * 100 : 0;
+        const pt_ps = pt_hps ? ((z(v.pt1) + z(v.pt2) + z(v.pt3)) / pt_hps) * 100 : 0;
+        const ex_ps = ex_hps ? ((z(v.ex1) + z(v.ex2) + z(v.ex3)) / ex_hps) * 100 : 0;
+        initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
+        termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+        descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking'
+                   : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
+      }
+
+      await pool.query(sql, [
+        studentId, subject_id, term,
+        v.ww1, v.ww2, v.ww3, v.ww4, v.ww5, v.pt1, v.pt2, v.pt3, v.ex1, v.ex2, v.ex3,
+        initialGrade, termGrade, descriptor, missing.length ? missing.join(', ') : null,
+        H.ww1, H.ww2, H.ww3, H.ww4, H.ww5, H.pt1, H.pt2, H.pt3, H.ex1, H.ex2, H.ex3
+      ]);
+      successCount++;
+    } catch (err) {
+      console.error(`[import] failed for "${nameRaw || lrnRaw}":`, err.message);
+      errors.push(`${nameRaw || lrnRaw}: ${err.message}`);
+    }
+  }
+
+  console.log(`[import] success=${successCount} notFound=${notFound.length} errors=${errors.length}`);
+
+  // If NOTHING saved, return a real error so the UI shows what went wrong
+  if (successCount === 0) {
+    return res.status(400).json({
+      error: errors.length
+        ? `Database error: ${errors[0]}`
+        : `No students matched. Check that the CSV belongs to this class. Unmatched: ${notFound.slice(0, 3).join('; ')}`
+    });
+  }
+
+  let message = `Imported ${successCount} students.`;
+  if (notFound.length) message += ` Not found (${notFound.length}): ${notFound.slice(0, 3).join('; ')}${notFound.length > 3 ? '…' : ''}.`;
+  if (errors.length) message += ` DB errors: ${errors.length}.`;
+  if (hpsMissing) message += ' ⚠️ HPS is not set for this term — enter the HPS values and click Save so grades compute.';
+
+  res.json({ ok: true, message });
 }));
 
 router.post('/grades', asyncRoute(async (req, res) => {
