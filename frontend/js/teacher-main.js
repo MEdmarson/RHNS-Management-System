@@ -390,6 +390,7 @@ async function uploadGrades(event) {
   formData.append('file', file);
   formData.append('subject_id', currentSubjectId);
   formData.append('term', term);
+  formData.append('subject_type', currentSubjectType);
 
   try {
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');

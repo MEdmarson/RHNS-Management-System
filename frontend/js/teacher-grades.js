@@ -28,7 +28,7 @@ function changeSubjectType() {
 
 function updateHpsTotals() {
   if (currentGradebookMode === 'final') return; 
-  const getVal = id => { const el = document.getElementById(id); return el ? (parseInt(el.value) || 0) : 0; };
+  const getVal = id => { const el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
   const pct = v => Math.round(v * 10000) / 100;
 
@@ -65,12 +65,12 @@ function calculateRowEl(tr) {
   
   const getVal = field => {
     const el = tr.querySelector(`input[data-field="${field}"]`);
-    return el ? num(parseInt(el.value)) : 0;
+    return el ? num(parseFloat(el.value)) : 0;
   };
   
   const getHps = f => { 
     const el = document.getElementById(`hps-${f}`); 
-    return el ? (parseInt(el.value) || 0) : 0; 
+    return el ? (parseFloat(el.value) || 0) : 0; 
   };
   
   const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[currentSubjectType] || SUBJECT_WEIGHTS['Core Subjects'];
@@ -388,7 +388,7 @@ async function saveAllGrades() {
   const hpsValues = {};
   HPS_FIELDS.forEach(f => {
     const el = document.getElementById(`hps-${f}`);
-    hpsValues[`${f}_hps`] = el.value === '' ? 0 : parseInt(el.value) || 0;
+    hpsValues[`${f}_hps`] = el.value === '' ? 0 : parseFloat(el.value) || 0;
   });
 
   const payload = {};
@@ -404,12 +404,13 @@ async function saveAllGrades() {
         student_id: student.student_id, 
         subject_id: currentSubjectId, 
         term: term, 
+        subject_type: currentSubjectType,
         ...hpsValues 
       };
     }
     
     const rawValue = input.value.trim();
-    payload[idx][field] = rawValue === '' ? null : parseInt(rawValue) || 0;
+    payload[idx][field] = rawValue === '' ? null : parseFloat(rawValue) || 0;
   });
 
   try {

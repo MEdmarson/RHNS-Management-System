@@ -159,7 +159,22 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const males = students.filter(s => normalizeGender(s.gender) === 'male');
   const females = students.filter(s => normalizeGender(s.gender) === 'female');
 
+  const [hpsRows] = await pool.query(`
+    SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
+    FROM grades WHERE subject_id = ? AND term = ?
+    ORDER BY (COALESCE(ww1_hps,0)+COALESCE(ww2_hps,0)+COALESCE(ww3_hps,0)+COALESCE(ww4_hps,0)+COALESCE(ww5_hps,0)
+            + COALESCE(pt1_hps,0)+COALESCE(pt2_hps,0)+COALESCE(pt3_hps,0)
+            + COALESCE(ex1_hps,0)+COALESCE(ex2_hps,0)+COALESCE(ex3_hps,0)) DESC
+    LIMIT 1
+  `, [subjectId, term]);
+  const hp = hpsRows[0] || {};
+  const hv = (k) => (Number(hp[k]) > 0 ? Number(hp[k]) : '');
+  const hpsLine = ['', 'HIGHEST POSSIBLE SCORE',
+    hv('ww1_hps'), hv('ww2_hps'), hv('ww3_hps'), hv('ww4_hps'), hv('ww5_hps'),
+    hv('pt1_hps'), hv('pt2_hps'), hv('pt3_hps'), hv('ex1_hps'), hv('ex2_hps'), hv('ex3_hps')].join(',');
+
   let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,SA1,SA2,TE\n';
+  csvContent += hpsLine + '\n';
   
   csvContent += '\nMALE,,,,,,,,,,,,,\n';
   males.forEach(s => {
@@ -254,6 +269,20 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
     pt1: z(hps.pt1_hps), pt2: z(hps.pt2_hps), pt3: z(hps.pt3_hps),
     ex1: z(hps.ex1_hps), ex2: z(hps.ex2_hps), ex3: z(hps.ex3_hps)
   };
+
+  // If the CSV has a "HIGHEST POSSIBLE SCORE" (or "HPS") row, it overrides the saved HPS,
+  // so the website uses the exact same HPS as the Excel file.
+  const isHpsRow = (r) => /HIGHEST\s+POSSIBLE\s+SCORE|^HPS$/i.test(`${r['LRN'] || ''} ${r['FULL NAME'] || ''}`.trim());
+  const hpsRow = rows.find(isHpsRow);
+  let hpsFromCsv = false;
+  if (hpsRow) {
+    const fromCsv = {
+      ww1: z(hpsRow.WW1), ww2: z(hpsRow.WW2), ww3: z(hpsRow.WW3), ww4: z(hpsRow.WW4), ww5: z(hpsRow.WW5),
+      pt1: z(hpsRow.PT1), pt2: z(hpsRow.PT2), pt3: z(hpsRow.PT3),
+      ex1: z(hpsRow.SA1), ex2: z(hpsRow.SA2), ex3: z(hpsRow.TE)
+    };
+    if (Object.values(fromCsv).some((x) => x > 0)) { Object.assign(H, fromCsv); hpsFromCsv = true; }
+  }
   const ww_hps = H.ww1 + H.ww2 + H.ww3 + H.ww4 + H.ww5;
   const pt_hps = H.pt1 + H.pt2 + H.pt3;
   const ex_hps = H.ex1 + H.ex2 + H.ex3;
@@ -288,6 +317,7 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
 
     // skip blank lines and the MALE / FEMALE divider rows
     if (!lrnRaw && !nameRaw) continue;
+    if (isHpsRow(row)) continue;
     if (/^(MALE|FEMALE)$/i.test(lrnRaw) && !nameRaw) continue;
 
     // match by LRN first, then by normalized name
@@ -312,8 +342,10 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
         const ww_ps = ww_hps ? ((z(v.ww1) + z(v.ww2) + z(v.ww3) + z(v.ww4) + z(v.ww5)) / ww_hps) * 100 : 0;
         const pt_ps = pt_hps ? ((z(v.pt1) + z(v.pt2) + z(v.pt3)) / pt_hps) * 100 : 0;
         const ex_ps = ex_hps ? ((z(v.ex1) + z(v.ex2) + z(v.ex3)) / ex_hps) * 100 : 0;
-        initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
-        termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+        const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[req.body.subject_type] || SUBJECT_WEIGHTS['Core Subjects'];
+        const rawInitial = (ww_ps * wWW) + (pt_ps * wPT) + (ex_ps * wEX);   // unrounded, same as Excel
+        initialGrade = Number(rawInitial.toFixed(2));                       // rounded only for storage/display
+        termGrade = rawInitial === 0 ? 0 : transmute(rawInitial);
         descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking'
                    : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
       }
@@ -345,6 +377,7 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
   let message = `Imported ${successCount} students.`;
   if (notFound.length) message += ` Not found (${notFound.length}): ${notFound.slice(0, 3).join('; ')}${notFound.length > 3 ? '…' : ''}.`;
   if (errors.length) message += ` DB errors: ${errors.length}.`;
+  if (hpsFromCsv) message += ' HPS taken from the CSV.';
   if (hpsMissing) message += ' ⚠️ HPS is not set for this term — enter the HPS values and click Save so grades compute.';
 
   res.json({ ok: true, message });
@@ -391,8 +424,10 @@ router.post('/grades', asyncRoute(async (req, res) => {
       const pt_ps = pt_hps === 0 ? 0 : ((calcN(pt1)+calcN(pt2)+calcN(pt3)) / pt_hps) * 100;
       const ex_ps = ex_hps === 0 ? 0 : ((calcN(ex1)+calcN(ex2)+calcN(ex3)) / ex_hps) * 100;
 
-      initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
-      termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+      const [wWW, wPT, wEX] = SUBJECT_WEIGHTS[g.subject_type] || SUBJECT_WEIGHTS['Core Subjects'];
+      const rawInitial = (ww_ps * wWW) + (pt_ps * wPT) + (ex_ps * wEX);   // unrounded, same as Excel
+      initialGrade = Number(rawInitial.toFixed(2));                       // rounded only for storage/display
+      termGrade = rawInitial === 0 ? 0 : transmute(rawInitial);
       descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
     }
 
