@@ -5,14 +5,19 @@ document.getElementById('userChip').textContent = '👩‍🏫 ' + getUser().nam
 let mySubjectsData = []; 
 let currentViewName = 'subjects';
 
+// Warn if they try to close the browser or refresh
 window.addEventListener('beforeunload', (e) => {
-  if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; }
+  if (hasUnsavedChanges) { 
+    e.preventDefault(); 
+    e.returnValue = ''; 
+  }
 });
 
 function pushViewState(name) {
   history.pushState({ view: name }, '', '#' + name);
 }
 
+// Handle the Browser Back/Forward buttons
 window.addEventListener('popstate', async (e) => {
   if (!getToken()) {
     window.location.replace('index.html');
@@ -59,10 +64,17 @@ function confirmLogout() {
   logout();
 }
 
+// Triggered when clicking navigation buttons (e.g., Attendance, SF2, etc.)
 function showView(name, el) {
-  if (hasUnsavedChanges && !confirm('You have unsaved changes. Are you sure you want to leave?')) return;
-  hasUnsavedChanges = false;
-  document.getElementById('unsavedIndicator').style.display = 'none';
+  // If they are leaving the current view and have unsaved changes, prompt them
+  if (hasUnsavedChanges && currentViewName === 'gradebook') {
+    const leave = confirm('You have unsaved changes. Are you sure you want to leave?');
+    if (!leave) return;
+    
+    // If they confirm leaving, clear the flag
+    hasUnsavedChanges = false;
+    document.getElementById('unsavedIndicator').style.display = 'none';
+  }
 
   pushViewState(name);
   navigateToView(name, el);

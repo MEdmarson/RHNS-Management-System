@@ -22,6 +22,7 @@ function initSubjectType(subj) {
 function changeSubjectType() {
   currentSubjectType = document.getElementById('subjectTypeSelect').value;
   try { localStorage.setItem(`subjectType-${currentSubjectId}`, currentSubjectType); } catch (e) {}
+  markUnsaved();
   updateHpsTotals();
 }
 
@@ -51,7 +52,6 @@ function recalcAllRows() {
 }
 
 function calculateRow(input) {
-  // Remove the missing class when user types a value
   if (input.value.trim() !== '') {
     input.classList.remove('missing-req');
   }
@@ -139,16 +139,22 @@ async function loadGradebook() {
   const hpsRow = currentGradebookData.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined);
   
   if (hpsRow) {
+    // If the row exists but the HPS is 0 (new subject), it will stay 0
     HPS_FIELDS.forEach(f => {
       document.getElementById(`hps-${f}`).value = hpsRow[`${f}_hps`];
     });
   } else {
-    document.querySelectorAll('.hps-input').forEach(input => input.value = 100);
+    // Default to 0 instead of 100 for new subjects/terms
+    document.querySelectorAll('.hps-input').forEach(input => input.value = 0);
   }
   updateHpsTotals();
 
   document.getElementById('gradebookSearch').value = ''; 
   renderGradebook();
+  
+  // Reset unsaved changes on fresh load
+  hasUnsavedChanges = false;
+  document.getElementById('unsavedIndicator').style.display = 'none';
 }
 
 function renderGradebook() {
@@ -168,7 +174,6 @@ function renderGradebook() {
     const makeInput = (field) => {
       const val = r[field] === null || r[field] === undefined ? '' : r[field];
       
-      // NEW LOGIC: Check if HPS > 0 and input is empty to mark as missing requirement
       const hpsId = `hps-${field}`;
       const hpsEl = document.getElementById(hpsId);
       const hpsVal = hpsEl ? parseInt(hpsEl.value) || 0 : 0;
@@ -258,30 +263,32 @@ function restoreGradebookLayout() {
     </tr>
     <tr style="background:#fffbeb; font-size: 11px;">
       <th class="name-col" style="text-align: right; padding-right: 8px;">HIGHEST POSSIBLE SCORE</th>
-      <th><input type="number" class="hps-input" id="hps-ww1" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ww2" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ww3" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ww4" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ww5" value="100"></th>
+      <th><input type="number" class="hps-input" id="hps-ww1" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ww2" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ww3" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ww4" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ww5" value="0" onchange="markUnsaved()"></th>
       <th class="computed-cell" id="hps-ww-total">0</th>
       <th>100</th>
       <th id="hps-ww-ws">20</th>
-      <th><input type="number" class="hps-input" id="hps-pt1" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-pt2" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-pt3" value="100"></th>
+      <th><input type="number" class="hps-input" id="hps-pt1" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-pt2" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-pt3" value="0" onchange="markUnsaved()"></th>
       <th class="computed-cell" id="hps-pt-total">0</th>
       <th>100</th>
       <th id="hps-pt-ws">50</th>
-      <th><input type="number" class="hps-input" id="hps-ex1" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ex2" value="100"></th>
-      <th><input type="number" class="hps-input" id="hps-ex3" value="100"></th>
+      <th><input type="number" class="hps-input" id="hps-ex1" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ex2" value="0" onchange="markUnsaved()"></th>
+      <th><input type="number" class="hps-input" id="hps-ex3" value="0" onchange="markUnsaved()"></th>
       <th class="computed-cell" id="hps-ex-total">0</th>
       <th>100</th>
       <th id="hps-ex-ws">30</th>
     </tr>
   `;
 
-  document.querySelectorAll('.hps-input').forEach(el => el.addEventListener('input', updateHpsTotals));
+  document.querySelectorAll('.hps-input').forEach(el => {
+    el.addEventListener('input', updateHpsTotals);
+  });
 }
 
 async function loadFinalGrades() {
@@ -341,7 +348,6 @@ function renderFinalGrades() {
     const descriptor = r.descriptor || '';
     const descClass = descriptor ? ' desc-' + descriptor.toLowerCase() : '';
     
-    // Check for INC
     const incBadge = r.missing_requirements 
       ? `<br><span style="font-size:10px; color:var(--danger);">INC: ${r.missing_requirements}</span>` 
       : '';
