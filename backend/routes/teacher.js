@@ -140,7 +140,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// --- DOWNLOAD CSV TEMPLATE (UPDATED FOR GENDER SEPARATION) ---
+// --- DOWNLOAD CSV TEMPLATE ---
 router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const { subjectId } = req.params;
   const { term } = req.query;
@@ -164,13 +164,14 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   // Male Section
   csvContent += '\nMALE,,,,,,,,,,,,,\n';
   males.forEach(s => {
-    csvContent += `${s.lrn},"${s.full_name}",,,,,,,,,,,,,\n`;
+    // FIX: Add a leading apostrophe so Excel treats the LRN as text
+    csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
   });
 
   // Female Section
   csvContent += '\nFEMALE,,,,,,,,,,,,,\n';
   females.forEach(s => {
-    csvContent += `${s.lrn},"${s.full_name}",,,,,,,,,,,,,\n`;
+    csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
   });
 
   res.setHeader('Content-Type', 'text/csv');
@@ -178,7 +179,7 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   res.send(csvContent);
 }));
 
-// --- IMPORT GRADES FROM CSV ---
+// --- IMPORT GRADES FROM CSV (UPDATED TO FIX SCIENTIFIC NOTATION) ---
 router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   
@@ -196,12 +197,21 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
     let failCount = 0;
 
     for (const row of results) {
-      // Skip header rows or empty rows
-      if (!row.LRN || row.LRN === 'MALE' || row.LRN === 'FEMALE') continue;
+      if (!row.LRN || row.LRN.trim() === '' || row.LRN === 'MALE' || row.LRN === 'FEMALE') continue;
 
       try {
-        const [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [row.LRN]);
-        if (!student.length) { failCount++; continue; }
+        // FIX: Convert scientific notation back to a full string if Excel corrupted it
+        let cleanLrn = row.LRN.trim().replace(/"/g, '');
+        if (cleanLrn.includes('E+') || cleanLrn.includes('e+')) {
+          cleanLrn = Number(cleanLrn).toLocaleString('fullwide', { useGrouping: false });
+        }
+
+        const [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [cleanLrn]);
+        if (!student.length) { 
+          console.log(`Skipped: LRN ${cleanLrn} not found in database`);
+          failCount++; 
+          continue; 
+        }
         
         const studentId = student[0].student_id;
         const n = (v) => (v === '' || v === undefined || isNaN(Number(v))) ? null : Number(v);
@@ -210,16 +220,40 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
         const pt1 = n(row.PT1), pt2 = n(row.PT2), pt3 = n(row.PT3);
         const ex1 = n(row.EX1), ex2 = n(row.EX2), ex3 = n(row.EX3);
 
+        // Fetch the HPS set by the teacher from the DB
+        const [existing] = await pool.query('SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps FROM grades WHERE subject_id = ? AND term = ? LIMIT 1', [subject_id, term]);
+        
+        const hps = existing[0] || {
+          ww1_hps: 100, ww2_hps: 100, ww3_hps: 100, ww4_hps: 100, ww5_hps: 100,
+          pt1_hps: 100, pt2_hps: 100, pt3_hps: 100,
+          ex1_hps: 100, ex2_hps: 100, ex3_hps: 100
+        };
+
+        // Calculate Grades based on HPS
+        const calcN = (v) => n(v) || 0;
+        const ww_hps = calcN(hps.ww1_hps) + calcN(hps.ww2_hps) + calcN(hps.ww3_hps) + calcN(hps.ww4_hps) + calcN(hps.ww5_hps);
+        const pt_hps = calcN(hps.pt1_hps) + calcN(hps.pt2_hps) + calcN(hps.pt3_hps);
+        const ex_hps = calcN(hps.ex1_hps) + calcN(hps.ex2_hps) + calcN(hps.ex3_hps);
+
+        const ww_ps = ww_hps === 0 ? 0 : ((calcN(ww1)+calcN(ww2)+calcN(ww3)+calcN(ww4)+calcN(ww5)) / ww_hps) * 100;
+        const pt_ps = pt_hps === 0 ? 0 : ((calcN(pt1)+calcN(pt2)+calcN(pt3)) / pt_hps) * 100;
+        const ex_ps = ex_hps === 0 ? 0 : ((calcN(ex1)+calcN(ex2)+calcN(ex3)) / ex_hps) * 100;
+
+        const initialGrade = Number(((ww_ps * 0.20) + (pt_ps * 0.50) + (ex_ps * 0.30)).toFixed(2));
+        const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
+        const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
+
         const sql = `
-          INSERT INTO grades (student_id, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO grades (student_id, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, initial_grade, term_grade, descriptor)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE 
             ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
             pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), 
-            ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3)
+            ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3),
+            initial_grade=VALUES(initial_grade), term_grade=VALUES(term_grade), descriptor=VALUES(descriptor)
         `;
         
-        await pool.query(sql, [studentId, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3]);
+        await pool.query(sql, [studentId, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, initialGrade, termGrade, descriptor]);
         successCount++;
       } catch (err) {
         console.error("Row error:", err);
