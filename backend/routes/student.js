@@ -10,38 +10,48 @@ const ACTIVITIES = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2',
 // ---------------------------------------------------------------------------
 // HELPERS
 // ---------------------------------------------------------------------------
-
-/**
- * Determines missing requirements and if there are any scores.
- */
 function analyzeTerm(grade) {
-  if (!grade) return { status: 'pending', hasAnyScore: false, missing: [] };
+  if (!grade) return { status: 'pending', hasAnyScore: false, missing: [], hasFinalExam: false };
 
   const missing = [];
   let hasAnyScore = false;
+  let hasFinalExam = false;
 
   for (const a of ACTIVITIES) {
     const score = grade[a];
     const hps = Number(grade[`${a}_hps`]) || 0;
     const hasScore = score !== null && score !== undefined;
 
+    // Only count as missing if HPS is set and score is blank
     if (hps > 0 && !hasScore) missing.push(a.toUpperCase());
+    
     if (hasScore) hasAnyScore = true;
+    
+    // Check if the Final Exam (ex3 / TE) has been taken
+    if (a === 'ex3' && hasScore) hasFinalExam = true;
   }
 
   let status;
-  if (missing.length > 0)      status = 'inc';
-  else if (hasAnyScore)        status = 'graded';
-  else                         status = 'pending';
+  // Only mark as INC if they missed 3 or more activities
+  if (missing.length >= 3) {
+    status = 'inc';
+  } else if (hasAnyScore && hasFinalExam) {
+    status = 'graded'; // Term is done
+  } else if (hasAnyScore) {
+    status = 'in-progress'; // Currently taking it
+  } else {
+    status = 'pending'; // Not started
+  }
 
-  return { status, hasAnyScore, missing };
+  return { status, hasAnyScore, missing, hasFinalExam };
 }
 
 function qualitativeFromTerm(analysis, termGrade) {
-  if (analysis.status === 'inc')      return 'INC / Not Submitted';
-  if (analysis.status === 'pending')  return '—';
-  if (termGrade && termGrade >= 75)   return 'Passed';
-  if (termGrade && termGrade > 0)     return 'Failed';
+  if (analysis.status === 'inc')          return 'INC / Not Submitted';
+  if (analysis.status === 'pending')      return '—';
+  if (analysis.status === 'in-progress')  return 'In Progress';
+  if (termGrade && termGrade >= 75)       return 'Passed';
+  if (termGrade && termGrade > 0)         return 'Failed';
   return '—';
 }
 
@@ -90,18 +100,17 @@ router.get('/subjects', async (req, res) => {
         termMissing[term] = analysis.missing;
 
         if (g && g.term_grade !== null && Number(g.term_grade) > 0) {
-          termGrades[term] = Number(g.term_grade);
-          
-          // Set qualitative per-term status
-          if (analysis.status === 'inc') {
+          // Only apply the grade and status if the term is fully completed
+          if (analysis.status === 'graded') {
+            termGrades[term] = Number(g.term_grade);
+            termStatus[term] = termGrades[term] >= 75 ? 'Passed' : 'Failed';
+          } else if (analysis.status === 'inc') {
             termStatus[term] = 'inc';
-          } else if (termGrades[term] >= 75) {
-            termStatus[term] = 'Passed';
           } else {
-            termStatus[term] = 'Failed';
+            termStatus[term] = 'in-progress'; 
           }
         } else {
-          termStatus[term] = analysis.status === 'inc' ? 'inc' : 'pending';
+          termStatus[term] = analysis.status === 'inc' ? 'inc' : 'in-progress';
         }
       }
 
@@ -184,7 +193,7 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
 
       return {
         term:               g.term,
-        activities:         showRaw ? activities : undefined, // Hide scores if false
+        activities:         showRaw ? activities : undefined, 
         initial_grade:      showRaw ? g.initial_grade : undefined,
         term_grade:         showRaw ? g.term_grade : undefined,
         descriptor:         g.descriptor,

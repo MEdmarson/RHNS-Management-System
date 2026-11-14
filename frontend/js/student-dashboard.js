@@ -11,6 +11,40 @@ function escapeHtml(s) {
   }[c]));
 }
 
+function showToast(message, type = 'info', onClick = null) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.style.cursor = onClick ? 'pointer' : 'default';
+  
+  const icon = type === 'warning' ? '⚠️' : type === 'error' ? '🚨' : '🔔';
+  
+  toast.innerHTML = `
+    <div style="font-size: 20px;">${icon}</div>
+    <div style="flex: 1;">
+      <strong>${escapeHtml(message.title)}</strong>
+      <div style="font-size: 12px; color: #4b5563; margin-top: 4px;">${escapeHtml(message.body)}</div>
+    </div>
+  `;
+
+  if (onClick) {
+    toast.addEventListener('click', () => {
+      onClick();
+      toast.remove();
+    });
+  }
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 6000);
+}
+
 function statusPill(status) {
   const map = {
     'Passed':              'passed',
@@ -23,24 +57,18 @@ function statusPill(status) {
   return `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
 }
 
-// Term cell: Show Passed/Failed/INC directly, fallback to numbers if you prefer
 function termCell(termNum, subj) {
   const st = subj.term_status?.[termNum];
   
   if (st === 'inc') {
-    const missing = (subj.term_missing?.[termNum] || []).join(', ');
-    return `<span class="term-inc" title="Missing: ${escapeHtml(missing)}">INC</span>`;
+    return `<span class="term-inc" title="Missing requirements">INC</span>`;
   }
   
-  if (st === 'Passed') {
-    return `<span style="color: #166534; font-weight: 700; font-size: 12px;">Passed</span>`;
-  }
+  if (st === 'Passed') return `<span style="color: #166534; font-weight: 700; font-size: 12px;">Passed</span>`;
+  if (st === 'Failed') return `<span style="color: #991b1b; font-weight: 700; font-size: 12px;">Failed</span>`;
+  if (st === 'in-progress') return `<span style="color: #1e3a8a; font-weight: 700; font-size: 12px;">In Progress</span>`;
   
-  if (st === 'Failed') {
-    return `<span style="color: #991b1b; font-weight: 700; font-size: 12px;">Failed</span>`;
-  }
-  
-  return '—'; // Pending
+  return '—';
 }
 
 // ---- Navigation ----
@@ -58,7 +86,11 @@ function showView(name, el) {
   document.getElementById('pageTitle').textContent = titles[name];
 
   if (name === 'attendance') loadAttendance();
-  if (name === 'notifs')     loadNotifs();
+  
+  if (name === 'notifs') {
+    document.getElementById('notifBadge').style.display = 'none';
+    loadNotifs(false);
+  }
 }
 
 // ---- Dashboard ----
@@ -84,7 +116,6 @@ async function loadDashboard() {
       </div>
     `;
 
-    // Progress card
     const progressCard = document.getElementById('progressCard');
     if (progressCard) {
       document.getElementById('progressBar').style.width = `${progress.pctComplete}%`;
@@ -99,7 +130,6 @@ async function loadDashboard() {
       `;
     }
 
-    // Active & Past
     const active = subjects.filter(s => s.is_active);
     const past   = subjects.filter(s => !s.is_active);
 
@@ -130,6 +160,8 @@ async function loadDashboard() {
       });
     });
 
+    loadNotifs(true);
+
   } catch (err) {
     console.error(err);
     document.getElementById('activeSubjectsBody').innerHTML =
@@ -137,7 +169,7 @@ async function loadDashboard() {
   }
 }
 
-// ---- Subject modal (Fixed Alignment) ----
+// ---- Subject modal ----
 async function openSubjectModal(subjectId, subjectName) {
   document.getElementById('modalSubjectTitle').textContent = subjectName;
   document.getElementById('modalContent').innerHTML =
@@ -154,7 +186,6 @@ async function openSubjectModal(subjectId, subjectName) {
 
     let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
     
-    // ALWAYS render the detailed table structure for perfect alignment
     html += `<thead><tr>
         <th>Term</th>
         <th class="bg-ww" style="text-align:center;">WW</th>
@@ -166,12 +197,14 @@ async function openSubjectModal(subjectId, subjectName) {
 
     grades.forEach(g => {
       const formatGroup = (prefix) => {
-        if (!g.activities) return '—'; // Backend hid the raw scores
+        if (!g.activities) return '—';
         const items = g.activities.filter(a => a.field.startsWith(prefix));
+        
         return items.map(a => {
-          if (a.missing) return '<span style="color:#92400e; font-weight:700; font-size:11px;">MISS</span>';
-          return a.score === null ? '—' : a.score;
-        }).join(' / ');
+          if (a.hps === 0) return null; 
+          if (a.missing) return `<span style="color:#b45309; font-size:11px;">(${a.hps})</span>`;
+          return `${a.score ?? 0}/${a.hps}`;
+        }).filter(Boolean).join(', ');
       };
 
       const descColor =
@@ -185,12 +218,13 @@ async function openSubjectModal(subjectId, subjectName) {
       if (g.qualitative === 'Passed') statusText = '<span style="color:#166534; font-weight:700;">Passed</span>';
       if (g.qualitative === 'Failed') statusText = '<span style="color:#991b1b; font-weight:700;">Failed</span>';
       if (g.qualitative === 'INC / Not Submitted') statusText = '<span style="color:#92400e; font-weight:700;">INC</span>';
+      if (g.qualitative === 'In Progress') statusText = '<span style="color:#1e3a8a; font-weight:700;">In Progress</span>';
 
       html += `<tr>
         <td style="text-align:center; font-weight:bold;">${g.term}</td>
-        <td class="bg-ww" style="text-align:center;">${formatGroup('ww')}</td>
-        <td class="bg-pt" style="text-align:center;">${formatGroup('pt')}</td>
-        <td class="bg-ex" style="text-align:center;">${formatGroup('ex')}</td>
+        <td class="bg-ww" style="text-align:center; font-size:12px;">${formatGroup('ww')}</td>
+        <td class="bg-pt" style="text-align:center; font-size:12px;">${formatGroup('pt')}</td>
+        <td class="bg-ex" style="text-align:center; font-size:12px;">${formatGroup('ex')}</td>
         <td style="text-align:center; font-weight:bold; font-size:14px;">
           ${g.term_grade ?? '—'}<br>
           <span style="font-size:11px; color:${descColor}; font-weight:600;">${escapeHtml(g.descriptor || '')}</span>
@@ -200,7 +234,6 @@ async function openSubjectModal(subjectId, subjectName) {
     });
     
     html += '</tbody></table></div>';
-
     document.getElementById('modalContent').innerHTML = html;
   } catch (err) {
     document.getElementById('modalContent').innerHTML =
@@ -237,20 +270,51 @@ async function loadAttendance() {
 }
 
 // ---- Notifications ----
-async function loadNotifs() {
-  const rows = await apiFetch('/student/notifications');
-  document.getElementById('notifsList').innerHTML = rows.map(n => `
-    <div class="notif-preview">
-      <div class="notif-icon">${n.type === 'warning' ? '⚠️' : n.type === 'error' ? '🚨' : '📢'}</div>
-      <div style="flex:1;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>${escapeHtml(n.title)}</strong>
-          <span style="font-size:11px; color:#6b7280;">${new Date(n.created_at).toLocaleString()}</span>
+async function loadNotifs(showPopup = false) {
+  try {
+    const rows = await apiFetch('/student/notifications');
+    
+    const unreadCount = rows.filter(n => !n.is_read || n.type === 'warning').length;
+    const badge = document.getElementById('notifBadge');
+    
+    if (unreadCount > 0) {
+      badge.textContent = unreadCount > 9 ? '9+' : unreadCount; 
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    document.getElementById('notifsList').innerHTML = rows.map(n => `
+      <div class="notif-preview">
+        <div class="notif-icon">${n.type === 'warning' ? '⚠️' : n.type === 'error' ? '🚨' : '📢'}</div>
+        <div style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>${escapeHtml(n.title)}</strong>
+            <span style="font-size:11px; color:#6b7280;">${new Date(n.created_at).toLocaleString()}</span>
+          </div>
+          <div style="margin-top:6px; font-size:13px;">${escapeHtml(n.body || '')}</div>
         </div>
-        <div style="margin-top:6px; font-size:13px;">${escapeHtml(n.body || '')}</div>
       </div>
-    </div>
-  `).join('') || '<p style="text-align:center; color:var(--muted); padding:20px;">No notifications yet.</p>';
+    `).join('') || '<p style="text-align:center; color:var(--muted); padding:20px;">No notifications yet.</p>';
+
+    if (showPopup && rows.length > 0) {
+      const latest = rows.find(n => !n.is_read || n.type === 'warning');
+      if (latest) {
+        showToast(
+          { title: latest.title, body: latest.body || 'Click to view all notifications.' },
+          latest.type === 'warning' ? 'warning' : 'info',
+          () => {
+            const notifBtn = document.getElementById('navNotifs');
+            if (notifBtn) showView('notifs', notifBtn);
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load notifications:', err);
+  }
 }
 
+// Fetch notifications immediately to show the badge on login
+loadNotifs(false); 
 loadDashboard();

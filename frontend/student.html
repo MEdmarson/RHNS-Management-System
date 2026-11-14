@@ -69,6 +69,53 @@
       display: flex; align-items: center; justify-content: center;
       border-radius: 50%; flex-shrink: 0;
     }
+
+    /* Notification Badge */
+    .notif-badge {
+      background: var(--danger);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 10px;
+      margin-left: auto; 
+      box-shadow: 0 0 0 2px var(--accent); 
+      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0); }
+      100% { transform: scale(1); }
+    }
+
+    @media (max-width: 768px) {
+      .notif-badge {
+        margin-left: 0;
+        position: absolute;
+        top: 5px;
+        right: 15px;
+      }
+    }
+
+    /* Toast Notifications */
+    #toastContainer {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .toast {
+      background: #ffffff; padding: 16px; border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex; align-items: flex-start; gap: 12px;
+      width: 320px; border-left: 4px solid var(--primary);
+      animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .toast.warning { border-left-color: var(--warning); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast:hover { background: #f9fafb; }
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -91,8 +138,9 @@
     <button class="nav-item" onclick="showView('attendance', this)">
       <span class="nav-icon">📅</span><span class="nav-label">Attendance</span>
     </button>
-    <button class="nav-item" onclick="showView('notifs', this)">
+    <button class="nav-item" id="navNotifs" onclick="showView('notifs', this)">
       <span class="nav-icon">🔔</span><span class="nav-label">Notifications</span>
+      <span id="notifBadge" class="notif-badge" style="display: none;">0</span>
     </button>
 
     <button class="nav-item mobile-only-logout" onclick="logout()">
@@ -120,7 +168,6 @@
 
       <div class="stats-grid" id="stats"></div>
 
-      <!-- Promotion progress tracker -->
       <div class="card" id="progressCard" style="margin-bottom:24px;">
         <h3>🎯 Promotion Progress</h3>
         <div style="background:#e5e7eb; border-radius:8px; height:24px; overflow:hidden; margin-bottom:8px;">
