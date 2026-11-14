@@ -5,7 +5,6 @@ document.getElementById('userChip').textContent = '👩‍🏫 ' + getUser().nam
 let mySubjectsData = []; 
 let currentViewName = 'subjects';
 
-// Warn if they try to close the browser or refresh
 window.addEventListener('beforeunload', (e) => {
   if (hasUnsavedChanges) { 
     e.preventDefault(); 
@@ -17,7 +16,6 @@ function pushViewState(name) {
   history.pushState({ view: name }, '', '#' + name);
 }
 
-// Handle the Browser Back/Forward buttons
 window.addEventListener('popstate', async (e) => {
   if (!getToken()) {
     window.location.replace('index.html');
@@ -64,14 +62,11 @@ function confirmLogout() {
   logout();
 }
 
-// Triggered when clicking navigation buttons (e.g., Attendance, SF2, etc.)
 function showView(name, el) {
-  // If they are leaving the current view and have unsaved changes, prompt them
   if (hasUnsavedChanges && currentViewName === 'gradebook') {
     const leave = confirm('You have unsaved changes. Are you sure you want to leave?');
     if (!leave) return;
     
-    // If they confirm leaving, clear the flag
     hasUnsavedChanges = false;
     document.getElementById('unsavedIndicator').style.display = 'none';
   }
@@ -232,14 +227,12 @@ async function initDashboard() {
   }
 
   grid.innerHTML = subjects.map(s => {
-    // Escape single quotes for safe HTML attribute insertion
     const safeName = s.name.replace(/'/g, "\\'");
     const safeCode = (s.code || '').replace(/'/g, "\\'");
     
     return `
     <div class="subject-card" onclick="openClassRecord(${s.id})" style="position: relative;">
       
-      <!-- Edit Button -->
       <button onclick="openEditSubjectModal(event, ${s.id}, '${safeCode}', '${safeName}', ${s.section_id})" 
               style="position: absolute; top: 12px; right: 45px; background: #e0e7ff; color: #3730a3; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
               onmouseover="this.style.background='#c7d2fe'" onmouseout="this.style.background='#e0e7ff'"
@@ -247,7 +240,6 @@ async function initDashboard() {
         ✏️
       </button>
 
-      <!-- Delete Button -->
       <button onclick="deleteSubject(event, ${s.id}, '${safeName}')" 
               style="position: absolute; top: 12px; right: 12px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
               onmouseover="this.style.background='#fca5a5'" onmouseout="this.style.background='#fee2e2'"

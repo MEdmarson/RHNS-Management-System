@@ -110,7 +110,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   const sectionId = subjRows[0].section_id;
 
   const [students] = await pool.query(`
-    SELECT u.id AS student_id, u.full_name, s.lrn
+    SELECT u.id AS student_id, u.full_name, s.lrn, s.gender
     FROM students s
     JOIN users u ON u.id = s.user_id
     WHERE s.section_id = ?
@@ -130,6 +130,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
       student_id: s.student_id, 
       full_name: s.full_name,
       lrn: s.lrn,
+      gender: s.gender,
       subject_id: Number(subject),
       term: term,
       ...g 
@@ -139,7 +140,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// --- DOWNLOAD CSV TEMPLATE ---
+// --- DOWNLOAD CSV TEMPLATE (UPDATED FOR GENDER SEPARATION) ---
 router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const { subjectId } = req.params;
   const { term } = req.query;
@@ -148,15 +149,27 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
 
   const [students] = await pool.query(`
-    SELECT u.full_name, s.lrn 
+    SELECT u.full_name, s.lrn, s.gender 
     FROM students s 
     JOIN users u ON u.id = s.user_id 
     WHERE s.section_id = ? 
     ORDER BY u.full_name
   `, [subj[0].section_id]);
 
+  const males = students.filter(s => normalizeGender(s.gender) === 'male');
+  const females = students.filter(s => normalizeGender(s.gender) === 'female');
+
   let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,EX1,EX2,EX3\n';
-  students.forEach(s => {
+  
+  // Male Section
+  csvContent += '\nMALE,,,,,,,,,,,,,\n';
+  males.forEach(s => {
+    csvContent += `${s.lrn},"${s.full_name}",,,,,,,,,,,,,\n`;
+  });
+
+  // Female Section
+  csvContent += '\nFEMALE,,,,,,,,,,,,,\n';
+  females.forEach(s => {
     csvContent += `${s.lrn},"${s.full_name}",,,,,,,,,,,,,\n`;
   });
 
@@ -183,7 +196,8 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
     let failCount = 0;
 
     for (const row of results) {
-      if (!row.LRN) continue;
+      // Skip header rows or empty rows
+      if (!row.LRN || row.LRN === 'MALE' || row.LRN === 'FEMALE') continue;
 
       try {
         const [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [row.LRN]);
