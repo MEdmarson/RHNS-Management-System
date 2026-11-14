@@ -184,31 +184,33 @@ async function openSubjectModal(subjectId, subjectName) {
       return;
     }
 
+    // We use max-width: 800px so the longer headers fit nicely
     let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
     
+    // UPDATED HEADERS
     html += `<thead><tr>
-        <th>Term</th>
-        <th class="bg-ww" style="text-align:center;">WW</th>
-        <th class="bg-pt" style="text-align:center;">PT</th>
-        <th class="bg-ex" style="text-align:center;">EX</th>
-        <th style="text-align:center;">Term Grade</th>
-        <th style="text-align:center;">Status</th>
+        <th style="text-align:center; width: 60px;">Term</th>
+        <th class="bg-ww" style="text-align:center;">WRITTEN / ORAL WORKS</th>
+        <th class="bg-pt" style="text-align:center;">PRODUCT / PERFORMANCE TASKS</th>
+        <th class="bg-ex" style="text-align:center;">EXAMINATIONS</th>
+        <th style="text-align:center; width: 90px;">Term Grade</th>
+        <th style="text-align:center; width: 100px;">Status</th>
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
-      // Show "Score / HPS" if there is a score, otherwise if HPS is set, show "— / HPS"
+      // NEW FORMATTING: Show scores vertically for better readability
       const formatGroup = (prefix) => {
         if (!g.activities) return '—';
         const items = g.activities.filter(a => a.field.startsWith(prefix));
         
         return items.map(a => {
           if (a.score !== null && a.score !== undefined) {
-             return `${a.score} / ${a.hps || 0}`;
+             return `<div style="margin-bottom: 2px;"><strong style="color:var(--primary);">${a.score}</strong> <span style="color:var(--muted); font-size:11px;">/ ${a.hps || 0}</span></div>`;
           } else if (a.hps > 0) {
-             return `<span style="color:#b45309; font-size:11px;">— / ${a.hps}</span>`;
+             return `<div style="margin-bottom: 2px; color:#b45309; font-size:11px;">— / ${a.hps}</div>`;
           }
-          return null; // Hide if no score and no HPS
-        }).filter(Boolean).join(', ');
+          return null; 
+        }).filter(Boolean).join('') || '—';
       };
 
       // Determine if the term is fully completed (Passed or Failed)
@@ -228,21 +230,25 @@ async function openSubjectModal(subjectId, subjectName) {
       if (g.qualitative === 'In Progress') statusText = '<span style="color:#1e3a8a; font-weight:700;">In Progress</span>';
 
       html += `<tr>
-        <td style="text-align:center; font-weight:bold;">${g.term}</td>
-        <td class="bg-ww" style="text-align:center; font-size:12px;">${formatGroup('ww') || '—'}</td>
-        <td class="bg-pt" style="text-align:center; font-size:12px;">${formatGroup('pt') || '—'}</td>
-        <td class="bg-ex" style="text-align:center; font-size:12px;">${formatGroup('ex') || '—'}</td>
-        <td style="text-align:center; font-weight:bold; font-size:14px;">
+        <td style="text-align:center; font-weight:bold; font-size:14px; background:#f9fafb;">${g.term}</td>
+        <td class="bg-ww" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('ww')}</td>
+        <td class="bg-pt" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('pt')}</td>
+        <td class="bg-ex" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('ex')}</td>
+        <td style="text-align:center; font-weight:bold; font-size:16px; vertical-align:top; background:#f9fafb;">
           ${isFinished ? (g.term_grade ?? '—') : '—'}<br>
           <span style="font-size:11px; color:${descColor}; font-weight:600;">
             ${isFinished ? escapeHtml(g.descriptor || '') : ''}
           </span>
         </td>
-        <td style="text-align:center;">${statusText}</td>
+        <td style="text-align:center; vertical-align:top; background:#f9fafb;">${statusText}</td>
       </tr>`;
     });
     
     html += '</tbody></table></div>';
+    
+    // Add a slight note for students to understand the format
+    html += `<p style="font-size:11px; color:var(--muted); margin-top:12px; text-align:center;">Scores are displayed as <strong>Your Score</strong> / Max Possible Score (HPS)</p>`;
+    
     document.getElementById('modalContent').innerHTML = html;
   } catch (err) {
     document.getElementById('modalContent').innerHTML =
