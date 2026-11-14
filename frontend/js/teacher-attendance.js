@@ -167,42 +167,46 @@ async function loadAttendanceHistory() {
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
 
-  // --- UPDATED AT-RISK LOGIC ---
+  // 1. Failing / Missing Requirements
   const failing = rows.filter(r => {
-    const lowGrade = r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75;
+    const isLowGrade = r.avg_grade !== null && Number(r.avg_grade) < 75;
     const hasMissing = r.missing_requirements !== null && r.missing_requirements !== undefined;
-    return lowGrade || hasMissing;
+    return isLowGrade || hasMissing;
   });
 
   document.getElementById('failingBody').innerHTML = failing.map(r => {
     let reasons = [];
-    if (r.avg_grade !== null && Number(r.avg_grade) < 75) reasons.push(`<span class="badge danger">Low Grade (${r.avg_grade})</span>`);
-    if (r.missing_requirements) reasons.push(`<span class="badge warn">Missing: ${r.missing_requirements}</span>`);
+    if (r.avg_grade !== null && Number(r.avg_grade) < 75) {
+      reasons.push(`<span class="badge danger" style="font-size:10px; margin-right:4px;">Low Grade (${r.avg_grade})</span>`);
+    }
+    if (r.missing_requirements) {
+      reasons.push(`<span class="badge warn" style="font-size:10px;">Missing: ${r.missing_requirements}</span>`);
+    }
     
     return `
     <tr>
       <td>
         <strong>${r.full_name}</strong><br>
-        <div style="display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;">${reasons.join('')}</div>
+        <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">${reasons.join('')}</div>
       </td>
       <td><span class="badge danger">${r.avg_grade || '—'}</span></td>
     </tr>`;
   }).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
 
-  // Filter for dropping (absences > 4)
+  // 2. Dropping / Attendance
   const dropping = rows.filter(r => {
     const t = computeAttendance({
-      present: Number(r.raw_present) || 0,
+      present: 0, // We only care about absences for this calculation
       late:    Number(r.raw_late)    || 0,
-      excused: Number(r.raw_excused) || 0,
+      excused: 0,
       absent:  Number(r.raw_absent)  || 0
     });
     return t.absent > 4;
   }).map(r => {
     const t = computeAttendance({
-      present: Number(r.raw_present) || 0,
+      present: 0,
       late:    Number(r.raw_late)    || 0,
-      excused: Number(r.raw_excused) || 0,
+      excused: 0,
       absent:  Number(r.raw_absent)  || 0
     });
     return { ...r, effective_absences: t.absent, converted: t.converted };
@@ -212,11 +216,13 @@ async function loadWarnings() {
     <tr>
       <td>
         <strong>${r.full_name}</strong><br>
-        <span class="badge danger" style="margin-top:5px; display:inline-block;">Attendance (${r.effective_absences} absences)</span>
+        <div style="margin-top:6px;">
+          <span class="badge danger" style="font-size:10px;">Attendance (${r.effective_absences} absences)</span>
+        </div>
       </td>
       <td>
         <span class="badge warn">${r.effective_absences}</span>
-        ${r.converted ? `<span style="font-size:11px; color: var(--muted);">(${r.converted} from lates)</span>` : ''}
+        ${r.converted ? `<span style="font-size:10px; color: var(--muted);">(${r.converted} from lates)</span>` : ''}
       </td>
     </tr>
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';

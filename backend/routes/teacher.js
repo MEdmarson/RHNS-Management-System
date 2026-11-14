@@ -267,23 +267,23 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
 
 // --- UPDATED AT-RISK ROUTE ---
 router.get('/at-risk', asyncRoute(async (req, res) => {
+  // We use a subquery to calculate the exact number of missing requirements per student
   const [rows] = await pool.query(`
     SELECT u.id, u.full_name, 
            ROUND(AVG(g.term_grade), 2) AS avg_grade,
-           COUNT(DISTINCT g.term_grade) AS graded_count,
            MAX(g.missing_requirements) AS missing_requirements,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_present,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_excused,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late
     FROM users u 
     JOIN students s ON s.user_id = u.id 
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
     GROUP BY u.id, u.full_name 
-    HAVING (avg_grade < 75 AND graded_count > 0) 
+    -- Flag if they have a missing requirement OR their grade is below 75 OR they have >4 absences
+    HAVING (missing_requirements IS NOT NULL) 
+        OR (avg_grade < 75 AND avg_grade IS NOT NULL)
         OR (raw_absent + FLOOR(raw_late / 3) > 4)
-        OR (missing_requirements IS NOT NULL)`, [req.user.id]);
+  `, [req.user.id]);
   res.json(rows);
 }));
 
