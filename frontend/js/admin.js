@@ -265,9 +265,20 @@ async function loadDashboard() {
 
 async function loadAtRisk() {
   const rows = await apiFetch('/admin/at-risk');
-  document.getElementById('atRiskBody').innerHTML = rows.map(r => `
-    <tr><td>${r.full_name}</td><td>${r.section || '—'}</td><td>${r.avg_grade ?? '—'}</td><td>${r.absences}</td></tr>
-  `).join('') || '<tr><td colspan="4" style="text-align:center; padding: 20px;">🎉 No at-risk students.</td></tr>';
+  
+  document.getElementById('atRiskBody').innerHTML = rows.map(r => {
+    // Show a dash if the grade is null (meaning no grades have been inputted yet)
+    const avgDisplay = r.avg_grade !== null ? `<span class="badge ${r.avg_grade < 75 ? 'danger' : 'ok'}">${r.avg_grade}</span>` : '—';
+    const absDisplay = r.absences > 0 ? `<span class="badge danger">${r.absences}</span>` : '0';
+
+    return `
+      <tr>
+        <td><strong>${r.full_name}</strong></td>
+        <td>${r.section || '—'}</td>
+        <td>${avgDisplay}</td>
+        <td>${absDisplay}</td>
+      </tr>`;
+  }).join('') || '<tr><td colspan="4" style="text-align:center; padding: 20px;">🎉 No at-risk students.</td></tr>';
 }
 
 async function loadCompliance() {

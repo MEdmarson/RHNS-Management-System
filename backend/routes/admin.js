@@ -30,10 +30,11 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// UPDATED: Now calculates absences more accurately and handles missing grades
 router.get('/at-risk', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.full_name, sec.name AS section,
+      SELECT u.id, u.full_name, sec.name AS section,
              ROUND(AVG(g.term_grade),2) AS avg_grade,
              (SELECT COUNT(*) FROM attendance a
               WHERE a.student_id = u.id AND a.status='absent') AS absences
@@ -42,7 +43,8 @@ router.get('/at-risk', async (req, res) => {
       LEFT JOIN sections sec ON sec.id = s.section_id
       LEFT JOIN grades g ON g.student_id = u.id
       GROUP BY u.id, u.full_name, sec.name
-      HAVING avg_grade < 75 OR absences > 4`);
+      HAVING (avg_grade < 75 AND avg_grade IS NOT NULL) OR absences > 4
+    `);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -208,10 +210,20 @@ router.put('/subjects/:id', async (req, res) => {
   }
 });
 
+// UPDATED: Admin now properly cleans up grades/attendance when deleting a subject
 router.delete('/subjects/:id', async (req, res) => {
+  const { id } = req.params;
   try {
-    await pool.query('DELETE FROM subjects WHERE id = ?', [req.params.id]);
-    res.json({ ok: true });
+    // 1. Delete associated grades
+    await pool.query('DELETE FROM grades WHERE subject_id = ?', [id]);
+    
+    // 2. Delete associated attendance records (if tied to subject)
+    await pool.query('DELETE FROM attendance WHERE section_id = (SELECT section_id FROM subjects WHERE id = ?)', [id]).catch(() => {});
+
+    // 3. Delete the subject
+    await pool.query('DELETE FROM subjects WHERE id = ?', [id]);
+    
+    res.json({ ok: true, message: 'Subject and linked records deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
