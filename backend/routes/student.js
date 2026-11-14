@@ -94,23 +94,33 @@ router.get('/subjects', async (req, res) => {
       const termStatus = {};
       const termMissing = {};
 
+            let previousTermFinished = true; // Term 1 always starts as true
+
       for (const term of [1, 2, 3]) {
         const g = gs.find(x => Number(x.term) === term);
         const analysis = analyzeTerm(g);
         termMissing[term] = analysis.missing;
 
-        if (g && g.term_grade !== null && Number(g.term_grade) > 0) {
+        if (!previousTermFinished) {
+          // If the previous term wasn't finished, this one is "Not Started"
+          termStatus[term] = 'pending';
+        } else if (g && g.term_grade !== null && Number(g.term_grade) > 0) {
           // Only apply the grade and status if the term is fully completed
           if (analysis.status === 'graded') {
             termGrades[term] = Number(g.term_grade);
             termStatus[term] = termGrades[term] >= 75 ? 'Passed' : 'Failed';
           } else if (analysis.status === 'inc') {
             termStatus[term] = 'inc';
+            previousTermFinished = false; // INC means this term isn't done
           } else {
             termStatus[term] = 'in-progress'; 
+            previousTermFinished = false; // Still in progress, so stop the chain
           }
         } else {
           termStatus[term] = analysis.status === 'inc' ? 'inc' : 'in-progress';
+          if (termStatus[term] === 'in-progress' || termStatus[term] === 'inc') {
+             previousTermFinished = false;
+          }
         }
       }
 

@@ -67,6 +67,7 @@ function termCell(termNum, subj) {
   if (st === 'Passed') return `<span style="color: #166534; font-weight: 700; font-size: 12px;">Passed</span>`;
   if (st === 'Failed') return `<span style="color: #991b1b; font-weight: 700; font-size: 12px;">Failed</span>`;
   if (st === 'in-progress') return `<span style="color: #1e3a8a; font-weight: 700; font-size: 12px;">In Progress</span>`;
+  if (st === 'pending') return `<span style="color: #6b7280; font-weight: 600; font-size: 12px;">Not Started</span>`;
   
   return '—';
 }
@@ -191,8 +192,8 @@ async function openSubjectModal(subjectId, subjectName) {
         <th class="bg-ww" style="text-align:center; color: #111827;">WRITTEN / ORAL WORKS</th>
         <th class="bg-pt" style="text-align:center; color: #111827;">PRODUCT / PERFORMANCE TASKS</th>
         <th class="bg-ex" style="text-align:center; color: #111827;">EXAMINATIONS</th>
-        <th style="text-align:center; width: 90px;" color: #111827;>Term Grade</th>
-        <th style="text-align:center; width: 100px;" color: #111827;>Status</th>
+        <th style="text-align:center; width: 90px;  color: #111827";>Term Grade</th>
+        <th style="text-align:center; width: 100px; color: #111827";>Status</th>
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
