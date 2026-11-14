@@ -23,19 +23,24 @@ function statusPill(status) {
   return `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
 }
 
-// Term cell: INC only if teacher actually set an HPS for a missing activity
+// Term cell: Show Passed/Failed/INC directly, fallback to numbers if you prefer
 function termCell(termNum, subj) {
   const st = subj.term_status?.[termNum];
+  
   if (st === 'inc') {
     const missing = (subj.term_missing?.[termNum] || []).join(', ');
     return `<span class="term-inc" title="Missing: ${escapeHtml(missing)}">INC</span>`;
   }
-  if (st === 'graded') {
-    // If STUDENT_SHOW_RAW=true, backend sends the number; otherwise it sends null
-    const v = subj[`term${termNum}`];
-    return (v === null || v === undefined) ? '—' : v;
+  
+  if (st === 'Passed') {
+    return `<span style="color: #166534; font-weight: 700; font-size: 12px;">Passed</span>`;
   }
-  return '—';  // pending — teacher hasn't entered scores yet
+  
+  if (st === 'Failed') {
+    return `<span style="color: #991b1b; font-weight: 700; font-size: 12px;">Failed</span>`;
+  }
+  
+  return '—'; // Pending
 }
 
 // ---- Navigation ----
@@ -56,7 +61,7 @@ function showView(name, el) {
   if (name === 'notifs')     loadNotifs();
 }
 
-// ---- Dashboard (NO attendance here — that's Attendance-tab only) ----
+// ---- Dashboard ----
 async function loadDashboard() {
   try {
     const [subjects, progress] = await Promise.all([
@@ -64,7 +69,6 @@ async function loadDashboard() {
       apiFetch('/student/progress'),
     ]);
 
-    // ---- Top stat cards ----
     document.getElementById('stats').innerHTML = `
       <div class="stat-card" style="border-left-color: var(--warning);">
         <h4>Subjects Enrolled</h4>
@@ -80,7 +84,7 @@ async function loadDashboard() {
       </div>
     `;
 
-    // ---- Progress card ----
+    // Progress card
     const progressCard = document.getElementById('progressCard');
     if (progressCard) {
       document.getElementById('progressBar').style.width = `${progress.pctComplete}%`;
@@ -95,7 +99,7 @@ async function loadDashboard() {
       `;
     }
 
-    // ---- Active subjects table ----
+    // Active & Past
     const active = subjects.filter(s => s.is_active);
     const past   = subjects.filter(s => !s.is_active);
 
@@ -110,7 +114,6 @@ async function loadDashboard() {
       </tr>
     `).join('') || '<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--muted);">No active subjects.</td></tr>';
 
-    // ---- Past subjects table ----
     document.getElementById('pastSubjectsBody').innerHTML = past.map(s => `
       <tr class="clickable-row" data-id="${s.subject_id}" data-name="${escapeHtml(s.subject)}">
         <td><strong>${escapeHtml(s.subject)}</strong></td>
@@ -121,7 +124,6 @@ async function loadDashboard() {
       </tr>
     `).join('') || '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--muted);">No past subjects found.</td></tr>';
 
-    // ---- Wire row clicks safely (no inline onclick with interpolation) ----
     document.querySelectorAll('.clickable-row[data-id]').forEach(tr => {
       tr.addEventListener('click', () => {
         openSubjectModal(Number(tr.dataset.id), tr.dataset.name);
@@ -135,7 +137,7 @@ async function loadDashboard() {
   }
 }
 
-// ---- Subject modal ----
+// ---- Subject modal (Fixed Alignment) ----
 async function openSubjectModal(subjectId, subjectName) {
   document.getElementById('modalSubjectTitle').textContent = subjectName;
   document.getElementById('modalContent').innerHTML =
@@ -150,63 +152,54 @@ async function openSubjectModal(subjectId, subjectName) {
       return;
     }
 
-    const hasRaw = grades.some(g => g.activities !== undefined);
+    let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
+    
+    // ALWAYS render the detailed table structure for perfect alignment
+    html += `<thead><tr>
+        <th>Term</th>
+        <th class="bg-ww" style="text-align:center;">WW</th>
+        <th class="bg-pt" style="text-align:center;">PT</th>
+        <th class="bg-ex" style="text-align:center;">EX</th>
+        <th style="text-align:center;">Term Grade</th>
+        <th style="text-align:center;">Status</th>
+      </tr></thead><tbody>`;
 
-    let html = '<div style="overflow-x:auto;">';
-    if (hasRaw) {
-      html += `<table class="breakdown-table" style="width:100%; border-collapse:collapse;">
-        <thead><tr>
-          <th>Term</th><th class="bg-ww">WW</th><th class="bg-pt">PT</th>
-          <th class="bg-ex">EX</th><th>Initial</th><th>Term Grade</th><th>Status</th>
-        </tr></thead><tbody>`;
+    grades.forEach(g => {
+      const formatGroup = (prefix) => {
+        if (!g.activities) return '—'; // Backend hid the raw scores
+        const items = g.activities.filter(a => a.field.startsWith(prefix));
+        return items.map(a => {
+          if (a.missing) return '<span style="color:#92400e; font-weight:700; font-size:11px;">MISS</span>';
+          return a.score === null ? '—' : a.score;
+        }).join(' / ');
+      };
 
-      grades.forEach(g => {
-        const group = (prefix) => {
-          const items = g.activities.filter(a => a.field.startsWith(prefix));
-          return items.map(a => {
-            if (a.missing) return '<span style="color:#92400e; font-weight:700;">MISS</span>';
-            return a.score === null ? '—' : a.score;
-          }).join(' / ');
-        };
-        const descColor =
-          g.descriptor === 'Advancing'    ? 'green' :
-          g.descriptor === 'Benchmarking' ? 'blue'  :
-          g.descriptor === 'Connecting'   ? '#0369a1' :
-          g.descriptor === 'Developing'   ? '#b45309' :
-          g.descriptor === 'Emerging'     ? 'red'   : 'inherit';
+      const descColor =
+        g.descriptor === 'Advancing'    ? 'green' :
+        g.descriptor === 'Benchmarking' ? '#1e3a8a'  :
+        g.descriptor === 'Connecting'   ? '#0369a1' :
+        g.descriptor === 'Developing'   ? '#b45309' :
+        g.descriptor === 'Emerging'     ? 'red'   : 'inherit';
 
-        html += `<tr>
-          <td style="text-align:center; font-weight:bold;">${g.term}</td>
-          <td class="bg-ww" style="text-align:center;">${group('ww')}</td>
-          <td class="bg-pt" style="text-align:center;">${group('pt')}</td>
-          <td class="bg-ex" style="text-align:center;">${group('ex')}</td>
-          <td style="text-align:center;">${g.initial_grade ?? '—'}</td>
-          <td style="text-align:center; font-weight:bold; font-size:14px;">
-            ${g.term_grade ?? '—'}<br>
-            <span style="font-size:11px; color:${descColor}; font-weight:600;">${escapeHtml(g.descriptor || '')}</span>
-          </td>
-          <td style="text-align:center;">${escapeHtml(g.qualitative || '—')}</td>
-        </tr>`;
-      });
-      html += '</tbody></table>';
-    } else {
-      // No raw data — qualitative only
-      html += `<table class="breakdown-table" style="width:100%; border-collapse:collapse;">
-        <thead><tr>
-          <th>Term</th><th>Status</th><th>Missing Activities</th>
-        </tr></thead><tbody>`;
-      grades.forEach(g => {
-        html += `<tr>
-          <td style="text-align:center; font-weight:bold;">${g.term}</td>
-          <td style="text-align:center;">${escapeHtml(g.qualitative || '—')}</td>
-          <td style="text-align:center; font-size:12px;">
-            ${g.missing_activities?.length ? escapeHtml(g.missing_activities.join(', ')) : '—'}
-          </td>
-        </tr>`;
-      });
-      html += '</tbody></table>';
-    }
-    html += '</div>';
+      let statusText = '—';
+      if (g.qualitative === 'Passed') statusText = '<span style="color:#166534; font-weight:700;">Passed</span>';
+      if (g.qualitative === 'Failed') statusText = '<span style="color:#991b1b; font-weight:700;">Failed</span>';
+      if (g.qualitative === 'INC / Not Submitted') statusText = '<span style="color:#92400e; font-weight:700;">INC</span>';
+
+      html += `<tr>
+        <td style="text-align:center; font-weight:bold;">${g.term}</td>
+        <td class="bg-ww" style="text-align:center;">${formatGroup('ww')}</td>
+        <td class="bg-pt" style="text-align:center;">${formatGroup('pt')}</td>
+        <td class="bg-ex" style="text-align:center;">${formatGroup('ex')}</td>
+        <td style="text-align:center; font-weight:bold; font-size:14px;">
+          ${g.term_grade ?? '—'}<br>
+          <span style="font-size:11px; color:${descColor}; font-weight:600;">${escapeHtml(g.descriptor || '')}</span>
+        </td>
+        <td style="text-align:center;">${statusText}</td>
+      </tr>`;
+    });
+    
+    html += '</tbody></table></div>';
 
     document.getElementById('modalContent').innerHTML = html;
   } catch (err) {
@@ -219,7 +212,7 @@ function closeSubjectModal() {
   document.getElementById('subjectDetailModal').style.display = 'none';
 }
 
-// ---- Attendance tab (this is the ONLY place absences appear) ----
+// ---- Attendance ----
 async function loadAttendance() {
   const a = await apiFetch('/student/attendance');
   const absences = parseInt(a.absent) || 0;

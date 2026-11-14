@@ -12,13 +12,7 @@ const ACTIVITIES = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2',
 // ---------------------------------------------------------------------------
 
 /**
- * Given a grade row for one term, determine whether it has "missing
- * requirements" and whether it has *any* real score.
- *
- * RULE (matches your requirement):
- *   An activity is "missing" ONLY IF its HPS was set (> 0) AND the score
- *   is null. If HPS is 0 (teacher hasn't scheduled it), the activity is
- *   ignored entirely — the student never sees INC from it.
+ * Determines missing requirements and if there are any scores.
  */
 function analyzeTerm(grade) {
   if (!grade) return { status: 'pending', hasAnyScore: false, missing: [] };
@@ -46,8 +40,8 @@ function analyzeTerm(grade) {
 function qualitativeFromTerm(analysis, termGrade) {
   if (analysis.status === 'inc')      return 'INC / Not Submitted';
   if (analysis.status === 'pending')  return '—';
-  if (termGrade >= 75)                return 'Passed';
-  if (termGrade > 0)                  return 'Failed';
+  if (termGrade && termGrade >= 75)   return 'Passed';
+  if (termGrade && termGrade > 0)     return 'Failed';
   return '—';
 }
 
@@ -76,7 +70,6 @@ router.get('/subjects', async (req, res) => {
       WHERE s.user_id = ? AND g.student_id = ?
     `, [req.user.id, req.user.id]);
 
-    // Group grades by subject_id
     const bySubject = {};
     for (const g of grades) {
       (bySubject[g.subject_id] ||= []).push(g);
@@ -94,15 +87,25 @@ router.get('/subjects', async (req, res) => {
       for (const term of [1, 2, 3]) {
         const g = gs.find(x => Number(x.term) === term);
         const analysis = analyzeTerm(g);
-        termStatus[term] = analysis.status;
         termMissing[term] = analysis.missing;
 
         if (g && g.term_grade !== null && Number(g.term_grade) > 0) {
           termGrades[term] = Number(g.term_grade);
+          
+          // Set qualitative per-term status
+          if (analysis.status === 'inc') {
+            termStatus[term] = 'inc';
+          } else if (termGrades[term] >= 75) {
+            termStatus[term] = 'Passed';
+          } else {
+            termStatus[term] = 'Failed';
+          }
+        } else {
+          termStatus[term] = analysis.status === 'inc' ? 'inc' : 'pending';
         }
       }
 
-      const gradedTerms = [1,2,3].filter(t => termStatus[t] === 'graded');
+      const gradedTerms = [1,2,3].filter(t => termStatus[t] === 'Passed' || termStatus[t] === 'Failed');
       const incTerms    = [1,2,3].filter(t => termStatus[t] === 'inc');
 
       const gradeValues = gradedTerms.map(t => termGrades[t]).filter(v => v > 0);
@@ -124,12 +127,10 @@ router.get('/subjects', async (req, res) => {
         teacher:     sub.teacher,
         grade_level: sub.grade_level,
 
-        // Raw term grades (only expose if allowed)
         term1: showRaw ? (termGrades[1] ?? null) : null,
         term2: showRaw ? (termGrades[2] ?? null) : null,
         term3: showRaw ? (termGrades[3] ?? null) : null,
 
-        // Per-term status: 'graded' | 'inc' | 'pending'
         term_status:  termStatus,
         term_missing: termMissing,
 
@@ -148,7 +149,7 @@ router.get('/subjects', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/subjects/:subjectId/details — per-activity breakdown
+// GET /student/subjects/:subjectId/details
 // ---------------------------------------------------------------------------
 router.get('/subjects/:subjectId/details', async (req, res) => {
   const { subjectId } = req.params;
@@ -181,21 +182,11 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
         missing: Number(g[`${a}_hps`]) > 0 && (g[a] === null || g[a] === undefined),
       }));
 
-      if (!showRaw) {
-        // Hide numbers entirely — only expose missing flags
-        return {
-          term:               g.term,
-          qualitative,
-          missing_activities: activities.filter(x => x.missing).map(x => x.field.toUpperCase()),
-          descriptor:         g.descriptor,
-        };
-      }
-
       return {
         term:               g.term,
-        activities,
-        initial_grade:      g.initial_grade,
-        term_grade:         g.term_grade,
+        activities:         showRaw ? activities : undefined, // Hide scores if false
+        initial_grade:      showRaw ? g.initial_grade : undefined,
+        term_grade:         showRaw ? g.term_grade : undefined,
         descriptor:         g.descriptor,
         qualitative,
         missing_activities: activities.filter(x => x.missing).map(x => x.field.toUpperCase()),
@@ -209,7 +200,7 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/progress — graduation / promotion tracker
+// GET /student/progress
 // ---------------------------------------------------------------------------
 router.get('/progress', async (req, res) => {
   try {
@@ -261,24 +252,16 @@ router.get('/progress', async (req, res) => {
     else if (total > 0 && completed === total)      promotionStatus = 'Cleared for Promotion / Graduation';
 
     res.json({
-      total,
-      completed,
-      passed,
-      failed,
-      inc,
-      inProgress,
-      notStarted,
-      promotionStatus,
+      total, completed, passed, failed, inc, inProgress, notStarted, promotionStatus,
       pctComplete: total ? Math.round((completed / total) * 100) : 0,
     });
   } catch (err) {
-    console.error('Progress Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/attendance — used ONLY on the Attendance tab
+// GET /student/attendance
 // ---------------------------------------------------------------------------
 router.get('/attendance', async (req, res) => {
   try {
@@ -295,7 +278,7 @@ router.get('/attendance', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/notifications — stored + virtual INC alerts
+// GET /student/notifications
 // ---------------------------------------------------------------------------
 router.get('/notifications', async (req, res) => {
   try {
@@ -304,7 +287,6 @@ router.get('/notifications', async (req, res) => {
       [req.user.id]
     );
 
-    // Derive live INC alerts from HPS + score gaps
     const [grades] = await pool.query(`
       SELECT g.*, sub.name AS subject_name
       FROM grades g
