@@ -140,7 +140,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// --- DOWNLOAD CSV TEMPLATE ---
+// --- DOWNLOAD CSV TEMPLATE (UPDATED TO SA1, SA2, TE) ---
 router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const { subjectId } = req.params;
   const { term } = req.query;
@@ -159,12 +159,12 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const males = students.filter(s => normalizeGender(s.gender) === 'male');
   const females = students.filter(s => normalizeGender(s.gender) === 'female');
 
-  let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,EX1,EX2,EX3\n';
+  // Changed EX1, EX2, EX3 to SA1, SA2, TE
+  let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,SA1,SA2,TE\n';
   
   // Male Section
   csvContent += '\nMALE,,,,,,,,,,,,,\n';
   males.forEach(s => {
-    // FIX: Add a leading apostrophe so Excel treats the LRN as text
     csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
   });
 
@@ -179,7 +179,7 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   res.send(csvContent);
 }));
 
-// --- IMPORT GRADES FROM CSV (UPDATED TO FIX SCIENTIFIC NOTATION) ---
+// --- IMPORT GRADES FROM CSV ---
 router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   
@@ -218,7 +218,8 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
         
         const ww1 = n(row.WW1), ww2 = n(row.WW2), ww3 = n(row.WW3), ww4 = n(row.WW4), ww5 = n(row.WW5);
         const pt1 = n(row.PT1), pt2 = n(row.PT2), pt3 = n(row.PT3);
-        const ex1 = n(row.EX1), ex2 = n(row.EX2), ex3 = n(row.EX3);
+        // Match the new SA1, SA2, TE headers
+        const ex1 = n(row.SA1), ex2 = n(row.SA2), ex3 = n(row.TE);
 
         // Fetch the HPS set by the teacher from the DB
         const [existing] = await pool.query('SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps FROM grades WHERE subject_id = ? AND term = ? LIMIT 1', [subject_id, term]);
