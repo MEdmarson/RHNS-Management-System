@@ -16,14 +16,18 @@ router.post('/login', async (req, res) => {
     let query;
     let params;
 
-    // Use LOWER() on both sides for case-insensitive matching.
-    // - Email: case-insensitive
-    // - LRN: numeric, but LOWER() is harmless and keeps the code uniform.
     if (identifier.includes('@')) {
+      // Teacher/Admin Login (by email)
       query = 'SELECT * FROM users WHERE LOWER(email) = LOWER(?)';
       params = [identifier];
     } else {
-      query = 'SELECT * FROM users WHERE LOWER(lrn) = LOWER(?)';
+      // Student Login (by LRN)
+      // We must JOIN the students table to find the LRN
+      query = `
+        SELECT u.* FROM users u 
+        INNER JOIN students s ON s.user_id = u.id 
+        WHERE s.lrn = ?
+      `;
       params = [identifier];
     }
 
@@ -34,8 +38,10 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(passwordValue, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // Note: user.lrn will be undefined for students here because it's in the students table.
+    // But the token is created using the ID and role, which is what matters.
     const token = jwt.sign(
-      { id: user.id, email: user.email, lrn: user.lrn, role: user.role, name: user.full_name },
+      { id: user.id, email: user.email, role: user.role, name: user.full_name },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES || '24h' }
     );
@@ -44,7 +50,6 @@ router.post('/login', async (req, res) => {
       token, 
       role: user.role, 
       name: user.full_name,
-      lrn: user.lrn,
       email: user.email,
       is_first_login: user.is_first_login 
     });
