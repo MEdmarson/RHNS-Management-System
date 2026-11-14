@@ -2,6 +2,9 @@ const router = require('express').Router();
 const pool = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
 const ExcelJS = require('exceljs');
+const multer = require('multer');
+const csv = require('csv-parser');
+const { Readable } = require('stream');
 
 router.use(authenticate, authorize('teacher'));
 
@@ -9,6 +12,8 @@ const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next))
   console.error("SERVER ERROR:", err);
   res.status(500).json({ error: err.message });
 });
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
@@ -132,6 +137,91 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   });
 
   res.json(rows);
+}));
+
+// --- DOWNLOAD CSV TEMPLATE ---
+router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
+  const { subjectId } = req.params;
+  const { term } = req.query;
+  
+  const [subj] = await pool.query('SELECT section_id FROM subjects WHERE id = ?', [subjectId]);
+  if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
+
+  const [students] = await pool.query(`
+    SELECT u.full_name, s.lrn 
+    FROM students s 
+    JOIN users u ON u.id = s.user_id 
+    WHERE s.section_id = ? 
+    ORDER BY u.full_name
+  `, [subj[0].section_id]);
+
+  let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,EX1,EX2,EX3\n';
+  students.forEach(s => {
+    csvContent += `${s.lrn},"${s.full_name}",,,,,,,,,,,,,\n`;
+  });
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="Grade_Import_Template_Term${term}.csv"`);
+  res.send(csvContent);
+}));
+
+// --- IMPORT GRADES FROM CSV ---
+router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  
+  const { subject_id, term } = req.body;
+  if (!subject_id || !term) return res.status(400).json({ error: "Subject and Term required" });
+
+  const results = [];
+  const buffer = req.file.buffer.toString('utf8');
+
+  const parser = csv({ headers: true });
+  parser.on('data', (data) => results.push(data));
+  
+  parser.on('end', async () => {
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const row of results) {
+      if (!row.LRN) continue;
+
+      try {
+        const [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [row.LRN]);
+        if (!student.length) { failCount++; continue; }
+        
+        const studentId = student[0].student_id;
+        const n = (v) => (v === '' || v === undefined || isNaN(Number(v))) ? null : Number(v);
+        
+        const ww1 = n(row.WW1), ww2 = n(row.WW2), ww3 = n(row.WW3), ww4 = n(row.WW4), ww5 = n(row.WW5);
+        const pt1 = n(row.PT1), pt2 = n(row.PT2), pt3 = n(row.PT3);
+        const ex1 = n(row.EX1), ex2 = n(row.EX2), ex3 = n(row.EX3);
+
+        const sql = `
+          INSERT INTO grades (student_id, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE 
+            ww1=VALUES(ww1), ww2=VALUES(ww2), ww3=VALUES(ww3), ww4=VALUES(ww4), ww5=VALUES(ww5),
+            pt1=VALUES(pt1), pt2=VALUES(pt2), pt3=VALUES(pt3), 
+            ex1=VALUES(ex1), ex2=VALUES(ex2), ex3=VALUES(ex3)
+        `;
+        
+        await pool.query(sql, [studentId, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3]);
+        successCount++;
+      } catch (err) {
+        console.error("Row error:", err);
+        failCount++;
+      }
+    }
+
+    res.json({ ok: true, message: `Successfully imported ${successCount} students. Failed: ${failCount}` });
+  });
+
+  parser.on('error', (err) => {
+    res.status(500).json({ error: "Failed to parse CSV file." });
+  });
+  
+  const stream = Readable.from(buffer);
+  stream.pipe(parser);
 }));
 
 router.post('/grades', asyncRoute(async (req, res) => {
@@ -265,21 +355,21 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// --- UPDATED AT-RISK ROUTE ---
 router.get('/at-risk', asyncRoute(async (req, res) => {
-  // We use a subquery to calculate the exact number of missing requirements per student
   const [rows] = await pool.query(`
     SELECT u.id, u.full_name, 
            ROUND(AVG(g.term_grade), 2) AS avg_grade,
+           COUNT(DISTINCT g.term_grade) AS graded_count,
            MAX(g.missing_requirements) AS missing_requirements,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_present,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_excused,
+           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent
     FROM users u 
     JOIN students s ON s.user_id = u.id 
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
     GROUP BY u.id, u.full_name 
-    -- Flag if they have a missing requirement OR their grade is below 75 OR they have >4 absences
     HAVING (missing_requirements IS NOT NULL) 
         OR (avg_grade < 75 AND avg_grade IS NOT NULL)
         OR (raw_absent + FLOOR(raw_late / 3) > 4)

@@ -345,6 +345,80 @@ async function downloadExcel() {
   }
 }
 
+// --- DOWNLOAD IMPORT TEMPLATE ---
+async function downloadImportTemplate() {
+  if (!currentSubjectId) {
+    showToast('Please open a class record first.', 'error');
+    return;
+  }
+
+  const term = document.getElementById('termSelect').value;
+  if (term === 'final') {
+    showToast('Cannot import grades for Final Term.', 'error');
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const res = await fetch(`/api/teacher/grades/template/${currentSubjectId}?term=${term}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (!res.ok) throw new Error('Failed to download template');
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Grade_Import_Template_Term${term}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// --- UPLOAD GRADES ---
+async function uploadGrades(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const term = document.getElementById('termSelect').value;
+  if (term === 'final') {
+    showToast('Cannot import grades for Final Term.', 'error');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to import grades for Term ${term}? This will overwrite existing scores.`)) {
+    event.target.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('subject_id', currentSubjectId);
+  formData.append('term', term);
+
+  try {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const response = await fetch('/api/teacher/grades/import', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Upload failed');
+
+    showToast(data.message);
+    loadGradebook(); // Refresh table
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    event.target.value = '';
+  }
+}
+
 // Seed initial state so Back/Forward work from the very start
 history.replaceState({ view: 'subjects' }, '', '#subjects');
 

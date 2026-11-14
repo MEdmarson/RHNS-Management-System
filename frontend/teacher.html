@@ -100,6 +100,10 @@
               
               <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
               <button class="btn btn-secondary" onclick="downloadExcel()">📥 Download Excel</button>
+              <button class="btn btn-secondary" onclick="downloadImportTemplate()">📄 Download Template</button>
+              <input type="file" id="excelUpload" accept=".csv" style="display: none;" onchange="uploadGrades(event)">
+              <button class="btn btn-secondary" onclick="document.getElementById('excelUpload').click()">📤 Upload Grades</button>
+              
             </div>
           </div>
 
