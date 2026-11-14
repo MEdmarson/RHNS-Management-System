@@ -6,6 +6,71 @@
   <title>Student Portal — RNHS</title>
   <link rel="icon" href="rnshs-logo.png">
   <link rel="stylesheet" href="css/style.css">
+  
+  <style>
+    /* Additional Dashboard Specific Styles */
+    .welcome-banner {
+      background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 12px rgba(30, 58, 138, 0.2);
+    }
+    .welcome-banner h1 { margin: 0 0 8px 0; font-size: 24px; font-weight: 700; }
+    .welcome-banner p { margin: 0; opacity: 0.9; font-size: 14px; }
+    
+    .status-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .status-pill.in-progress { background: #eff6ff; color: #1e3a8a; }
+    .status-pill.passed { background: #dcfce7; color: #166534; }
+    .status-pill.failed { background: #fee2e2; color: #991b1b; }
+
+    /* Clickable Row Hover */
+    .clickable-row { cursor: pointer; transition: background 0.2s; }
+    .clickable-row:hover { background-color: #f0f5ff !important; }
+
+    /* Modal Styles */
+    .modal { 
+      display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; 
+      background-color: rgba(0,0,0,0.5); align-items: center; justify-content: center; 
+    }
+    .modal-content { 
+      background: #fff; padding: 24px; border-radius: 12px; width: 100%; max-width: 700px; 
+      position: relative; max-height: 90vh; overflow-y: auto; animation: fadeIn 0.2s;
+    }
+    .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; color: var(--muted); }
+    .close-btn:hover { color: var(--danger); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    /* Grade Breakdown Table */
+    .breakdown-table th, .breakdown-table td { padding: 8px 10px; font-size: 13px; }
+    .breakdown-table th { background: #f9fafb; }
+    .breakdown-table td { border-bottom: 1px solid #e5e7eb; }
+    .bg-ww { background: #e0e7ff; }
+    .bg-pt { background: #dcfce7; }
+    .bg-ex { background: #fef3c7; }
+
+    .notif-preview {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .notif-preview:last-child { border-bottom: none; }
+    .notif-icon {
+      font-size: 20px; background: #f3f4f6; width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0;
+    }
+  </style>
 </head>
 <body>
 
@@ -31,12 +96,10 @@
       <span class="nav-icon">🔔</span><span class="nav-label">Notifications</span>
     </button>
     
-    <!-- Mobile Only Logout -->
     <button class="nav-item mobile-only-logout" onclick="logout()">
       <span class="nav-icon">↩</span><span class="nav-label">Logout</span>
     </button>
 
-    <!-- Desktop Logout -->
     <div class="sidebar-logout">
       <button onclick="logout()">↩ Logout</button>
     </div>
@@ -44,19 +107,55 @@
 
   <main class="main">
     <div class="topbar">
-      <h2 id="pageTitle">Student Dashboard</h2>
+      <h2 id="pageTitle">Dashboard</h2>
       <div class="user-chip" id="userChip"></div>
     </div>
 
     <!-- 1. DASHBOARD -->
     <div class="view active" id="view-dashboard">
-      <div class="stats-grid" id="stats"></div>
+      
+      <div class="welcome-banner">
+        <h1 id="welcomeName">Welcome back!</h1>
+        <p>Here is a summary of your academic performance and attendance.</p>
+      </div>
+
+      <div class="stats-grid" id="stats">
+        <!-- Subjects and Absences only -->
+      </div>
+
       <div class="card">
-        <h3>📖 My Subjects</h3>
+        <h3>📖 Active Subjects</h3>
         <div style="overflow-x: auto;">
           <table>
-            <thead><tr><th>Subject</th><th>Teacher</th><th>Status</th></tr></thead>
-            <tbody id="subjectsBody"></tbody>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Teacher</th>
+                <th>Term 1</th>
+                <th>Term 2</th>
+                <th>Term 3</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="activeSubjectsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 24px;">
+        <h3>📚 Past Subjects</h3>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Teacher</th>
+                <th>Grade Level</th>
+                <th>Final Grade</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="pastSubjectsBody"></tbody>
           </table>
         </div>
       </div>
@@ -65,22 +164,20 @@
     <!-- 2. ATTENDANCE -->
     <div class="view" id="view-attendance" style="display:none">
       <div class="stats-grid" id="attStats"></div>
-      
-      <!-- Progress Bar for Attendance -->
       <div class="card">
-        <h3>📊 Attendance Progress</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Acceptable school limit: 20 absences per school year.</p>
-        <div style="background: #e5e7eb; border-radius: 8px; height: 20px; width: 100%; overflow: hidden;">
-          <div id="attProgressBar" style="height: 100%; width: 0%; background: var(--success); transition: width 0.5s ease-in-out;"></div>
+        <h3>📊 Absence Limit Tracker</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">DepEd allows a maximum of 20 absences per school year.</p>
+        <div style="background: #e5e7eb; border-radius: 8px; height: 24px; width: 100%; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">
+          <div id="attProgressBar" style="height: 100%; width: 0%; background: var(--success); transition: width 0.5s ease-in-out; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; color: white; font-size: 12px; font-weight: bold;"></div>
         </div>
-        <p style="text-align: right; font-size: 12px; margin-top: 5px;" id="attProgressText">0 / 20 Absences</p>
+        <p style="text-align: right; font-size: 13px; font-weight: 600; margin-top: 8px;" id="attProgressText">0 / 20 Absences</p>
       </div>
     </div>
 
     <!-- 3. NOTIFICATIONS -->
     <div class="view" id="view-notifs" style="display:none">
       <div class="card">
-        <h3>🔔 Notifications</h3>
+        <h3>🔔 All Notifications</h3>
         <div id="notifsList"></div>
       </div>
     </div>
@@ -88,12 +185,25 @@
   </main>
 </div>
 
+<!-- Modal for Subject Details -->
+<div class="modal" id="subjectDetailModal">
+  <div class="modal-content">
+    <span class="close-btn" onclick="closeSubjectModal()">&times;</span>
+    <h3 id="modalSubjectTitle" style="margin-bottom: 20px; color: var(--primary);">Subject Details</h3>
+    <div id="modalContent">
+      <!-- Table will be injected here -->
+    </div>
+  </div>
+</div>
+
 <div id="toastContainer"></div>
 
 <script src="js/api.js"></script>
 <script>
   requireAuth('student');
-  document.getElementById('userChip').textContent = '🎓 ' + getUser().name;
+  const user = getUser();
+  document.getElementById('userChip').textContent = '🎓 ' + user.name;
+  document.getElementById('welcomeName').textContent = `Welcome back, ${user.name.split(' ')[0]}!`;
 
   function showView(name, el) {
     document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
@@ -101,39 +211,121 @@
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     
-    const titles = { 'dashboard': 'Student Dashboard', 'attendance': 'My Attendance', 'notifs': 'Notifications' };
+    const titles = { 'dashboard': 'Dashboard', 'attendance': 'My Attendance', 'notifs': 'Notifications' };
     document.getElementById('pageTitle').textContent = titles[name];
 
     if (name === 'attendance') loadAttendance();
     if (name === 'notifs')     loadNotifs();
   }
 
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'}</span> ${message}`;
-    container.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
+  function openSubjectModal(subjectId, subjectName) {
+    document.getElementById('modalSubjectTitle').textContent = subjectName;
+    document.getElementById('modalContent').innerHTML = '<p style="text-align:center; color:var(--muted);">Loading details...</p>';
+    document.getElementById('subjectDetailModal').style.display = 'flex';
+
+    apiFetch(`/student/subjects/${subjectId}/details`).then(grades => {
+      if (!grades || grades.length === 0) {
+        document.getElementById('modalContent').innerHTML = '<p style="text-align:center; color:var(--muted);">No grades recorded yet.</p>';
+        return;
+      }
+
+      // Build the HTML table
+      let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
+      html += '<thead><tr>';
+      html += '<th>Term</th>';
+      html += '<th class="bg-ww">WW Scores</th>';
+      html += '<th class="bg-pt">PT Scores</th>';
+      html += '<th class="bg-ex">EX Scores</th>';
+      html += '<th>Initial</th>';
+      html += '<th>Term Grade</th>';
+      html += '</tr></thead><tbody>';
+
+      grades.forEach(g => {
+        // Format WW scores
+        const ww = [g.ww1, g.ww2, g.ww3, g.ww4, g.ww5].map(v => v !== null ? v : '-').join(' / ');
+        // Format PT scores
+        const pt = [g.pt1, g.pt2, g.pt3].map(v => v !== null ? v : '-').join(' / ');
+        // Format EX scores
+        const ex = [g.ex1, g.ex2, g.ex3].map(v => v !== null ? v : '-').join(' / ');
+        
+        const desc = g.descriptor || '-';
+        const descColor = desc === 'Advancing' ? 'green' : desc === 'Benchmarking' ? 'blue' : desc === 'Connecting' ? '#0369a1' : desc === 'Developing' ? '#b45309' : desc === 'Emerging' ? 'red' : 'inherit';
+
+        html += `<tr>
+          <td style="text-align:center; font-weight:bold;">${g.term}</td>
+          <td class="bg-ww" style="text-align:center;">${ww}</td>
+          <td class="bg-pt" style="text-align:center;">${pt}</td>
+          <td class="bg-ex" style="text-align:center;">${ex}</td>
+          <td style="text-align:center;">${g.initial_grade || '-'}</td>
+          <td style="text-align:center; font-weight:bold; font-size:14px;">
+            ${g.term_grade || '-'} <br>
+            <span style="font-size:11px; color:${descColor}; font-weight:600;">${desc}</span>
+          </td>
+        </tr>`;
+      });
+
+      html += '</tbody></table></div>';
+      document.getElementById('modalContent').innerHTML = html;
+    }).catch(err => {
+      document.getElementById('modalContent').innerHTML = `<p style="text-align:center; color:red;">Error: ${err.message}</p>`;
+    });
+  }
+
+  function closeSubjectModal() {
+    document.getElementById('subjectDetailModal').style.display = 'none';
   }
 
   async function loadDashboard() {
     const subjects = await apiFetch('/student/subjects');
-    const valid = subjects.filter(s => s.term_grade != null);
-    const avg = valid.length ? Math.round(valid.reduce((a, b) => a + Number(b.term_grade), 0) / valid.length) : 0;
+    const attendance = await apiFetch('/student/attendance');
 
+    const absences = parseInt(attendance.absent) || 0;
+
+    // Top Stats (Removed General Average)
     document.getElementById('stats').innerHTML = `
-      <div class="stat-card"><h4>General Average</h4><div class="value">${avg}</div></div>
-      <div class="stat-card success"><h4>Subjects Enrolled</h4><div class="value">${subjects.length}</div></div>
+      <div class="stat-card" style="border-left-color: var(--warning);">
+        <h4>Subjects Enrolled</h4>
+        <div class="value">${subjects.filter(s => s.is_active).length}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: ${absences > 4 ? 'var(--danger)' : 'var(--success)'};">
+        <h4>Total Absences</h4>
+        <div class="value">${absences}</div>
+      </div>
     `;
 
-    document.getElementById('subjectsBody').innerHTML = subjects.map(s => {
-      let statusBadge = '<span class="badge warn">INC / Not Submitted</span>';
+    const active = subjects.filter(s => s.is_active);
+    const past = subjects.filter(s => !s.is_active);
+
+    // Render Active Subjects
+    document.getElementById('activeSubjectsBody').innerHTML = active.map(s => {
+      let statusPill = '<span class="status-pill in-progress">In Progress</span>';
       if (s.term_grade !== null && s.term_grade > 0) {
-        statusBadge = s.term_grade >= 75 ? '<span class="badge ok">Passed</span>' : '<span class="badge danger">Failed</span>';
+        if (s.term_grade >= 75) statusPill = '<span class="status-pill passed">Passed</span>';
+        else statusPill = '<span class="status-pill failed">Failed</span>';
       }
-      return `<tr><td>${s.subject}</td><td>${s.teacher}</td><td>${statusBadge}</td></tr>`;
-    }).join('') || '<tr><td colspan="3" style="text-align:center; padding: 20px;">No subjects enrolled yet.</td></tr>';
+
+      return `
+        <tr class="clickable-row" onclick="openSubjectModal(${s.subject_id}, '${s.subject.replace(/'/g, "\\'")}')">
+          <td><strong>${s.subject}</strong></td>
+          <td>${s.teacher}</td>
+          <td style="text-align:center;">${s.term1 || '—'}</td>
+          <td style="text-align:center;">${s.term2 || '—'}</td>
+          <td style="text-align:center;">${s.term3 || '—'}</td>
+          <td>${statusPill}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--muted);">No active subjects.</td></tr>';
+
+    // Render Past Subjects
+    document.getElementById('pastSubjectsBody').innerHTML = past.map(s => `
+      <tr class="clickable-row" onclick="openSubjectModal(${s.subject_id}, '${s.subject.replace(/'/g, "\\'")}')">
+        <td><strong>${s.subject}</strong></td>
+        <td>${s.teacher}</td>
+        <td style="text-align:center;">Grade ${s.grade_level}</td>
+        <td style="text-align:center; font-weight:bold;">${s.term_grade || '—'}</td>
+        <td><span class="status-pill ${s.status === 'Passed' ? 'passed' : 'failed'}">${s.status}</span></td>
+      </tr>
+    `).join('') || '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--muted);">No past subjects found.</td></tr>';
   }
 
   async function loadAttendance() {
@@ -155,21 +347,24 @@
     const bar = document.getElementById('attProgressBar');
     bar.style.width = `${percentage}%`;
     bar.style.background = color;
+    if (percentage > 15) bar.textContent = `${Math.round(percentage)}%`;
     document.getElementById('attProgressText').textContent = `${absences} / ${limit} Absences`;
   }
 
   async function loadNotifs() {
     const rows = await apiFetch('/student/notifications');
     document.getElementById('notifsList').innerHTML = rows.map(n => `
-      <div class="notif ${n.type}">
-        <div>
-          <strong>${n.title}</strong>
-          <div style="font-size:12px;color:#6b7280;margin-top:4px">
-            ${new Date(n.created_at).toLocaleString()} ${n.is_read ? '' : ' · <b>unread</b>'}
+      <div class="notif-preview">
+        <div class="notif-icon">${n.type === 'warning' ? '⚠️' : n.type === 'error' ? '🚨' : '📢'}</div>
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong>${n.title}</strong>
+            <span style="font-size:11px; color:#6b7280;">${new Date(n.created_at).toLocaleString()}</span>
           </div>
-          <div style="margin-top:6px;font-size:13px">${n.body || ''}</div>
+          <div style="margin-top:6px; font-size:13px; color: var(--text);">${n.body || ''}</div>
         </div>
-      </div>`).join('') || '<p style="text-align: center; color: var(--muted); padding: 20px;">No notifications yet.</p>';
+      </div>
+    `).join('') || '<p style="text-align: center; color: var(--muted); padding: 20px;">No notifications yet.</p>';
   }
 
   loadDashboard();

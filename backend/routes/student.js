@@ -4,45 +4,112 @@ const { authenticate, authorize } = require('../middleware/auth');
 
 router.use(authenticate, authorize('student'));
 
-// SUBJECTS + grades
+// SUBJECTS + grades (Active + Past)
 router.get('/subjects', async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT sub.name AS subject, t.full_name AS teacher,
-           g.term, g.term_grade
-    FROM subjects sub
-    JOIN students s ON s.section_id = sub.section_id
-    JOIN users t ON t.id = sub.teacher_id
-    LEFT JOIN grades g ON g.subject_id = sub.id AND g.student_id = ?
-    WHERE s.user_id = ?`, [req.user.id, req.user.id]);
-  res.json(rows);
+  try {
+    const [rows] = await pool.query(`
+      SELECT sub.id AS subject_id, 
+             sub.name AS subject, 
+             t.full_name AS teacher,
+             sub.grade_level,
+             sub.is_active,
+             MAX(CASE WHEN g.term = 1 THEN g.term_grade END) AS term1,
+             MAX(CASE WHEN g.term = 2 THEN g.term_grade END) AS term2,
+             MAX(CASE WHEN g.term = 3 THEN g.term_grade END) AS term3,
+             MAX(g.missing_requirements) AS missing_requirements
+      FROM subjects sub
+      JOIN students s ON s.section_id = sub.section_id
+      JOIN users t ON t.id = sub.teacher_id
+      LEFT JOIN grades g ON g.subject_id = sub.id AND g.student_id = ?
+      WHERE s.user_id = ?
+      GROUP BY sub.id, sub.name, t.full_name, sub.grade_level, sub.is_active
+    `, [req.user.id, req.user.id]);
+    
+    const out = rows.map(r => {
+      const present = [r.term1, r.term2, r.term3].filter(v => v !== null && v > 0);
+      const avg = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
+      
+      // Determine status
+      let status = 'In Progress';
+      if (r.is_active === false) status = 'Completed';
+      if (avg !== null && avg < 75) status = 'Failed';
+
+      return {
+        subject_id: r.subject_id,
+        subject: r.subject,
+        teacher: r.teacher,
+        grade_level: r.grade_level || 11,
+        term1: r.term1,
+        term2: r.term2,
+        term3: r.term3,
+        term_grade: avg,
+        status: status,
+        is_active: r.is_active !== false, // Default to true if null
+        missing_requirements: r.missing_requirements
+      };
+    });
+
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET SUBJECT DETAILS (For the Modal)
+router.get('/subjects/:subjectId/details', async (req, res) => {
+  const { subjectId } = req.params;
+  try {
+    // 1. Verify the student is in this section
+    const [authCheck] = await pool.query(`
+      SELECT 1 FROM subjects sub
+      JOIN students s ON s.section_id = sub.section_id
+      WHERE sub.id = ? AND s.user_id = ?
+    `, [subjectId, req.user.id]);
+
+    if (!authCheck.length) return res.status(403).json({ error: 'Unauthorized' });
+
+    // 2. Fetch grades for all 3 terms
+    const [grades] = await pool.query(`
+      SELECT term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, 
+             ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps,
+             pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps,
+             initial_grade, term_grade, descriptor
+      FROM grades WHERE subject_id = ? AND student_id = ?
+      ORDER BY term ASC
+    `, [subjectId, req.user.id]);
+
+    res.json(grades);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ATTENDANCE summary
 router.get('/attendance', async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT
-      SUM(status='present') AS present,
-      SUM(status='absent')  AS absent,
-      SUM(status='late')    AS late
-    FROM attendance WHERE student_id = ?`, [req.user.id]);
-  res.json(rows[0] || { present: 0, absent: 0, late: 0 });
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        COALESCE(SUM(status='present'), 0) AS present,
+        COALESCE(SUM(status='absent'), 0)  AS absent,
+        COALESCE(SUM(status='late'), 0)    AS late
+      FROM attendance WHERE student_id = ?`, [req.user.id]);
+    res.json(rows[0] || { present: 0, absent: 0, late: 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // NOTIFICATIONS
 router.get('/notifications', async (req, res) => {
-  const [rows] = await pool.query(
-    'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC',
-    [req.user.id]
-  );
-  res.json(rows);
-});
-
-router.patch('/notifications/:id/read', async (req, res) => {
-  await pool.query(
-    'UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?',
-    [req.params.id, req.user.id]
-  );
-  res.json({ ok: true });
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
