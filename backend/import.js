@@ -13,6 +13,7 @@ if (!fileName || !sectionName) {
 }
 
 const results = [];
+let currentGender = 'male'; // Default
 
 console.log(`📂 Reading file: ${fileName}`);
 console.log(`🏫 Assigning to section: ${sectionName}`);
@@ -20,11 +21,33 @@ console.log(`🏫 Assigning to section: ${sectionName}`);
 fs.createReadStream(fileName)
   .pipe(csv({ headers: false })) 
   .on('data', (data) => {
-    const name = data['1'];
-    const lrn = data['2'];
+    // The name is in Column B (index 1)
+    // The LRN is in Column C (index 2)
+    const colB = (data['1'] || '').trim(); 
+    const colC = (data['2'] || '').trim(); 
 
-    if (lrn && lrn.trim().length >= 10 && name && name.trim() !== 'MALE' && name.trim() !== 'FEMALE') {
-      results.push({ name: name.trim(), lrn: lrn.trim() });
+    // 1. Check if Column B is the "MALE" or "FEMALE" indicator
+    if (colB.toUpperCase() === 'MALE') {
+      currentGender = 'male';
+      return;
+    }
+    if (colB.toUpperCase() === 'FEMALE') {
+      currentGender = 'female';
+      return;
+    }
+
+    // 2. Skip the header row (where Column B is "NAME")
+    if (colB.toUpperCase() === 'NAME') {
+      return;
+    }
+
+    // 3. If Column C has a valid LRN and Column B has a Name, save it
+    if (colC && colC.length >= 10 && colB && colB !== '') {
+      results.push({ 
+        name: colB, 
+        lrn: colC, 
+        gender: currentGender 
+      });
     }
   })
   .on('end', async () => {
@@ -48,7 +71,7 @@ fs.createReadStream(fileName)
           const defaultPassword = student.lrn; 
           const password_hash = await bcrypt.hash(defaultPassword, 10);
 
-          // FIX: Removed LRN from the users table insert (since it belongs in the students table)
+          // Insert into users table
           const [userResult] = await pool.query(
             'INSERT INTO users (full_name, email, password_hash, role, is_first_login) VALUES (?, NULL, ?, "student", TRUE)',
             [student.name, password_hash]
@@ -56,13 +79,13 @@ fs.createReadStream(fileName)
           
           const user_id = userResult.insertId;
 
-          // Insert LRN, user_id, and section_id into the students table
+          // Insert into students table (INCLUDING GENDER)
           await pool.query(
-            'INSERT INTO students (user_id, lrn, section_id, grade_level) VALUES (?, ?, ?, 12)',
-            [user_id, student.lrn, section_id]
+            'INSERT INTO students (user_id, lrn, section_id, grade_level, gender) VALUES (?, ?, ?, 11, ?)',
+            [user_id, student.lrn, section_id, student.gender]
           );
 
-          console.log(`  ✅ Imported Student: ${student.name} (Login: ${student.lrn})`);
+          console.log(`  ✅ Imported ${student.gender.toUpperCase()}: ${student.name}`);
           successCount++;
         } catch (err) {
           if (err.code === 'ER_DUP_ENTRY') {
