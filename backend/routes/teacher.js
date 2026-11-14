@@ -150,7 +150,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     const pt_hps = calcN(g.pt1_hps) + calcN(g.pt2_hps) + calcN(g.pt3_hps);
     const ex_hps = calcN(g.ex1_hps) + calcN(g.ex2_hps) + calcN(g.ex3_hps);
 
-    // NEW: Detect Missing Requirements (Blank scores that should have an HPS > 0)
     let missing = [];
     if (g.ww1_hps > 0 && ww1 === null) missing.push('WW1');
     if (g.ww2_hps > 0 && ww2 === null) missing.push('WW2');
@@ -164,7 +163,6 @@ router.post('/grades', asyncRoute(async (req, res) => {
     if (g.ex2_hps > 0 && ex2 === null) missing.push('EX2');
     if (g.ex3_hps > 0 && ex3 === null) missing.push('EX3');
     
-    // If all scores are blank, they have no grade yet (null)
     const hasAnyGrade = [ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3].some(v => v !== null);
 
     let initialGrade = null;
@@ -267,6 +265,7 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
+// --- UPDATED AT-RISK ROUTE ---
 router.get('/at-risk', asyncRoute(async (req, res) => {
   const [rows] = await pool.query(`
     SELECT u.id, u.full_name, 
@@ -283,7 +282,8 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
     GROUP BY u.id, u.full_name 
     HAVING (avg_grade < 75 AND graded_count > 0) 
-        OR (raw_absent + FLOOR(raw_late / 3) > 4)`, [req.user.id]);
+        OR (raw_absent + FLOOR(raw_late / 3) > 4)
+        OR (missing_requirements IS NOT NULL)`, [req.user.id]);
   res.json(rows);
 }));
 

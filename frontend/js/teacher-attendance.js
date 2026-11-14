@@ -167,19 +167,25 @@ async function loadAttendanceHistory() {
 async function loadWarnings() {
   const rows = await apiFetch('/teacher/at-risk');
 
-  // Filter for failing (grade < 75)
-  const failing = rows.filter(r => r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75);
-  
+  // --- UPDATED AT-RISK LOGIC ---
+  const failing = rows.filter(r => {
+    const lowGrade = r.avg_grade !== null && r.avg_grade !== undefined && Number(r.avg_grade) < 75;
+    const hasMissing = r.missing_requirements !== null && r.missing_requirements !== undefined;
+    return lowGrade || hasMissing;
+  });
+
   document.getElementById('failingBody').innerHTML = failing.map(r => {
-    // If they have missing requirements, display a warning badge
-    const missingBadge = r.missing_requirements 
-      ? `<br><span style="font-size:10px; color:var(--danger);">Missing: ${r.missing_requirements}</span>` 
-      : '';
-      
+    let reasons = [];
+    if (r.avg_grade !== null && Number(r.avg_grade) < 75) reasons.push(`<span class="badge danger">Low Grade (${r.avg_grade})</span>`);
+    if (r.missing_requirements) reasons.push(`<span class="badge warn">Missing: ${r.missing_requirements}</span>`);
+    
     return `
     <tr>
-      <td>${r.full_name} ${missingBadge}</td>
-      <td><span class="badge danger">${r.avg_grade}</span></td>
+      <td>
+        <strong>${r.full_name}</strong><br>
+        <div style="display:flex; gap:5px; margin-top:5px; flex-wrap:wrap;">${reasons.join('')}</div>
+      </td>
+      <td><span class="badge danger">${r.avg_grade || '—'}</span></td>
     </tr>`;
   }).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
 
@@ -204,7 +210,10 @@ async function loadWarnings() {
 
   document.getElementById('droppingBody').innerHTML = dropping.map(r => `
     <tr>
-      <td>${r.full_name}</td>
+      <td>
+        <strong>${r.full_name}</strong><br>
+        <span class="badge danger" style="margin-top:5px; display:inline-block;">Attendance (${r.effective_absences} absences)</span>
+      </td>
       <td>
         <span class="badge warn">${r.effective_absences}</span>
         ${r.converted ? `<span style="font-size:11px; color: var(--muted);">(${r.converted} from lates)</span>` : ''}
@@ -213,6 +222,7 @@ async function loadWarnings() {
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
 }
 
+// ... rest of the file remains the same ...
 async function loadSF2() {
   try {
     const sel = document.getElementById('sf2SubjectSelect');
