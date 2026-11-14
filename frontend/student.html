@@ -20,10 +20,23 @@
       <img src="rnshs-logo.png" alt="Logo">
       <span>RNHS</span>
     </div>
-    <button class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</button>
-    <button class="nav-item" onclick="showView('attendance', this)">📅 Attendance</button>
-    <button class="nav-item" onclick="showView('notifs', this)">🔔 Notifications</button>
     
+    <button class="nav-item active" onclick="showView('dashboard', this)">
+      <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
+    </button>
+    <button class="nav-item" onclick="showView('attendance', this)">
+      <span class="nav-icon">📅</span><span class="nav-label">Attendance</span>
+    </button>
+    <button class="nav-item" onclick="showView('notifs', this)">
+      <span class="nav-icon">🔔</span><span class="nav-label">Notifications</span>
+    </button>
+    
+    <!-- Mobile Only Logout -->
+    <button class="nav-item mobile-only-logout" onclick="logout()">
+      <span class="nav-icon">↩</span><span class="nav-label">Logout</span>
+    </button>
+
+    <!-- Desktop Logout -->
     <div class="sidebar-logout">
       <button onclick="logout()">↩ Logout</button>
     </div>
@@ -95,7 +108,6 @@
     if (name === 'notifs')     loadNotifs();
   }
 
-  // IMPROVEMENT 4: Toast
   function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
@@ -105,7 +117,6 @@
     setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
   }
 
-  // IMPROVEMENT 8: Student View (Pass/Fail only)
   async function loadDashboard() {
     const subjects = await apiFetch('/student/subjects');
     const valid = subjects.filter(s => s.term_grade != null);
@@ -125,7 +136,6 @@
     }).join('') || '<tr><td colspan="3" style="text-align:center; padding: 20px;">No subjects enrolled yet.</td></tr>';
   }
 
-  // IMPROVEMENT 8: Attendance Progress
   async function loadAttendance() {
     const a = await apiFetch('/student/attendance');
     const absences = parseInt(a.absent) || 0;

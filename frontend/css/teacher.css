@@ -75,11 +75,6 @@
 .excel-table thead tr:nth-child(3) th { top: 52px; }
 .excel-table thead tr:nth-child(4) th { top: 78px; height: 34px; }
 
-/* 
-  FIXED: Explicitly separated the thead name column and the tbody name column 
-  to prevent the browser from merging their layout rules, which caused 
-  the input fields to jump to the first row.
-*/
 .excel-table tbody td:first-child {
   position: sticky;
   left: 0;
@@ -107,7 +102,6 @@
   white-space: normal;
 }
 
-/* Ensure inputs don't overflow the row boundaries */
 .excel-table td {
   position: relative;
   vertical-align: middle;
@@ -191,7 +185,7 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
 @media (max-width: 768px) {
   /* Show logout in bottom nav */
   .mobile-only-logout {
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     gap: 4px;
     padding: 8px 0;
@@ -208,7 +202,7 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
   .att-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
   button.att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
 
-  .main { padding: 12px 10px 90px; }
+  .main { padding: 12px 10px 90px; max-height: none; overflow-y: auto; }
   .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
   .topbar h2 { font-size: 18px; }
   .user-chip { padding: 5px 10px; font-size: 12px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }

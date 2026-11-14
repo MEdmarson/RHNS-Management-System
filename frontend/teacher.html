@@ -44,16 +44,18 @@
         <span class="nav-icon">📋</span><span class="nav-label">Attendance</span>
       </button>
       <button class="nav-item" onclick="showView('warning', this)">
-        <span class="nav-icon">⚠️</span><span class="nav-label">At-Risk Students</span>
+        <span class="nav-icon">⚠️</span><span class="nav-label">At-Risk</span>
       </button>
       <button class="nav-item" onclick="showView('sf2', this)">
         <span class="nav-icon">🏫</span><span class="nav-label">SF2 Report</span>
       </button>
       
+      <!-- Mobile Only Logout -->
       <button class="nav-item mobile-only-logout" onclick="confirmLogout()">
         <span class="nav-icon">↩</span><span class="nav-label">Logout</span>
       </button>
       
+      <!-- Desktop Logout -->
       <div class="sidebar-logout">
         <button onclick="confirmLogout()">↩ Logout</button>
       </div>
@@ -260,19 +262,23 @@
           <div class="card warning-card failing">
             <h3>📉 At Risk of Failing</h3>
             <p class="warning-desc">Students whose average term grade falls below 75.</p>
-            <table>
-              <thead><tr><th>Student</th><th>Avg Term Grade</th></tr></thead>
-              <tbody id="failingBody"></tbody>
-            </table>
+            <div style="overflow-x: auto;">
+              <table>
+                <thead><tr><th>Student</th><th>Avg Term Grade</th></tr></thead>
+                <tbody id="failingBody"></tbody>
+              </table>
+            </div>
           </div>
 
           <div class="card warning-card dropping">
             <h3>🚪 At Risk of Dropping</h3>
             <p class="warning-desc">Students with more than 4 absences (every 3 lates counts as 1 absence).</p>
-            <table>
-              <thead><tr><th>Student</th><th>Absences</th></tr></thead>
-              <tbody id="droppingBody"></tbody>
-            </table>
+            <div style="overflow-x: auto;">
+              <table>
+                <thead><tr><th>Student</th><th>Absences</th></tr></thead>
+                <tbody id="droppingBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -295,15 +301,17 @@
             Auto-generated from recorded attendance data for the selected month.
             <span id="sf2Range" style="font-weight:600;"></span>
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th>
-                <th>Excused</th><th>Days Absent</th><th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody id="sf2Body"></tbody>
-          </table>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>LRN</th><th>Learner's Name</th><th>Days Present</th><th>Late</th>
+                  <th>Excused</th><th>Days Absent</th><th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="sf2Body"></tbody>
+            </table>
+          </div>
           <button class="btn" style="margin-top:20px;" onclick="window.print()">🖨 Print / Export PDF</button>
         </div>
       </div>
