@@ -187,12 +187,12 @@ async function openSubjectModal(subjectId, subjectName) {
     let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
     
     html += `<thead><tr>
-        <th style="text-align:center; width: 60px;">Term</th>
-        <th class="bg-ww" style="text-align:center;">WRITTEN / ORAL WORKS</th>
-        <th class="bg-pt" style="text-align:center;">PRODUCT / PERFORMANCE TASKS</th>
-        <th class="bg-ex" style="text-align:center;">EXAMINATIONS</th>
-        <th style="text-align:center; width: 90px;">Term Grade</th>
-        <th style="text-align:center; width: 100px;">Status</th>
+        <th style="text-align:center; width: 60px; color: #111827;">Term</th>
+        <th class="bg-ww" style="text-align:center; color: #111827;">WRITTEN / ORAL WORKS</th>
+        <th class="bg-pt" style="text-align:center; color: #111827;">PRODUCT / PERFORMANCE TASKS</th>
+        <th class="bg-ex" style="text-align:center; color: #111827;">EXAMINATIONS</th>
+        <th style="text-align:center; width: 90px;" color: #111827;>Term Grade</th>
+        <th style="text-align:center; width: 100px;" color: #111827;>Status</th>
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
