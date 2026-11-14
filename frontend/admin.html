@@ -102,13 +102,33 @@
       <img src="rnshs-logo.png" alt="Logo">
       <span>RNHS</span>
     </div>
-    <button class="nav-item active" onclick="showView('dashboard', this)">📊 Dashboard</button>
-    <button class="nav-item" onclick="showView('users', this)">👥 Manage Users</button>
-    <button class="nav-item" onclick="showView('subjects', this)">📚 Manage Subjects</button>
-    <button class="nav-item" onclick="showView('atrisk', this)">🚨 At-Risk Students</button>
-    <button class="nav-item" onclick="showView('compliance', this)">✅ Teacher Compliance</button>
-    <button class="nav-item" onclick="showView('reports', this)">📄 Reports</button>
     
+    <!-- Added nav-icon and nav-label wrappers to match teacher portal styling -->
+    <button class="nav-item active" onclick="showView('dashboard', this)">
+      <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
+    </button>
+    <button class="nav-item" onclick="showView('users', this)">
+      <span class="nav-icon">👥</span><span class="nav-label">Users</span>
+    </button>
+    <button class="nav-item" onclick="showView('subjects', this)">
+      <span class="nav-icon">📚</span><span class="nav-label">Subjects</span>
+    </button>
+    <button class="nav-item" onclick="showView('atrisk', this)">
+      <span class="nav-icon">🚨</span><span class="nav-label">At-Risk</span>
+    </button>
+    <button class="nav-item" onclick="showView('compliance', this)">
+      <span class="nav-icon">✅</span><span class="nav-label">Compliance</span>
+    </button>
+    <button class="nav-item" onclick="showView('reports', this)">
+      <span class="nav-icon">📄</span><span class="nav-label">Reports</span>
+    </button>
+    
+    <!-- Mobile Only Logout -->
+    <button class="nav-item mobile-only-logout" onclick="logout()">
+      <span class="nav-icon">↩</span><span class="nav-label">Logout</span>
+    </button>
+
+    <!-- Desktop Logout -->
     <div class="sidebar-logout">
       <button onclick="logout()">↩ Logout</button>
     </div>
@@ -134,7 +154,7 @@
           <button class="btn" onclick="openUserModal()">+ Add User</button>
         </div>
         
-        <div style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid var(--border);">
+        <div style="display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid var(--border); overflow-x: auto;">
           <div class="user-tab active" onclick="filterUsers('all', this)">All Users</div>
           <div class="user-tab" onclick="filterUsers('teacher', this)">Teachers</div>
           <div class="user-tab" onclick="filterUsers('student', this)">Students</div>
@@ -186,10 +206,12 @@
     <div class="view" id="view-atrisk" style="display:none">
       <div class="card">
         <h3>🚨 All Flagged Students</h3>
-        <table>
-          <thead><tr><th>Student</th><th>Section</th><th>Avg Grade</th><th>Absences</th></tr></thead>
-          <tbody id="atRiskBody"></tbody>
-        </table>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead><tr><th>Student</th><th>Section</th><th>Avg Grade</th><th>Absences</th></tr></thead>
+            <tbody id="atRiskBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -197,10 +219,12 @@
     <div class="view" id="view-compliance" style="display:none">
       <div class="card">
         <h3>✅ Teacher Compliance</h3>
-        <table>
-          <thead><tr><th>Teacher</th><th>Last Update</th><th>Status</th></tr></thead>
-          <tbody id="complianceBody"></tbody>
-        </table>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead><tr><th>Teacher</th><th>Last Update</th><th>Status</th></tr></thead>
+            <tbody id="complianceBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
