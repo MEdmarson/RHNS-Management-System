@@ -184,10 +184,8 @@ async function openSubjectModal(subjectId, subjectName) {
       return;
     }
 
-    // We use max-width: 800px so the longer headers fit nicely
     let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
     
-    // UPDATED HEADERS
     html += `<thead><tr>
         <th style="text-align:center; width: 60px;">Term</th>
         <th class="bg-ww" style="text-align:center;">WRITTEN / ORAL WORKS</th>
@@ -198,22 +196,22 @@ async function openSubjectModal(subjectId, subjectName) {
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
-      // NEW FORMATTING: Show scores vertically for better readability
       const formatGroup = (prefix) => {
         if (!g.activities) return '—';
         const items = g.activities.filter(a => a.field.startsWith(prefix));
         
         return items.map(a => {
           if (a.score !== null && a.score !== undefined) {
-             return `<div style="margin-bottom: 2px;"><strong style="color:var(--primary);">${a.score}</strong> <span style="color:var(--muted); font-size:11px;">/ ${a.hps || 0}</span></div>`;
+             // Changed HPS text from var(--muted) to a darker #374151 (Dark Gray)
+             return `<div style="margin-bottom: 2px;"><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps || 0}</span></div>`;
           } else if (a.hps > 0) {
-             return `<div style="margin-bottom: 2px; color:#b45309; font-size:11px;">— / ${a.hps}</div>`;
+             // Changed missing HPS text to a darker brown for visibility
+             return `<div style="margin-bottom: 2px; color:#92400e; font-size:12px; font-weight:600;">— / ${a.hps}</div>`;
           }
           return null; 
         }).filter(Boolean).join('') || '—';
       };
 
-      // Determine if the term is fully completed (Passed or Failed)
       const isFinished = g.qualitative === 'Passed' || g.qualitative === 'Failed';
       
       const descColor =
@@ -246,8 +244,8 @@ async function openSubjectModal(subjectId, subjectName) {
     
     html += '</tbody></table></div>';
     
-    // Add a slight note for students to understand the format
-    html += `<p style="font-size:11px; color:var(--muted); margin-top:12px; text-align:center;">Scores are displayed as <strong>Your Score</strong> / Max Possible Score (HPS)</p>`;
+    // Changed footnote text to near-black (#111827) and increased font size slightly to 12px
+    html += `<p style="font-size:12px; color:#111827; margin-top:16px; text-align:center; font-weight:500;">Scores are displayed as <strong>Your Score</strong> / Max Possible Score (HPS)</p>`;
     
     document.getElementById('modalContent').innerHTML = html;
   } catch (err) {
