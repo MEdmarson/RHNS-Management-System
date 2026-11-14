@@ -196,17 +196,24 @@ async function openSubjectModal(subjectId, subjectName) {
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
+      // Show "Score / HPS" if there is a score, otherwise if HPS is set, show "— / HPS"
       const formatGroup = (prefix) => {
         if (!g.activities) return '—';
         const items = g.activities.filter(a => a.field.startsWith(prefix));
         
         return items.map(a => {
-          if (a.hps === 0) return null; 
-          if (a.missing) return `<span style="color:#b45309; font-size:11px;">(${a.hps})</span>`;
-          return `${a.score ?? 0}/${a.hps}`;
+          if (a.score !== null && a.score !== undefined) {
+             return `${a.score} / ${a.hps || 0}`;
+          } else if (a.hps > 0) {
+             return `<span style="color:#b45309; font-size:11px;">— / ${a.hps}</span>`;
+          }
+          return null; // Hide if no score and no HPS
         }).filter(Boolean).join(', ');
       };
 
+      // Determine if the term is fully completed (Passed or Failed)
+      const isFinished = g.qualitative === 'Passed' || g.qualitative === 'Failed';
+      
       const descColor =
         g.descriptor === 'Advancing'    ? 'green' :
         g.descriptor === 'Benchmarking' ? '#1e3a8a'  :
@@ -222,12 +229,14 @@ async function openSubjectModal(subjectId, subjectName) {
 
       html += `<tr>
         <td style="text-align:center; font-weight:bold;">${g.term}</td>
-        <td class="bg-ww" style="text-align:center; font-size:12px;">${formatGroup('ww')}</td>
-        <td class="bg-pt" style="text-align:center; font-size:12px;">${formatGroup('pt')}</td>
-        <td class="bg-ex" style="text-align:center; font-size:12px;">${formatGroup('ex')}</td>
+        <td class="bg-ww" style="text-align:center; font-size:12px;">${formatGroup('ww') || '—'}</td>
+        <td class="bg-pt" style="text-align:center; font-size:12px;">${formatGroup('pt') || '—'}</td>
+        <td class="bg-ex" style="text-align:center; font-size:12px;">${formatGroup('ex') || '—'}</td>
         <td style="text-align:center; font-weight:bold; font-size:14px;">
-          ${g.term_grade ?? '—'}<br>
-          <span style="font-size:11px; color:${descColor}; font-weight:600;">${escapeHtml(g.descriptor || '')}</span>
+          ${isFinished ? (g.term_grade ?? '—') : '—'}<br>
+          <span style="font-size:11px; color:${descColor}; font-weight:600;">
+            ${isFinished ? escapeHtml(g.descriptor || '') : ''}
+          </span>
         </td>
         <td style="text-align:center;">${statusText}</td>
       </tr>`;
