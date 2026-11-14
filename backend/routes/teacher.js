@@ -159,16 +159,13 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   const males = students.filter(s => normalizeGender(s.gender) === 'male');
   const females = students.filter(s => normalizeGender(s.gender) === 'female');
 
-  // Template headers match the UI (SA1, SA2, TE)
   let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,SA1,SA2,TE\n';
   
-  // Male Section
   csvContent += '\nMALE,,,,,,,,,,,,,\n';
   males.forEach(s => {
     csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
   });
 
-  // Female Section
   csvContent += '\nFEMALE,,,,,,,,,,,,,\n';
   females.forEach(s => {
     csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
@@ -179,7 +176,7 @@ router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
   res.send(csvContent);
 }));
 
-// --- IMPORT GRADES FROM CSV ---
+// --- IMPORT GRADES FROM CSV (BULLETPROOF WITH NAME FALLBACK) ---
 router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   
@@ -214,15 +211,20 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
       if (!row.LRN || row.LRN.trim() === '' || row.LRN === 'MALE' || row.LRN === 'FEMALE') continue;
 
       try {
-        // 2. Fix Excel Scientific Notation (e.g., 1.07E+11)
         let cleanLrn = row.LRN.trim().replace(/"/g, '');
-        if (cleanLrn.includes('E+') || cleanLrn.includes('e+')) {
-          cleanLrn = Number(cleanLrn).toLocaleString('fullwide', { useGrouping: false });
+        const fullName = row['Full Name'] ? row['Full Name'].trim().replace(/"/g, '') : '';
+
+        // 2. Try exact LRN match first
+        let [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [cleanLrn]);
+
+        // 3. If LRN fails (due to Excel corruption like 1.07E+11), fall back to Full Name match
+        if (!student.length && fullName) {
+          console.log(`LRN ${cleanLrn} not found, trying name: ${fullName}`);
+          [student] = await pool.query('SELECT user_id AS student_id FROM users WHERE full_name = ? AND role = "student"', [fullName]);
         }
 
-        const [student] = await pool.query('SELECT user_id AS student_id FROM students WHERE lrn = ?', [cleanLrn]);
         if (!student.length) { 
-          console.log(`Skipped: LRN ${cleanLrn} not found in database`);
+          console.log(`Skipped: Could not find student by LRN "${cleanLrn}" or Name "${fullName}"`);
           failCount++; 
           continue; 
         }
@@ -230,12 +232,12 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
         const studentId = student[0].student_id;
         const n = (v) => (v === '' || v === undefined || isNaN(Number(v))) ? null : Number(v);
         
-        // 3. Read the columns from CSV (SA1, SA2, TE)
+        // 4. Read the columns from CSV (SA1, SA2, TE)
         const ww1 = n(row.WW1), ww2 = n(row.WW2), ww3 = n(row.WW3), ww4 = n(row.WW4), ww5 = n(row.WW5);
         const pt1 = n(row.PT1), pt2 = n(row.PT2), pt3 = n(row.PT3);
         const ex1 = n(row.SA1), ex2 = n(row.SA2), ex3 = n(row.TE);
 
-        // 4. Calculate Grades
+        // 5. Calculate Grades
         const ww_ps = ww_hps === 0 ? 0 : ((calcN(ww1)+calcN(ww2)+calcN(ww3)+calcN(ww4)+calcN(ww5)) / ww_hps) * 100;
         const pt_ps = pt_hps === 0 ? 0 : ((calcN(pt1)+calcN(pt2)+calcN(pt3)) / pt_hps) * 100;
         const ex_ps = ex_hps === 0 ? 0 : ((calcN(ex1)+calcN(ex2)+calcN(ex3)) / ex_hps) * 100;
@@ -244,7 +246,7 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
         const termGrade = initialGrade === 0 ? 0 : transmute(initialGrade);
         const descriptor = termGrade === 0 ? '' : termGrade > 89 ? 'Advancing' : termGrade > 79 ? 'Benchmarking' : termGrade > 74 ? 'Connecting' : termGrade > 64 ? 'Developing' : 'Emerging';
 
-        // 5. Save to Database
+        // 6. Save to Database
         const sql = `
           INSERT INTO grades (student_id, subject_id, term, ww1, ww2, ww3, ww4, ww5, pt1, pt2, pt3, ex1, ex2, ex3, initial_grade, term_grade, descriptor, ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
