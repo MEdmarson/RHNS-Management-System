@@ -187,13 +187,14 @@ async function openSubjectModal(subjectId, subjectName) {
 
     let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
     
+    // Headers (Fixed syntax error from before to ensure they are black)
     html += `<thead><tr>
         <th style="text-align:center; width: 60px; color: #111827;">Term</th>
         <th class="bg-ww" style="text-align:center; color: #111827;">WRITTEN / ORAL WORKS</th>
         <th class="bg-pt" style="text-align:center; color: #111827;">PRODUCT / PERFORMANCE TASKS</th>
         <th class="bg-ex" style="text-align:center; color: #111827;">EXAMINATIONS</th>
-        <th style="text-align:center; width: 90px;  color: #111827";>Term Grade</th>
-        <th style="text-align:center; width: 100px; color: #111827";>Status</th>
+        <th style="text-align:center; width: 90px; color: #111827;">Term Grade</th>
+        <th style="text-align:center; width: 100px; color: #111827;">Status</th>
       </tr></thead><tbody>`;
 
     grades.forEach(g => {
@@ -203,10 +204,8 @@ async function openSubjectModal(subjectId, subjectName) {
         
         return items.map(a => {
           if (a.score !== null && a.score !== undefined) {
-             // Changed HPS text from var(--muted) to a darker #374151 (Dark Gray)
              return `<div style="margin-bottom: 2px;"><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps || 0}</span></div>`;
           } else if (a.hps > 0) {
-             // Changed missing HPS text to a darker brown for visibility
              return `<div style="margin-bottom: 2px; color:#92400e; font-size:12px; font-weight:600;">— / ${a.hps}</div>`;
           }
           return null; 
@@ -228,24 +227,24 @@ async function openSubjectModal(subjectId, subjectName) {
       if (g.qualitative === 'INC / Not Submitted') statusText = '<span style="color:#92400e; font-weight:700;">INC</span>';
       if (g.qualitative === 'In Progress') statusText = '<span style="color:#1e3a8a; font-weight:700;">In Progress</span>';
 
+      // CHANGED: vertical-align: middle; ensures text stays perfectly centered
       html += `<tr>
-        <td style="text-align:center; font-weight:bold; font-size:14px; background:#f9fafb;">${g.term}</td>
-        <td class="bg-ww" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('ww')}</td>
-        <td class="bg-pt" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('pt')}</td>
-        <td class="bg-ex" style="text-align:center; font-size:13px; vertical-align:top;">${formatGroup('ex')}</td>
-        <td style="text-align:center; font-weight:bold; font-size:16px; vertical-align:top; background:#f9fafb;">
+        <td style="text-align:center; font-weight:bold; font-size:14px; background:#f9fafb; vertical-align:middle;">${g.term}</td>
+        <td class="bg-ww" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('ww')}</td>
+        <td class="bg-pt" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('pt')}</td>
+        <td class="bg-ex" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('ex')}</td>
+        <td style="text-align:center; font-weight:bold; font-size:16px; background:#f9fafb; vertical-align:middle;">
           ${isFinished ? (g.term_grade ?? '—') : '—'}<br>
           <span style="font-size:11px; color:${descColor}; font-weight:600;">
             ${isFinished ? escapeHtml(g.descriptor || '') : ''}
           </span>
         </td>
-        <td style="text-align:center; vertical-align:top; background:#f9fafb;">${statusText}</td>
+        <td style="text-align:center; background:#f9fafb; vertical-align:middle;">${statusText}</td>
       </tr>`;
     });
     
     html += '</tbody></table></div>';
     
-    // Changed footnote text to near-black (#111827) and increased font size slightly to 12px
     html += `<p style="font-size:12px; color:#111827; margin-top:16px; text-align:center; font-weight:500;">Scores are displayed as <strong>Your Score</strong> / Max Possible Score (HPS)</p>`;
     
     document.getElementById('modalContent').innerHTML = html;
