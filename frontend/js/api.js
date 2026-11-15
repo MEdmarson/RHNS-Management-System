@@ -3,7 +3,7 @@
 //  - If the pages are hosted separately (e.g. a Render Static Site), put the API's address here,
 //    with no trailing slash, e.g. 'https://rnhs-api.onrender.com'
 const API_ORIGIN = 'https://rhns-management-system.onrender.com';
-const API = API_ORIGIN + '/api';
+const API = API_ORIGIN + '';
 
 function getToken() { return localStorage.getItem('token'); }
 function getUser()  { return JSON.parse(localStorage.getItem('user') || '{}'); }
