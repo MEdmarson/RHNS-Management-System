@@ -251,12 +251,12 @@ function failReasonText(f) {
   const g = f.term_grade;
   const m = f.missing;
   if (f.cause === 'both') {
-    return `Grade ${g} and missing ${m.count} of ${m.total} activities (up to ${m.weight_pct} pts of the term grade)`;
+    return `Grade ${g} on submitted work and missing ${m.count} of ${m.total} activities (up to ${m.weight_pct} pts of the term grade)`;
   }
   if (f.cause === 'missing') {
-    return `Missing ${m.count} of ${m.total} activities — worth up to ${m.weight_pct} pts of the term grade` + (g !== null ? ` (current grade ${g})` : ' (no grade computed yet)');
+    return `Missing ${m.count} of ${m.total} activities — worth up to ${m.weight_pct} pts of the term grade` + (g !== null ? ` (grade on submitted work: ${g})` : ' (nothing handed in yet)');
   }
-  let t = `Grade ${g} — below passing`;
+  let t = `Grade ${g} on submitted work — below passing`;
   if (f.weakest) t += `, weakest in ${f.weakest.name} (${f.weakest.pct}%)`;
   t += m.count ? `; ${m.count} missed so far` : '; all activities handed in';
   return t;
@@ -288,6 +288,7 @@ function failDetailHtml(f) {
       <p class="why">${riskEsc(failReasonText(f))}</p>
       ${bars}
       ${m.count ? `<div style="font-size:12px; margin-top:8px;"><strong>Missing (${m.count} of ${m.total}):</strong></div>${chips}` : ''}
+      ${f.recorded_grade !== null && f.recorded_grade !== f.term_grade ? `<div class="risk-note">Class record shows ${f.recorded_grade} because activities or components not yet scored count as 0 there.</div>` : ''}
       ${trend}
     </div>`;
 }

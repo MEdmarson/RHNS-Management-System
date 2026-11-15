@@ -589,6 +589,17 @@ function analyzeTerm(row, weights) {
     if (comp[c].hps > 0) missedWeightPct += (comp[c].missedHps / comp[c].hps) * w[c] * 100;
     components[c] = comp[c].hps > 0 ? Math.round((comp[c].got / comp[c].hps) * 1000) / 10 : null;
   }
+
+  // Grade on SUBMITTED work: judged only on activities that were handed in, with the weights spread over the
+  // components that have actual scores. A component that hasn't been given yet (e.g. no exam HPS) or an activity
+  // that's missing does not count as 0 here - missing work is judged separately by the "significant" rule below.
+  let wsum = 0, wscore = 0;
+  for (const c of ['ww', 'pt', 'ex']) {
+    const givenHps = comp[c].hps - comp[c].missedHps;     // HPS of the activities that have a score
+    if (givenHps > 0 && w[c] > 0) { wsum += w[c]; wscore += (comp[c].got / givenHps) * 100 * w[c]; }
+  }
+  const workInitial = wsum > 0 ? wscore / wsum : null;
+  const workGrade = workInitial === null ? null : (workInitial === 0 ? 0 : transmute(workInitial));
   missedWeightPct = Math.round(missedWeightPct * 10) / 10;
 
   const significant = missed.length > 0 &&
@@ -601,7 +612,7 @@ function analyzeTerm(row, weights) {
   }
 
   return {
-    missed, total, missedWeightPct, significant, components,
+    missed, total, missedWeightPct, significant, components, workGrade,
     weakest: weakest ? { key: weakest, name: COMP_NAMES[weakest], pct: components[weakest] } : null
   };
 }
@@ -682,9 +693,10 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
         for (const [k] of ACTIVITIES) { row[k] = null; row[k + '_hps'] = info.hpsRow[k + '_hps']; }
       }
 
-      const termGrade = row.term_grade === null || row.term_grade === undefined ? null : Number(row.term_grade);
-      const lowGrade = termGrade !== null && termGrade < AT_RISK.PASSING_GRADE;
+      const recordedGrade = row.term_grade === null || row.term_grade === undefined ? null : Number(row.term_grade);
       const t = analyzeTerm(row, weights);
+      const termGrade = t.workGrade;                                // grade on work actually handed in
+      const lowGrade = termGrade !== null && termGrade < AT_RISK.PASSING_GRADE;
       if (!lowGrade && !t.significant) continue;                   // one or two missed activities alone do not tag a student
 
       const previous = Object.keys(terms).map(Number).filter(n => n < info.current)
@@ -697,6 +709,7 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
       failing.push({
         subject_id: sub.id, subject: sub.name, term: info.current,
         term_grade: termGrade,
+        recorded_grade: recordedGrade,
         initial_grade: row.initial_grade === null || row.initial_grade === undefined ? null : Number(row.initial_grade),
         low_grade: lowGrade,
         missing: { count: t.missed.length, total: t.total, weight_pct: t.missedWeightPct, significant: t.significant, items: t.missed },
