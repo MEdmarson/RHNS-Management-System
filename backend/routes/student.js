@@ -291,16 +291,16 @@ function buildAlerts(list, att) {
   }
 
   const attAction = { label: 'View attendance', view: 'attendance' };
-  const attFacts = [`Absences used: ${att.absent} of ${att.limit}`, `Remaining before the limit: ${att.remaining}`];
+  const attFacts = [`Absences recorded: ${att.absent}`];
   if (att.converted) attFacts.push(`${att.converted} absence(s) came from ${att.late} lates`);
 
   if (att.absent >= 10) {
     add({
       id: 'att-limit', sig: String(att.absent), type: att.absent >= 15 ? 'error' : 'warning', category: 'attendance',
       title: `Attendance: ${att.absent} absences recorded`,
-      body: att.remaining > 0
-        ? `The limit is ${att.limit} per school year. Avoid missing more classes.`
-        : 'You have reached the absence limit. Talk to your adviser right away.',
+      body: att.absent >= 15
+        ? 'Your absences are very high. Talk to your adviser right away.'
+        : 'Missing classes can affect your standing. Try to attend every class.',
       facts: attFacts, action: attAction,
     });
   }

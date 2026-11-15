@@ -243,9 +243,9 @@ function renderTiles() {
     <button class="tile ${attention ? 'alert' : ''}" data-go="subjects" data-filter="${attention ? 'attention' : 'passed'}"><span class="go">→</span>
       <span>Needs attention</span><strong>${attention}</strong>
       <small>${p.failed} failed, ${p.inc} INC</small></button>
-    <button class="tile ${a.remaining <= 5 ? 'alert' : ''}" data-go="attendance"><span class="go">→</span>
+    <button class="tile ${a.absent >= 10 ? 'alert' : ''}" data-go="attendance"><span class="go">→</span>
       <span>Total absences</span><strong>${a.absent}</strong>
-      <small>${a.remaining} left of ${a.limit}</small></button>
+      <small>${a.absent === 0 ? 'None so far. Keep it up!' : 'Tap for details'}</small></button>
     <button class="tile ${unread ? 'alert' : ''}" data-go="notifs" data-filter="${unread ? 'unread' : 'all'}"><span class="go">→</span>
       <span>New alerts</span><strong>${unread}</strong>
       <small>${unread ? 'Tap to read' : 'All caught up'}</small></button>`;
@@ -351,16 +351,16 @@ $('subjSearch').addEventListener('input', e => { state.query = e.target.value; r
 // ---------------------------------------------------------------------------
 function attInfo() {
   const a = state.attendance;
-  const pct = Math.min((a.absent / a.limit) * 100, 100);
-  const color = pct > 75 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
+  // The bar shows the attendance rate, so no absence limit is shown to students
+  const pct = a.rate != null ? a.rate : 0;
+  const color = pct >= 90 ? 'var(--success)' : pct >= 80 ? 'var(--warning)' : 'var(--danger)';
   return { a, pct, color };
 }
 function attMessage(a) {
-  if (a.absent === 0)    return 'No absences recorded so far. Keep it up!';
-  if (a.remaining <= 0)  return 'You reached the 20-absence limit. Talk to your adviser right away.';
-  if (a.remaining <= 5)  return 'You are close to the 20-absence limit. Avoid missing more classes.';
-  if (a.remaining <= 10) return 'Your absences are adding up. The limit is 20 per school year.';
-  return 'You are well within the 20-absence limit.';
+  if (a.absent === 0)   return 'No absences recorded so far. Keep it up!';
+  if (a.absent >= 15)   return 'Your absences are very high. Talk to your adviser right away.';
+  if (a.absent >= 10)   return 'Your absences are adding up. Try to attend every class.';
+  return 'Try to attend every class and arrive on time.';
 }
 
 function renderAttendance() {
@@ -375,13 +375,13 @@ function renderAttendance() {
     <div class="tile"><span>Attendance rate</span><strong>${a.rate != null ? a.rate + '%' : '—'}</strong></div>
     <div class="tile"><span>Days present</span><strong>${a.present}</strong></div>
     <div class="tile ${a.absent > 4 ? 'alert' : ''}"><span>Total absences</span><strong>${a.absent}</strong>
-      <small>${a.remaining} left before the limit</small></div>
+      <small>${a.converted ? `Includes ${plural(a.converted, 'absence')} from lates` : 'Every 3 lates = 1 absence'}</small></div>
     <div class="tile"><span>Days late</span><strong>${a.late}</strong>
       <small>${a.converted ? plural(a.converted, 'absence') + ' from lates' : 'None converted'}</small></div>
     <div class="tile"><span>Excused</span><strong>${a.excused}</strong><small>Not counted as absent</small></div>`;
 
   $('attMeter').innerHTML = meter(pct, color);
-  $('attMessage').textContent = `${plural(a.absent, 'absence')} of ${a.limit} used. ${attMessage(a)}`;
+  $('attMessage').textContent = a.absent === 0 ? attMessage(a) : `${plural(a.absent, 'absence')} recorded. ${attMessage(a)}`;
 
   const marked = Math.max(a.absent - a.converted, 0);
   const toNext = 3 - (a.late % 3);
@@ -389,8 +389,8 @@ function renderAttendance() {
     <li><span>Marked absent</span><span>${marked}</span></li>
     <li><span>From lates<small>${a.late} late${a.late === 1 ? '' : 's'} ÷ 3</small></span><span>+ ${a.converted}</span></li>
     <li><span>Excused<small>Not counted</small></span><span>${a.excused}</span></li>
-    <li><span>Total absences</span><span>${a.absent} / ${a.limit}</span></li>`;
-  if (a.late > 0 && a.remaining > 0) {
+    <li><span>Total absences</span><span>${a.absent}</span></li>`;
+  if (a.late > 0) {
     $('attMessage').textContent += ` ${toNext === 1 ? 'One more late' : plural(toNext, 'more late')} will count as another absence.`;
   }
 }
