@@ -302,31 +302,27 @@
             <button class="btn btn-secondary subj-tab" id="sf2TabFinished" onclick="setSf2Filter('finished')">🗂️ Past Classes</button>
           </div>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 15px;">
-              <h3 style="margin: 0;" id="sf2Title">🏫 School Form 2 (SF2)</h3>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <label style="font-weight: 600; font-size: 14px;">Subject / Section: </label>
+          <h3 style="margin: 0 0 4px;" id="sf2Title">🏫 School Form 2 (SF2)</h3>
+          <p class="sf2-school-line">ROSALES NATIONAL HIGH SCHOOL &middot; School ID 300341</p>
+
+          <div class="sf2-toolbar">
+            <div class="sf2-filters">
+              <label for="sf2SubjectSelect">Subject / Section</label>
               <select id="sf2SubjectSelect" class="input gb-select" style="font-weight: bold; min-width: 220px;" onchange="loadSF2()"></select>
-              <label style="font-weight: 600; font-size: 14px;">Month: </label>
+              <label for="sf2Month">Month</label>
               <input type="month" id="sf2Month" class="input" style="width: auto; font-weight: bold;" onchange="loadSF2()">
             </div>
+            <div class="sf2-actions">
+              <button class="btn" id="sf2ExportBtn" onclick="downloadSF2()" title="Download the official SF2 layout as an Excel file">📥 Download SF2 (Excel)</button>
+              <button class="btn btn-secondary" onclick="window.print()" title="Print this table or save it as PDF">🖨 Print</button>
+            </div>
           </div>
 
-          <div class="sf2-school">
-            <label for="sf2SchoolId">School ID</label>
-            <input type="text" id="sf2SchoolId" class="input" placeholder="e.g. 301234" maxlength="20">
-            <label for="sf2SchoolName">School Name</label>
-            <input type="text" id="sf2SchoolName" class="input" placeholder="Name of school" maxlength="120">
-            <span class="sf2-school-hint">Used in the Excel export (saved on this device).</span>
-          </div>
-
-          <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">
+          <p style="font-size: 13px; color: var(--muted); margin: 10px 0;">
             Auto-generated from recorded attendance data for the selected month.
             <span id="sf2Range" style="font-weight:600;"></span>
           </p>
-          <div style="overflow-x: auto;">
+          <div class="sf2-table-wrap">
             <table>
               <thead>
                 <tr>
@@ -336,10 +332,6 @@
               </thead>
               <tbody id="sf2Body"></tbody>
             </table>
-          </div>
-          <div class="sf2-actions">
-            <button class="btn" id="sf2ExportBtn" onclick="downloadSF2()" title="Download the official SF2 layout as an Excel file">📥 Download SF2 (Excel)</button>
-            <button class="btn btn-secondary" onclick="window.print()" title="Print this table or save it as PDF">🖨 Print / Save as PDF</button>
           </div>
         </div>
       </div>

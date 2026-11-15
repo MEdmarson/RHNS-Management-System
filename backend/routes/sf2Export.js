@@ -1,5 +1,5 @@
 // routes/sf2Export.js
-// GET /api/teacher/sf2/:sectionId/export?month=11&year=2026&school_id=...&school_name=...
+// GET /api/teacher/sf2/:sectionId/export?month=11&year=2026
 // Fills templates/sf2-template.xlsx (DepEd School Form 2) with the section's attendance for the month.
 // The template is patched at the XML level, so the logo, merged cells, borders and print setup stay exactly as in the original file.
 const router = require('express').Router();
@@ -7,6 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const JSZip = require('jszip');
 const pool = require('../config/db');
+
+// Fixed school details used on every SF2 (not editable from the website)
+const SCHOOL_ID = '300341';
+const SCHOOL_NAME = 'ROSALES NATIONAL HIGH SCHOOL';
 
 const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'sf2-template.xlsx');
 
@@ -289,8 +293,8 @@ router.get('/sf2/:sectionId/export', async (req, res) => {
 
     if (!fs.existsSync(TEMPLATE_PATH)) return res.status(500).json({ error: 'SF2 template missing: put sf2-template.xlsx in the templates folder.' });
     const buf = await buildSf2(fs.readFileSync(TEMPLATE_PATH), {
-      schoolId: String(req.query.school_id || '').trim(),
-      schoolName: String(req.query.school_name || '').trim(),
+      schoolId: SCHOOL_ID,
+      schoolName: SCHOOL_NAME,
       schoolYear: month >= 6 ? `${year}-${year + 1}` : `${year - 1}-${year}`,
       monthName: MONTHS[month - 1], year,
       gradeLevel: students[0] && students[0].grade_level != null ? String(students[0].grade_level) : '',

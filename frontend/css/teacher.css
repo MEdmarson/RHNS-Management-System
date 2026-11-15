@@ -299,14 +299,20 @@ button.att-btn.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
 .finished-tag { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 700; color: #374151; background: #e5e7eb; border-radius: 10px; padding: 2px 10px; }
 
 /* ---------- SF2 tab extras ---------- */
-.sf2-school { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.sf2-school label { font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
-.sf2-school .input { min-width: 150px; }
-.sf2-school-hint { font-size: 11px; color: var(--muted); }
-.sf2-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
-.sf2-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.sf2-school-line { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .3px; margin-bottom: 14px; }
+.sf2-toolbar { position: sticky; top: 0; z-index: 5; background: #fff; display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.sf2-filters { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.sf2-filters label { font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.sf2-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.sf2-actions .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* long learner list scrolls inside the card, so the buttons never move out of view */
+.sf2-table-wrap { overflow: auto; max-height: 60vh; border: 1px solid var(--border); border-radius: 8px; }
+.sf2-table-wrap thead th { position: sticky; top: 0; z-index: 1; }
+@media print { .sf2-table-wrap { max-height: none; overflow: visible; border: none; } .sf2-toolbar { position: static; } }
 @media (max-width: 768px) {
-  .sf2-school { align-items: stretch; }
-  .sf2-school .input { flex: 1 1 100%; }
-  .sf2-actions .btn { flex: 1 1 100%; justify-content: center; min-height: 42px; }
+  .sf2-filters { width: 100%; }
+  .sf2-filters .input { flex: 1 1 100%; }
+  .sf2-actions { width: 100%; }
+  .sf2-actions .btn { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  .sf2-table-wrap { max-height: 55vh; }
 }

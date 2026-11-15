@@ -245,16 +245,6 @@ function setSf2Filter(filter) {
   loadSF2();
 }
 
-// remember School ID / School Name between visits
-(function initSf2School() {
-  ['sf2SchoolId', 'sf2SchoolName'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    try { el.value = localStorage.getItem(id) || ''; } catch (e) {}
-    el.addEventListener('input', () => { try { localStorage.setItem(id, el.value); } catch (e) {} });
-  });
-})();
-
 async function loadSF2() {
   try {
     const sel = document.getElementById('sf2SubjectSelect');
@@ -348,11 +338,7 @@ async function downloadSF2() {
   btn.disabled = true;
 
   try {
-    const params = new URLSearchParams({
-      month, year,
-      school_id: document.getElementById('sf2SchoolId').value.trim(),
-      school_name: document.getElementById('sf2SchoolName').value.trim()
-    });
+    const params = new URLSearchParams({ month, year });
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');
     const response = await fetch(`/api/teacher/sf2/${subj.section_id}/export?${params}`, {
       headers: { 'Authorization': `Bearer ${token}` }
