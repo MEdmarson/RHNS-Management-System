@@ -25,7 +25,7 @@ const state = {
   subjects: [], progress: null, attendance: null,
   alerts: [], messages: [],
   view: 'dashboard', lastLoad: 0, lastBadge: null,
-  subjectFilter: 'all', query: '', notifFilter: 'all',
+  subjectFilter: 'active', query: '', notifFilter: 'all',
 };
 let lastFocus = null;
 
@@ -162,13 +162,17 @@ const needsAttention = s =>
   s.has_inc || s.status === 'Failed' ||
   TERM_IDS.some(n => s.term_status[n] === 'failed') || s.target?.state === 'out_of_reach';
 
+// Order here is the order of the chips: current subjects first, "All" last
 const SUBJECT_FILTERS = {
-  all:       { label: 'All',             fn: () => true },
-  active:    { label: 'Active',          fn: s => s.is_active },
+  active:    { label: 'Current',         fn: s => s.is_active },
   passed:    { label: 'Passed',          fn: s => s.status === 'Passed' },
   attention: { label: 'Needs attention', fn: needsAttention },
   past:      { label: 'Past',            fn: s => !s.is_active },
+  all:       { label: 'All',             fn: () => true },
 };
+
+// A grade only counts once all 3 terms are graded, there is no INC, and the subject is final
+const hasFinalGrade = s => s.is_final && !s.has_inc && s.graded_count === TERM_IDS.length && s.term_grade != null;
 
 function priority(s) {
   if (s.has_inc) return 4;
@@ -225,7 +229,7 @@ function renderHero() {
 function renderTiles() {
   const p = state.progress, a = state.attendance;
   const attention = p.failed + p.inc;
-  const graded = state.subjects.filter(s => s.term_grade != null);
+  const graded = state.subjects.filter(hasFinalGrade);
   const avg = graded.length ? Math.round(graded.reduce((t, s) => t + s.term_grade, 0) / graded.length) : null;
   const unread = unreadTotal();
 
@@ -233,9 +237,9 @@ function renderTiles() {
     <button class="tile" data-go="subjects" data-filter="active"><span class="go">→</span>
       <span>Active subjects</span><strong>${state.subjects.filter(s => s.is_active).length}</strong>
       <small>Tap to view</small></button>
-    <button class="tile ${avg != null && avg < 75 ? 'alert' : avg != null ? 'good' : ''}" data-go="subjects" data-filter="all"><span class="go">→</span>
-      <span>Average grade</span><strong>${avg ?? '—'}</strong>
-      <small>${avg != null ? 'Passing is 75' : 'No grades yet'}</small></button>
+    <button class="tile ${avg != null && avg < 75 ? 'alert' : avg != null ? 'good' : ''}" data-go="subjects" data-filter="${graded.length ? 'past' : 'active'}"><span class="go">→</span>
+      <span>Final average</span><strong>${avg ?? '—'}</strong>
+      <small>${avg != null ? `Across ${plural(graded.length, 'completed subject')}` : 'Shows once a subject has a final grade'}</small></button>
     <button class="tile ${attention ? 'alert' : ''}" data-go="subjects" data-filter="${attention ? 'attention' : 'passed'}"><span class="go">→</span>
       <span>Needs attention</span><strong>${attention}</strong>
       <small>${p.failed} failed, ${p.inc} INC</small></button>
@@ -310,8 +314,9 @@ function termChip(n, s) {
 
 function subjectCard(s) {
   const hint = subjectHint(s);
-  const avg = s.term_grade != null
-    ? `${s.is_final ? 'Final grade' : 'Average so far'}: <strong>${s.term_grade}</strong>` : 'No grades yet';
+  const avg = hasFinalGrade(s)
+    ? `Final grade: <strong>${s.term_grade}</strong>`
+    : s.has_inc ? 'Final grade held by INC' : 'Final grade not yet available';
   return `
     <article class="subj" tabindex="0" role="button" data-open="${s.subject_id}" aria-label="Open ${escapeHtml(s.subject)} details">
       <div class="subj-top"><h4>${escapeHtml(s.subject)}</h4>${statusPill(s.status)}</div>
@@ -595,7 +600,7 @@ async function openSubjectModal(subjectId, trigger) {
     const hint = subjectHint(s);
     head = `<div class="modal-summary">
         ${statusPill(s.status)}
-        ${s.term_grade != null ? `<span>${s.is_final ? 'Final grade' : 'Average so far'}: <strong>${s.term_grade}</strong></span>` : ''}
+        ${hasFinalGrade(s) ? `<span>Final grade: <strong>${s.term_grade}</strong></span>` : ''}
         <span>${escapeHtml(s.teacher)}</span>
       </div>
       ${hint ? `<p class="hint ${hint.cls}" style="margin: 0 0 14px;">${escapeHtml(hint.text)}</p>` : ''}`;
