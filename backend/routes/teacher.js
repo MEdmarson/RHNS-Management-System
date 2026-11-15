@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
 const multer = require('multer');
 const csv = require('csv-parser');
+const XLSX = require('xlsx');
 const { Readable } = require('stream');
 
 router.use(authenticate, authorize('teacher'));
@@ -213,6 +214,46 @@ const normName = (s) => String(s || '')
 
 const normLrn = (s) => String(s || '').replace(/\D/g, '');
 
+// Read the class-record .xlsx itself (the same file you download with "Download Excel").
+// Converts the TERM sheet into the same row format the CSV import uses, including the HPS row.
+function parseClassRecordXlsx(buffer, term) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const wanted = `TERM ${term}`;
+  const sheetName = wb.SheetNames.find((n) => n.trim().toUpperCase() === wanted);
+  if (!sheetName) throw new Error(`Sheet "${wanted}" was not found in the Excel file.`);
+  const ws = wb.Sheets[sheetName];
+
+  const val = (addr) => {
+    const c = ws[addr];
+    if (!c) return '';
+    if (typeof c.v === 'number') return c.v;
+    if (typeof c.v === 'string' && c.v.trim() !== '' && !isNaN(Number(c.v))) return Number(c.v);
+    return '';
+  };
+  const COLS = {
+    WW1: 'C', WW2: 'D', WW3: 'E', WW4: 'F', WW5: 'G',
+    PT1: 'K', PT2: 'L', PT3: 'M',
+    SA1: 'Q', SA2: 'R', TE: 'S'
+  };
+  const readRow = (r) => { const o = {}; for (const [k, col] of Object.entries(COLS)) o[k] = val(`${col}${r}`); return o; };
+
+  // row 15 = HIGHEST POSSIBLE SCORE
+  const rows = [{ LRN: '', 'FULL NAME': 'HIGHEST POSSIBLE SCORE', ...readRow(15) }];
+
+  // students: column A has the running number, column B the name (MALE / FEMALE label rows are skipped)
+  let withScores = 0;
+  for (let r = 18; r <= 300; r++) {
+    const a = ws[`A${r}`], b = ws[`B${r}`];
+    if (!a || typeof a.v !== 'number' || !b || typeof b.v !== 'string' || !b.v.trim()) continue;
+    const scores = readRow(r);
+    if (Object.values(scores).some((x) => x !== '')) withScores++;
+    rows.push({ LRN: '', 'FULL NAME': b.v.trim(), ...scores });
+  }
+  if (rows.length === 1) throw new Error(`No students found in sheet "${sheetName}".`);
+  if (!withScores) throw new Error(`No scores found in sheet "${sheetName}". Choose the correct term, or fill in the sheet first.`);
+  return rows;
+}
+
 router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -226,14 +267,25 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
   );
   if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
 
-  // 2. Parse the CSV
-  const rows = await parseCsv(req.file.buffer.toString('utf8'));
-  console.log(`[import] parsed ${rows.length} rows. Columns:`, rows[0] ? Object.keys(rows[0]) : 'none');
-  if (!rows.length || !('LRN' in rows[0])) {
-    return res.status(400).json({
-      error: 'Could not read the CSV. First row must contain: LRN, Full Name, WW1..WW5, PT1..PT3, SA1, SA2, TE'
-    });
+  // 2. Parse the upload: the class-record .xlsx directly, or the CSV template
+  const buf = req.file.buffer;
+  const isXlsx = /\.xlsx?$/i.test(req.file.originalname || '') || (buf[0] === 0x50 && buf[1] === 0x4b); // "PK" = zip
+  let rows;
+  if (isXlsx) {
+    try {
+      rows = parseClassRecordXlsx(buf, term);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+  } else {
+    rows = await parseCsv(buf.toString('utf8'));
+    if (!rows.length || !('LRN' in rows[0])) {
+      return res.status(400).json({
+        error: 'Could not read the file. Upload the class-record .xlsx, or a CSV with: LRN, Full Name, WW1..WW5, PT1..PT3, SA1, SA2, TE'
+      });
+    }
   }
+  console.log(`[import] ${isXlsx ? 'xlsx' : 'csv'}: parsed ${rows.length} rows`);
 
   // 3. Load the section's students ONCE and build lookup maps (1 query instead of 3 per row)
   const [students] = await pool.query(`
@@ -376,7 +428,7 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
   let message = `Imported ${successCount} students.`;
   if (notFound.length) message += ` Not found (${notFound.length}): ${notFound.slice(0, 3).join('; ')}${notFound.length > 3 ? '…' : ''}.`;
   if (errors.length) message += ` DB errors: ${errors.length}.`;
-  if (hpsFromCsv) message += ' HPS taken from the CSV.';
+  if (hpsFromCsv) message += ' HPS taken from the file.';
   if (hpsMissing) message += ' ⚠️ HPS is not set for this term — enter the HPS values and click Save so grades compute.';
 
   res.json({ ok: true, message });
