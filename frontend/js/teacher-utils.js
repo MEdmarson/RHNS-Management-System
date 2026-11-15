@@ -46,7 +46,7 @@ function showToast(message, type = 'success') {
 }
 
 // --- ATTENDANCE MATH ---
-const LATES_PER_ABSENCE = 3;
+const LATES_PER_ABSENCE = 3;   // browser copy: keep equal to LATES_PER_ABSENCE in routes/atRisk.js
 const EXCUSED_COUNTS_AS_ABSENT = false;
 
 function computeAttendance({ present = 0, late = 0, excused = 0, absent = 0 } = {}) {

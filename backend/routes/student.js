@@ -11,17 +11,11 @@ const EXAMS = ['ex1','ex2','ex3'];
 const TERMS = [1, 2, 3];
 const PASSING = 75;
 const INC_THRESHOLD = 3;       // missing items in a closed term that make it INC
-const ABSENCE_LIMIT = 20;      // DepEd limit per school year
-const LATES_PER_ABSENCE = 3;   // same rule as the teacher portal
+const ABSENCE_LIMIT = risk.AT_RISK.YEAR_ABSENCE_LIMIT;       // school-year absence maximum - change it in routes/atRisk.js (or .env)
+const LATES_PER_ABSENCE = risk.AT_RISK.LATES_PER_ABSENCE;    // same rule as the teacher portal - change it in routes/atRisk.js (or .env)
 
-// DepEd school year used for attendance totals. SY 2026-2027 runs June 8, 2026 to
-// April 8, 2027 (three-term calendar, Junior and Senior High). Update every year,
-// or set SCHOOL_YEAR_LABEL / SCHOOL_YEAR_START / SCHOOL_YEAR_END in your .env file.
-const SCHOOL_YEAR = {
-  label: process.env.SCHOOL_YEAR_LABEL || '2026–2027',
-  start: process.env.SCHOOL_YEAR_START || '2026-06-08',
-  end:   process.env.SCHOOL_YEAR_END   || '2027-04-08',
-};
+// The school year (for the attendance totals) is picked automatically from today's date.
+// To change the months or pin exact dates, see the school-year settings in routes/atRisk.js (or .env).
 
 const showRaw = () => process.env.STUDENT_SHOW_RAW !== 'false';
 const QUALITATIVE = {
@@ -213,6 +207,7 @@ async function loadSubjects(userId) {
 }
 
 async function loadAttendance(userId) {
+  const schoolYear = risk.getSchoolYear();
   const [rows] = await pool.query(`
     SELECT COALESCE(SUM(status='present'), 0) AS present,
            COALESCE(SUM(status='absent'),  0) AS absent,
@@ -220,7 +215,7 @@ async function loadAttendance(userId) {
            COALESCE(SUM(status='excused'), 0) AS excused
     FROM attendance
     WHERE student_id = ? AND date BETWEEN ? AND ?
-  `, [userId, SCHOOL_YEAR.start, SCHOOL_YEAR.end]);
+  `, [userId, schoolYear.start, schoolYear.end]);
 
   const r = rows[0] || {};
   const present = +r.present || 0, absent = +r.absent || 0;
@@ -239,7 +234,7 @@ async function loadAttendance(userId) {
     limit: ABSENCE_LIMIT,
     remaining: Math.max(ABSENCE_LIMIT - absences, 0),
     totalDays,
-    school_year: SCHOOL_YEAR,
+    school_year: schoolYear,
     rate: totalDays ? Math.round(((presentAdj + excused) / totalDays) * 100) : null,
   };
 }
@@ -448,11 +443,13 @@ function buildAlerts(list, att, atRisk = null) {
   const attFacts = [`Absences recorded: ${att.absent}`];
   if (att.converted) attFacts.push(`${att.converted} absence(s) came from ${att.late} lates`);
 
-  if (att.absent >= 10) {
+  const warnAt   = Math.ceil(ABSENCE_LIMIT * risk.AT_RISK.YEAR_WARN_AT);      // "soon" alert starts here
+  const urgentAt = Math.ceil(ABSENCE_LIMIT * risk.AT_RISK.YEAR_URGENT_AT);    // "urgent" alert starts here
+  if (att.absent >= warnAt) {
     add({
-      id: 'att-limit', sig: String(att.absent), type: att.absent >= 15 ? 'error' : 'warning', category: 'attendance',
+      id: 'att-limit', sig: String(att.absent), type: att.absent >= urgentAt ? 'error' : 'warning', category: 'attendance',
       title: `Attendance: ${att.absent} absences recorded`,
-      body: att.absent >= 15
+      body: att.absent >= urgentAt
         ? 'Your absences are very high. Talk to your adviser right away.'
         : 'Missing classes can affect your standing. Try to attend every class.',
       facts: attFacts, action: attAction,

@@ -3,14 +3,68 @@
 // (GET /teacher/at-risk) and the student portal (alert on GET /student/overview), so both always agree.
 'use strict';
 
-const AT_RISK = {
-  PASSING_GRADE: 75,        // grade (on submitted work) below this = failing
-  MISSING_WEIGHT_PCT: 20,   // missed work worth >= this many points of the term's initial grade = significant
-  MISSING_COUNT: 3,         // ...or this many missed activities in the term = significant
-  ABSENCE_LIMIT: 4,         // more than this many effective absences = at risk of dropping
-  LATES_PER_ABSENCE: 3,     // every N lates counts as 1 absence (keep in sync with teacher-utils.js)
-  WINDOW_DAYS: 30           // attendance look-back window
+// ============================================================================
+// SETTINGS - the only place to change the at-risk and attendance rules.
+// Edit a number here, OR set the matching name in your .env file (no code edit needed), then restart the server.
+// ============================================================================
+const num = (envName, fallback) => {
+  const v = Number(process.env[envName]);
+  return process.env[envName] !== undefined && process.env[envName] !== '' && Number.isFinite(v) ? v : fallback;
 };
+
+const AT_RISK = {
+  // ---- At risk of FAILING ----
+  PASSING_GRADE:      num('AT_RISK_PASSING_GRADE', 75),       // grade (on submitted work) below this = failing
+  MISSING_WEIGHT_PCT: num('AT_RISK_MISSING_WEIGHT_PCT', 20),  // missed work worth this many points of the term grade or more = significant
+  MISSING_COUNT:      num('AT_RISK_MISSING_COUNT', 3),        // ...or this many missed activities in the term = significant
+
+  // ---- At risk of DROPPING (recent attendance: teacher tab + student notification) ----
+  ABSENCE_LIMIT:      num('AT_RISK_ABSENCE_LIMIT', 4),        // MORE than this many effective absences inside the window = at risk
+  WINDOW_DAYS:        num('AT_RISK_WINDOW_DAYS', 30),         // how many days back to count (use ~300 to count the whole school year)
+  LATES_PER_ABSENCE:  num('LATES_PER_ABSENCE', 3),            // every N lates counts as 1 absence (everywhere on the server)
+
+  // ---- School-year absence maximum (student Attendance page numbers + the student's attendance alert) ----
+  YEAR_ABSENCE_LIMIT: num('YEAR_ABSENCE_LIMIT', 40),          // e.g. 20% of ~200 school days
+  YEAR_WARN_AT:       num('YEAR_WARN_AT', 0.5),               // student gets a "soon" alert at this fraction of the limit (0.5 = half)
+  YEAR_URGENT_AT:     num('YEAR_URGENT_AT', 0.75),            // ...and an "urgent" alert at this fraction
+
+  // ---- School year (picked automatically from today's date; the totals reset when a new year starts) ----
+  // The school year runs from START (month/day) until END (month/day) of the following year.
+  // If DepEd moves the calendar, change the months/days here (or in .env). Months are 1-12.
+  SY_START_MONTH:     num('SCHOOL_YEAR_START_MONTH', 6),      // 6 = June
+  SY_START_DAY:       num('SCHOOL_YEAR_START_DAY', 1),
+  SY_END_MONTH:       num('SCHOOL_YEAR_END_MONTH', 4),        // 4 = April
+  SY_END_DAY:         num('SCHOOL_YEAR_END_DAY', 30)
+};
+
+// Works out the current school year from today's date. Called on every request, so it rolls over
+// by itself - no restart needed. To pin an exact year instead, set SCHOOL_YEAR_START and SCHOOL_YEAR_END
+// (YYYY-MM-DD) and optionally SCHOOL_YEAR_LABEL in .env; those win over the automatic dates.
+function getSchoolYear(today = new Date()) {
+  const A = AT_RISK;
+  if (process.env.SCHOOL_YEAR_START && process.env.SCHOOL_YEAR_END) {
+    return {
+      label: process.env.SCHOOL_YEAR_LABEL || `${process.env.SCHOOL_YEAR_START.slice(0, 4)}–${process.env.SCHOOL_YEAR_END.slice(0, 4)}`,
+      start: process.env.SCHOOL_YEAR_START, end: process.env.SCHOOL_YEAR_END, automatic: false
+    };
+  }
+  const p = (n) => String(n).padStart(2, '0');
+  const date = (y, m, d) => {                                  // clamp the day, so "April 31" becomes April 30
+    const last = new Date(y, m, 0).getDate();
+    return new Date(y, m - 1, Math.min(d, last));
+  };
+  const fmt = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+
+  // the year that has already started (before the start date we are still in last year's school year)
+  let startYear = today.getFullYear();
+  if (today < date(startYear, A.SY_START_MONTH, A.SY_START_DAY)) startYear -= 1;
+  const start = date(startYear, A.SY_START_MONTH, A.SY_START_DAY);
+  let end = date(startYear, A.SY_END_MONTH, A.SY_END_DAY);
+  if (end <= start) end = date(startYear + 1, A.SY_END_MONTH, A.SY_END_DAY);   // ends in the following year
+
+  const label = start.getFullYear() === end.getFullYear() ? String(start.getFullYear()) : `${start.getFullYear()}–${end.getFullYear()}`;
+  return { label: process.env.SCHOOL_YEAR_LABEL || label, start: fmt(start), end: fmt(end), automatic: true };
+}
 
 const TRANSMUTATION = [
   [99.49,100],[98.31,99],[97.13,98],[95.95,97],[94.77,96],[93.59,95],[92.41,94],[91.23,93],
@@ -180,4 +234,4 @@ function severityOf(failing, dropping) {
   return severe ? 'high' : 'medium';
 }
 
-module.exports = { AT_RISK, ACTIVITIES, SUBJECT_WEIGHTS, isSubjectType, weightsFor, analyzeWork, currentTermInfo, evaluateSubject, evaluateAttendance, severityOf, fmtDate };
+module.exports = { AT_RISK, getSchoolYear, ACTIVITIES, SUBJECT_WEIGHTS, isSubjectType, weightsFor, analyzeWork, currentTermInfo, evaluateSubject, evaluateAttendance, severityOf, fmtDate };
