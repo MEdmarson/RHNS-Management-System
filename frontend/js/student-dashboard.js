@@ -253,7 +253,7 @@ function renderTiles() {
     <button class="tile ${attention ? 'alert' : ''}" data-go="subjects" data-filter="${attention ? 'attention' : 'passed'}"><span class="go">→</span>
       <span>Needs attention</span><strong>${attention}</strong>
       <small>${p.failed} failed, ${p.inc} INC</small></button>
-    <button class="tile ${a.absent >= 10 ? 'alert' : ''}" data-go="attendance"><span class="go">→</span>
+    <button class="tile ${a.absent >= (a.warn_at ?? 10) ? 'alert' : ''}" data-go="attendance"><span class="go">→</span>
       <span>Total absences</span><strong>${a.absent}</strong>
       <small>${a.absent === 0 ? 'None so far. Keep it up!' : 'Tap for details'}</small></button>
     <button class="tile ${unread ? 'alert' : ''}" data-go="notifs" data-filter="${unread ? 'unread' : 'all'}"><span class="go">→</span>
@@ -368,8 +368,8 @@ function attInfo() {
 }
 function attMessage(a) {
   if (a.absent === 0)   return 'No absences recorded so far. Keep it up!';
-  if (a.absent >= 15)   return 'Your absences are very high. Talk to your adviser right away.';
-  if (a.absent >= 10)   return 'Your absences are adding up. Try to attend every class.';
+  if (a.absent >= (a.urgent_at ?? 15)) return 'Your absences are very high. Talk to your adviser right away.';
+  if (a.absent >= (a.warn_at ?? 10))   return 'Your absences are adding up. Try to attend every class.';
   return 'Try to attend every class and arrive on time.';
 }
 
@@ -384,8 +384,8 @@ function renderAttendance() {
   $('attStats').innerHTML = `
     <div class="tile"><span>Attendance rate</span><strong>${a.rate != null ? a.rate + '%' : '—'}</strong></div>
     <div class="tile"><span>Days present</span><strong>${a.present}</strong></div>
-    <div class="tile ${a.absent > 4 ? 'alert' : ''}"><span>Total absences</span><strong>${a.absent}</strong>
-      <small>${a.converted ? `Includes ${plural(a.converted, 'absence')} from lates` : 'Every 3 lates = 1 absence'}</small></div>
+    <div class="tile ${a.absent >= (a.warn_at ?? 10) ? 'alert' : ''}"><span>Total absences</span><strong>${a.absent}</strong>
+      <small>${a.converted ? `Includes ${plural(a.converted, 'absence')} from lates` : `Every ${a.lates_per_absence ?? 3} lates = 1 absence`}</small></div>
     <div class="tile"><span>Days late</span><strong>${a.late}</strong>
       <small>${a.converted ? plural(a.converted, 'absence') + ' from lates' : 'None converted'}</small></div>
     <div class="tile"><span>Excused</span><strong>${a.excused}</strong><small>Not counted as absent</small></div>`;
@@ -399,10 +399,11 @@ function renderAttendance() {
   $('attMessage').textContent = a.absent === 0 ? attMessage(a) : `${plural(a.absent, 'absence')} recorded. ${attMessage(a)}`;
 
   const marked = Math.max(a.absent - a.converted, 0);
-  const toNext = 3 - (a.late % 3);
+  const per = a.lates_per_absence ?? 3;
+  const toNext = per - (a.late % per);
   $('attBreakdown').innerHTML = `
     <li><span>Marked absent</span><span>${marked}</span></li>
-    <li><span>From lates<small>${a.late} late${a.late === 1 ? '' : 's'} ÷ 3</small></span><span>+ ${a.converted}</span></li>
+    <li><span>From lates<small>${a.late} late${a.late === 1 ? '' : 's'} ÷ ${per}</small></span><span>+ ${a.converted}</span></li>
     <li><span>Excused<small>Not counted</small></span><span>${a.excused}</span></li>
     <li><span>Total absences</span><span>${a.absent}</span></li>`;
   if (a.late > 0) {
@@ -523,7 +524,7 @@ function flushReads() {
     const ids = [...pendingReads];
     pendingReads.clear();
     if (!ids.length) return;
-    try { await apiFetch('/student/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }); }
+    try { await apiFetch('/student/notifications/read', { method: 'POST', body: JSON.stringify({ ids }), silent: true }); }   // background: no overlay
     catch (err) { console.error('Could not mark notifications as read:', err); }
   }, 500);
 }
@@ -622,7 +623,7 @@ async function openSubjectModal(subjectId, trigger) {
   }
 
   try {
-    const grades = await apiFetch(`/student/subjects/${subjectId}/details`);
+    const grades = await apiFetch(`/student/subjects/${subjectId}/details`, { silent: true });   // the modal shows its own "Loading details…"
     const descColor = { Advancing: 'green', Benchmarking: '#1e3a8a', Connecting: '#0369a1', Developing: '#b45309', Emerging: 'red' };
     const qualColor = { 'Passed': '#166534', 'Failed': '#991b1b', 'INC / Not Submitted': '#92400e', 'In Progress': '#1e3a8a' };
 
@@ -726,9 +727,8 @@ function showLoadError(err) {
 }
 
 async function loadAll({ silent = false } = {}) {
-  if (!silent) $('loadingOverlay').style.display = 'flex';
   try {
-    const d = await apiFetch('/student/overview');
+    const d = await apiFetch('/student/overview', { silent });   // apiFetch shows/hides the loading overlay itself
     state.subjects = d.subjects;
     state.progress = d.progress;
     state.attendance = d.attendance;
@@ -739,8 +739,6 @@ async function loadAll({ silent = false } = {}) {
   } catch (err) {
     console.error('Failed to load dashboard:', err);
     if (!silent) showLoadError(err);
-  } finally {
-    $('loadingOverlay').style.display = 'none';
   }
 }
 
