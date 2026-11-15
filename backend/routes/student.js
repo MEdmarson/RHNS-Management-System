@@ -6,170 +6,287 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.use(authenticate, authorize('student'));
 
 const ACTIVITIES = ['ww1','ww2','ww3','ww4','ww5','pt1','pt2','pt3','ex1','ex2','ex3'];
+const EXAMS = ['ex1','ex2','ex3'];
+const TERMS = [1, 2, 3];
+const PASSING = 75;
+const INC_THRESHOLD = 3;       // missing items in a closed term that make it INC
+const ABSENCE_LIMIT = 20;      // DepEd limit per school year
+const LATES_PER_ABSENCE = 3;   // same rule as the teacher portal
+
+const showRaw = () => process.env.STUDENT_SHOW_RAW !== 'false';
+const QUALITATIVE = {
+  passed: 'Passed', failed: 'Failed', inc: 'INC / Not Submitted',
+  'in-progress': 'In Progress', pending: '—',
+};
 
 // ---------------------------------------------------------------------------
-// HELPERS
+// TERM LOGIC
 // ---------------------------------------------------------------------------
-function analyzeTerm(grade) {
-  if (!grade) return { status: 'pending', hasAnyScore: false, missing: [], hasFinalExam: false };
+// A term is "closed" once its last exam is scored (or the teacher finished the
+// subject). Only closed terms can be INC or have overdue items, so activities
+// the teacher has planned but not given yet no longer count against the student.
+function analyzeTerm(grade, subjectFinished = false) {
+  if (!grade) return { status: 'pending', missing: [], overdue: [], hasAnyScore: false, finalDone: false };
 
-  const missing = [];
-  let hasAnyScore = false;
-  let hasFinalExam = false;
+  const hps = a => Number(grade[`${a}_hps`]) || 0;
+  const hasScore = a => grade[a] !== null && grade[a] !== undefined;
 
-  for (const a of ACTIVITIES) {
-    const score = grade[a];
-    const hps = Number(grade[`${a}_hps`]) || 0;
-    const hasScore = score !== null && score !== undefined;
+  const missing = ACTIVITIES.filter(a => hps(a) > 0 && !hasScore(a)).map(a => a.toUpperCase());
+  const hasAnyScore = ACTIVITIES.some(hasScore);
 
-    // Only count as missing if HPS is set and score is blank
-    if (hps > 0 && !hasScore) missing.push(a.toUpperCase());
+  // Last exam slot that has a max score. Subjects with no exam (e.g. Work Immersion)
+  // are done once every planned activity is scored.
+  const examSlots = EXAMS.filter(a => hps(a) > 0);
+  const lastExam = examSlots[examSlots.length - 1];
+  const finalDone = lastExam ? hasScore(lastExam) : (hasAnyScore && missing.length === 0);
 
-    if (hasScore) hasAnyScore = true;
-
-    // Check if the Final Exam (ex3 / TE) has been taken
-    if (a === 'ex3' && hasScore) hasFinalExam = true;
-  }
+  const closed = finalDone || subjectFinished;
+  const overdue = closed ? missing : [];
 
   let status;
-  // Only mark as INC if they missed 3 or more activities
-  if (missing.length >= 3) {
-    status = 'inc';
-  } else if (hasAnyScore && hasFinalExam) {
-    status = 'graded'; // Term is done
-  } else if (hasAnyScore) {
-    status = 'in-progress'; // Currently taking it
-  } else {
-    status = 'pending'; // Not started
-  }
+  if (closed && missing.length >= INC_THRESHOLD) status = 'inc';
+  else if (hasAnyScore && finalDone)             status = 'graded';
+  else if (hasAnyScore)                          status = 'in-progress';
+  else                                           status = 'pending';
 
-  return { status, hasAnyScore, missing, hasFinalExam };
+  return { status, missing, overdue, hasAnyScore, finalDone };
 }
 
-function qualitativeFromTerm(analysis, termGrade) {
-  if (analysis.status === 'inc')          return 'INC / Not Submitted';
-  if (analysis.status === 'pending')      return '—';
-  if (analysis.status === 'in-progress')  return 'In Progress';
-  if (termGrade && termGrade >= 75)       return 'Passed';
-  if (termGrade && termGrade > 0)         return 'Failed';
-  return '—';
+function termSummary(g, subjectFinished) {
+  const a = analyzeTerm(g, subjectFinished);
+  const grade = g && Number(g.term_grade) > 0 ? Number(g.term_grade) : null;
+  let status = a.status;
+  if (status === 'graded') {
+    // Teacher has not saved a computed grade yet, so the term is still open
+    status = grade === null ? 'in-progress' : grade >= PASSING ? 'passed' : 'failed';
+  }
+  return { status, grade, missing: a.missing, overdue: a.overdue };
+}
+
+function summarizeSubject(sub, gs) {
+  const raw = showRaw();
+  const finished = sub.subject_status === 'finished';
+
+  const terms = {};
+  for (const t of TERMS) terms[t] = termSummary(gs.find(x => Number(x.term) === t), finished);
+
+  const graded   = TERMS.filter(t => terms[t].status === 'passed' || terms[t].status === 'failed');
+  const incTerms = TERMS.filter(t => terms[t].status === 'inc');
+  const values   = graded.map(t => terms[t].grade);
+  const sum      = values.reduce((a, b) => a + b, 0);
+  const average  = values.length ? Math.round(sum / values.length) : null;
+
+  const isCompleted = graded.length === TERMS.length && incTerms.length === 0;
+  // A subject the teacher finished is final once it has grades and no INC
+  const isFinal = isCompleted || (finished && graded.length > 0 && incTerms.length === 0);
+
+  let status;
+  if (incTerms.length)       status = 'INC / Not Submitted';
+  else if (isFinal)          status = average >= PASSING ? 'Passed' : 'Failed';
+  else if (graded.length)    status = 'In Progress';
+  else                       status = 'Not Started';
+
+  // What the student still needs to finish with a rounded average of 75
+  let target = null;
+  if (raw && !isFinal && !incTerms.length && graded.length && graded.length < TERMS.length) {
+    const left = TERMS.length - graded.length;
+    const needed = Math.ceil(((PASSING - 0.5) * TERMS.length - sum) / left);
+    target = {
+      termsLeft: left,
+      needed,
+      state: needed <= 60 ? 'secured' : needed > 100 ? 'out_of_reach' : 'reachable',
+    };
+  }
+
+  const pick = fn => Object.fromEntries(TERMS.map(t => [t, fn(terms[t])]));
+
+  return {
+    subject_id:  sub.subject_id,
+    subject:     sub.subject,
+    teacher:     sub.teacher,
+    grade_level: sub.grade_level,
+
+    term1: raw ? terms[1].grade : null,
+    term2: raw ? terms[2].grade : null,
+    term3: raw ? terms[3].grade : null,
+
+    term_status:  pick(t => t.status),
+    term_overdue: pick(t => t.overdue),
+
+    term_grade:  average,
+    status,
+    graded_count: graded.length,
+    is_final:    isFinal,
+    is_active:   !finished && !isCompleted,
+    has_inc:     incTerms.length > 0,
+    finished_by_teacher: finished,
+    finished_at: sub.finished_at || null,
+    target,
+  };
+}
+
+function buildProgress(list) {
+  let completed = 0, passed = 0, failed = 0, inc = 0, inProgress = 0, notStarted = 0;
+  for (const s of list) {
+    if (s.has_inc)               inc++;
+    else if (s.is_final)       { completed++; if (s.status === 'Passed') passed++; else failed++; }
+    else if (s.graded_count > 0) inProgress++;
+    else                         notStarted++;
+  }
+  const total = list.length;
+  let promotionStatus = 'In Progress';
+  if (!total)                                promotionStatus = 'No subjects yet';
+  else if (failed > 0)                       promotionStatus = 'For Remediation';
+  else if (inc > 0)                          promotionStatus = 'Pending Requirements';
+  else if (completed === total)              promotionStatus = 'Cleared for Promotion / Graduation';
+
+  return {
+    total, completed, passed, failed, inc, inProgress, notStarted, promotionStatus,
+    pctComplete: total ? Math.round((completed / total) * 100) : 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// GET /student/subjects — Active + Past + per-term status
+// DATA LOADERS (shared by every endpoint so the numbers always agree)
+// ---------------------------------------------------------------------------
+async function loadSubjects(userId) {
+  const [subjects] = await pool.query(`
+    SELECT sub.id          AS subject_id,
+           sub.name        AS subject,
+           sub.status      AS subject_status,
+           sub.finished_at AS finished_at,
+           t.full_name     AS teacher,
+           s.grade_level   AS grade_level
+    FROM subjects sub
+    JOIN students s ON s.section_id = sub.section_id
+    JOIN users t    ON t.id = sub.teacher_id
+    WHERE s.user_id = ?
+    ORDER BY sub.name
+  `, [userId]);
+
+  const [grades] = await pool.query(`
+    SELECT g.*
+    FROM grades g
+    JOIN subjects sub ON sub.id = g.subject_id
+    JOIN students s   ON s.section_id = sub.section_id AND s.user_id = g.student_id
+    WHERE g.student_id = ?
+  `, [userId]);
+
+  const bySubject = {};
+  for (const g of grades) (bySubject[g.subject_id] ||= []).push(g);
+
+  return subjects.map(sub => summarizeSubject(sub, bySubject[sub.subject_id] || []));
+}
+
+async function loadAttendance(userId) {
+  const [rows] = await pool.query(`
+    SELECT COALESCE(SUM(status='present'), 0) AS present,
+           COALESCE(SUM(status='absent'),  0) AS absent,
+           COALESCE(SUM(status='late'),    0) AS late,
+           COALESCE(SUM(status='excused'), 0) AS excused
+    FROM attendance WHERE student_id = ?
+  `, [userId]);
+
+  const r = rows[0] || {};
+  const present = +r.present || 0, absent = +r.absent || 0;
+  const late = +r.late || 0, excused = +r.excused || 0;
+
+  // Same math as the teacher portal: every 3 lates count as 1 absence
+  const converted = Math.floor(late / LATES_PER_ABSENCE);
+  const absences = absent + converted;
+  const presentAdj = present + late - converted;
+  const totalDays = present + absent + late + excused;
+
+  return {
+    present: presentAdj,
+    absent: absences,
+    late, excused, converted,
+    limit: ABSENCE_LIMIT,
+    remaining: Math.max(ABSENCE_LIMIT - absences, 0),
+    totalDays,
+    rate: totalDays ? Math.round(((presentAdj + excused) / totalDays) * 100) : null,
+  };
+}
+
+// Live alerts worked out from the grades and attendance. They have no row in the
+// notifications table, so the browser remembers which ones the student has seen
+// (id + sig; a changed sig means something new happened).
+function buildAlerts(list, att) {
+  const alerts = [];
+
+  for (const s of list) {
+    for (const t of TERMS) {
+      const overdue = s.term_overdue[t] || [];
+      const st = s.term_status[t];
+
+      if (overdue.length) {
+        alerts.push({
+          id: `miss-${s.subject_id}-${t}`, sig: overdue.join(','),
+          type: st === 'inc' ? 'error' : 'warning',
+          title: `Missing requirements: ${s.subject} (Term ${t})`,
+          body: `Not yet submitted: ${overdue.join(', ')}. ` +
+                (st === 'inc' ? 'This term stays INC until they are complete.' : 'Submit them to your teacher to avoid an INC.'),
+        });
+      }
+      if (st === 'failed') {
+        const g = s[`term${t}`];
+        alerts.push({
+          id: `fail-${s.subject_id}-${t}`, sig: String(g ?? 'failed'), type: 'error',
+          title: `Below passing: ${s.subject} (Term ${t})`,
+          body: (g != null ? `Your grade is ${g}; passing is ${PASSING}. ` : `Your grade is below the passing mark of ${PASSING}. `) +
+                'Ask your teacher about make-up work.',
+        });
+      }
+    }
+  }
+
+  if (att.absent >= 10) {
+    const high = att.absent >= 15;
+    alerts.push({
+      id: 'att-limit', sig: String(att.absent), type: high ? 'error' : 'warning',
+      title: `Attendance: ${att.absent} of ${ABSENCE_LIMIT} absences used`,
+      body: att.remaining > 0
+        ? `You can miss ${att.remaining} more day${att.remaining === 1 ? '' : 's'} this school year.`
+        : 'You have reached the absence limit. Talk to your adviser right away.',
+    });
+  }
+
+  const rank = { error: 0, warning: 1 };
+  return alerts.map(a => ({ ...a, source: 'system', created_at: null }))
+               .sort((a, b) => rank[a.type] - rank[b.type]);
+}
+
+async function loadNotifications(userId, subjects, attendance) {
+  const [stored] = await pool.query(
+    'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+    [userId]
+  );
+  return { alerts: buildAlerts(subjects, attendance), messages: stored };
+}
+
+// ---------------------------------------------------------------------------
+// GET /student/overview — everything the dashboard needs in one round trip
+// ---------------------------------------------------------------------------
+router.get('/overview', async (req, res) => {
+  try {
+    const [subjects, attendance] = await Promise.all([
+      loadSubjects(req.user.id),
+      loadAttendance(req.user.id),
+    ]);
+    const notifications = await loadNotifications(req.user.id, subjects, attendance);
+    res.json({ subjects, progress: buildProgress(subjects), attendance, notifications });
+  } catch (err) {
+    console.error('Student Overview Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /student/subjects
 // ---------------------------------------------------------------------------
 router.get('/subjects', async (req, res) => {
   try {
-    // CHANGED: also select the teacher's status tag (active / finished) and finished_at
-    const [subjects] = await pool.query(`
-      SELECT sub.id          AS subject_id,
-             sub.name        AS subject,
-             sub.status      AS subject_status,
-             sub.finished_at AS finished_at,
-             t.full_name     AS teacher,
-             s.grade_level   AS grade_level
-      FROM subjects sub
-      JOIN students s ON s.section_id = sub.section_id
-      JOIN users t    ON t.id = sub.teacher_id
-      WHERE s.user_id = ?
-      ORDER BY sub.name
-    `, [req.user.id]);
-
-    const [grades] = await pool.query(`
-      SELECT g.*
-      FROM grades g
-      JOIN subjects sub ON sub.id = g.subject_id
-      JOIN students s   ON s.section_id = sub.section_id
-      WHERE s.user_id = ? AND g.student_id = ?
-    `, [req.user.id, req.user.id]);
-
-    const bySubject = {};
-    for (const g of grades) {
-      (bySubject[g.subject_id] ||= []).push(g);
-    }
-
-    const showRaw = process.env.STUDENT_SHOW_RAW !== 'false';
-
-    const out = subjects.map(sub => {
-      const gs = bySubject[sub.subject_id] || [];
-
-      const termGrades = {};
-      const termStatus = {};
-      const termMissing = {};
-
-      let previousTermFinished = true; // Term 1 always starts as true
-
-      for (const term of [1, 2, 3]) {
-        const g = gs.find(x => Number(x.term) === term);
-        const analysis = analyzeTerm(g);
-        termMissing[term] = analysis.missing;
-
-        if (!previousTermFinished) {
-          // If the previous term wasn't finished, this one is "Not Started"
-          termStatus[term] = 'pending';
-        } else if (g && g.term_grade !== null && Number(g.term_grade) > 0) {
-          // Only apply the grade and status if the term is fully completed
-          if (analysis.status === 'graded') {
-            termGrades[term] = Number(g.term_grade);
-            termStatus[term] = termGrades[term] >= 75 ? 'Passed' : 'Failed';
-          } else if (analysis.status === 'inc') {
-            termStatus[term] = 'inc';
-            previousTermFinished = false; // INC means this term isn't done
-          } else {
-            termStatus[term] = 'in-progress';
-            previousTermFinished = false; // Still in progress, so stop the chain
-          }
-        } else {
-          termStatus[term] = analysis.status === 'inc' ? 'inc' : 'in-progress';
-          if (termStatus[term] === 'in-progress' || termStatus[term] === 'inc') {
-            previousTermFinished = false;
-          }
-        }
-      }
-
-      const gradedTerms = [1,2,3].filter(t => termStatus[t] === 'Passed' || termStatus[t] === 'Failed');
-      const incTerms    = [1,2,3].filter(t => termStatus[t] === 'inc');
-
-      const gradeValues = gradedTerms.map(t => termGrades[t]).filter(v => v > 0);
-      const finalGrade = gradeValues.length
-        ? Math.round(gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length)
-        : null;
-
-      const isCompleted = gradedTerms.length === 3 && incTerms.length === 0;
-
-      // NEW: teacher tagged this subject as finished
-      const isFinishedByTeacher = sub.subject_status === 'finished';
-
-      let status;
-      if (incTerms.length > 0)          status = 'INC / Not Submitted';
-      else if (isCompleted)             status = finalGrade >= 75 ? 'Passed' : 'Failed';
-      else if (gradedTerms.length > 0)  status = 'In Progress';
-      else                              status = 'Not Started';
-
-      return {
-        subject_id:  sub.subject_id,
-        subject:     sub.subject,
-        teacher:     sub.teacher,
-        grade_level: sub.grade_level,
-
-        term1: showRaw ? (termGrades[1] ?? null) : null,
-        term2: showRaw ? (termGrades[2] ?? null) : null,
-        term3: showRaw ? (termGrades[3] ?? null) : null,
-
-        term_status:  termStatus,
-        term_missing: termMissing,
-
-        term_grade: finalGrade,
-        status,
-
-        // CHANGED: a subject is past if all terms are done OR the teacher marked it finished
-        is_active:   !isCompleted && !isFinishedByTeacher,
-        finished_at: sub.finished_at || null,
-        has_inc:     incTerms.length > 0,
-      };
-    });
-
-    res.json(out);
+    res.json(await loadSubjects(req.user.id));
   } catch (err) {
     console.error('Student Subjects Error:', err);
     res.status(500).json({ error: err.message });
@@ -177,46 +294,46 @@ router.get('/subjects', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/subjects/:subjectId/details
+// GET /student/subjects/:subjectId/details — always returns Terms 1 to 3
 // ---------------------------------------------------------------------------
 router.get('/subjects/:subjectId/details', async (req, res) => {
   const { subjectId } = req.params;
   try {
     const [authCheck] = await pool.query(`
-      SELECT 1 FROM subjects sub
+      SELECT sub.status AS subject_status
+      FROM subjects sub
       JOIN students s ON s.section_id = sub.section_id
       WHERE sub.id = ? AND s.user_id = ?
     `, [subjectId, req.user.id]);
 
     if (!authCheck.length) return res.status(403).json({ error: 'Unauthorized' });
+    const finished = authCheck[0].subject_status === 'finished';
 
-    const [grades] = await pool.query(`
-      SELECT * FROM grades
-      WHERE subject_id = ? AND student_id = ?
-      ORDER BY term ASC
-    `, [subjectId, req.user.id]);
+    const [grades] = await pool.query(
+      'SELECT * FROM grades WHERE subject_id = ? AND student_id = ? ORDER BY term ASC',
+      [subjectId, req.user.id]
+    );
 
-    const showRaw = process.env.STUDENT_SHOW_RAW !== 'false';
+    const raw = showRaw();
+    const result = TERMS.map(t => {
+      const g = grades.find(x => Number(x.term) === t);
+      const ts = termSummary(g, finished);
+      const done = ts.status === 'passed' || ts.status === 'failed';
 
-    const result = grades.map(g => {
-      const analysis = analyzeTerm(g);
-      const termGrade = Number(g.term_grade) || 0;
-      const qualitative = qualitativeFromTerm(analysis, termGrade);
-
-      const activities = ACTIVITIES.map(a => ({
+      const activities = g ? ACTIVITIES.map(a => ({
         field:   a,
         score:   g[a],
         hps:     Number(g[`${a}_hps`]) || 0,
         missing: Number(g[`${a}_hps`]) > 0 && (g[a] === null || g[a] === undefined),
-      }));
+      })) : [];
 
       return {
-        term:               g.term,
-        activities:         showRaw ? activities : undefined,
-        initial_grade:      showRaw ? g.initial_grade : undefined,
-        term_grade:         showRaw ? g.term_grade : undefined,
-        descriptor:         g.descriptor,
-        qualitative,
+        term:               t,
+        activities:         raw ? activities : undefined,
+        initial_grade:      raw && g ? g.initial_grade : undefined,
+        term_grade:         raw && g ? g.term_grade : undefined,
+        descriptor:         done && g ? g.descriptor : null,
+        qualitative:        QUALITATIVE[ts.status],
         missing_activities: activities.filter(x => x.missing).map(x => x.field.toUpperCase()),
       };
     });
@@ -232,57 +349,7 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/progress', async (req, res) => {
   try {
-    const [subjects] = await pool.query(`
-      SELECT sub.id AS subject_id FROM subjects sub
-      JOIN students s ON s.section_id = sub.section_id
-      WHERE s.user_id = ?
-    `, [req.user.id]);
-
-    const [grades] = await pool.query(`
-      SELECT g.* FROM grades g
-      JOIN subjects sub ON sub.id = g.subject_id
-      JOIN students s   ON s.section_id = sub.section_id
-      WHERE s.user_id = ? AND g.student_id = ?
-    `, [req.user.id, req.user.id]);
-
-    const bySubject = {};
-    for (const g of grades) (bySubject[g.subject_id] ||= []).push(g);
-
-    let completed = 0, passed = 0, failed = 0, inc = 0, inProgress = 0, notStarted = 0;
-
-    for (const sub of subjects) {
-      const gs = bySubject[sub.subject_id] || [];
-      const statuses = [1,2,3].map(t => analyzeTerm(gs.find(x => Number(x.term) === t)).status);
-      const gradedTerms = statuses.filter(s => s === 'graded');
-      const incTerms    = statuses.filter(s => s === 'inc');
-
-      if (incTerms.length > 0) {
-        inc++;
-        continue;
-      }
-
-      if (gradedTerms.length === 3) {
-        completed++;
-        const vals = gs.map(g => Number(g.term_grade) || 0).filter(v => v > 0);
-        const final = vals.length ? Math.round(vals.reduce((a,b) => a+b, 0) / vals.length) : 0;
-        if (final >= 75) passed++; else failed++;
-      } else if (gradedTerms.length > 0) {
-        inProgress++;
-      } else {
-        notStarted++;
-      }
-    }
-
-    const total = subjects.length;
-    let promotionStatus = 'In Progress';
-    if (failed > 0)                                 promotionStatus = 'For Remediation';
-    else if (inc > 0)                               promotionStatus = 'Pending Requirements';
-    else if (total > 0 && completed === total)      promotionStatus = 'Cleared for Promotion / Graduation';
-
-    res.json({
-      total, completed, passed, failed, inc, inProgress, notStarted, promotionStatus,
-      pctComplete: total ? Math.round((completed / total) * 100) : 0,
-    });
+    res.json(buildProgress(await loadSubjects(req.user.id)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -293,56 +360,35 @@ router.get('/progress', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/attendance', async (req, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT COALESCE(SUM(status='present'), 0) AS present,
-             COALESCE(SUM(status='absent'),  0) AS absent,
-             COALESCE(SUM(status='late'),    0) AS late
-      FROM attendance WHERE student_id = ?
-    `, [req.user.id]);
-    res.json(rows[0] || { present: 0, absent: 0, late: 0 });
+    res.json(await loadAttendance(req.user.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// GET /student/notifications
+// GET /student/notifications  →  { alerts: [...live], messages: [...stored] }
+// POST /student/notifications/read  →  marks stored messages as read
 // ---------------------------------------------------------------------------
 router.get('/notifications', async (req, res) => {
   try {
-    const [stored] = await pool.query(
-      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+    const [subjects, attendance] = await Promise.all([
+      loadSubjects(req.user.id),
+      loadAttendance(req.user.id),
+    ]);
+    res.json(await loadNotifications(req.user.id, subjects, attendance));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/notifications/read', async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (is_read = 0 OR is_read IS NULL)',
       [req.user.id]
     );
-
-    const [grades] = await pool.query(`
-      SELECT g.*, sub.name AS subject_name
-      FROM grades g
-      JOIN subjects sub ON sub.id = g.subject_id
-      JOIN students s   ON s.section_id = sub.section_id
-      WHERE s.user_id = ? AND g.student_id = ?
-    `, [req.user.id, req.user.id]);
-
-    const virtual = [];
-    const seen = new Set();
-    for (const g of grades) {
-      const analysis = analyzeTerm(g);
-      if (analysis.missing.length === 0) continue;
-      const key = `${g.subject_id}:${g.term}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      virtual.push({
-        id:         `inc-${g.subject_id}-${g.term}`,
-        type:       'warning',
-        title:      `Missing: ${g.subject_name} (Term ${g.term})`,
-        body:       `Unsubmitted activities: ${analysis.missing.join(', ')}`,
-        created_at: new Date().toISOString(),
-        is_read:    false,
-      });
-    }
-
-    res.json([...virtual, ...stored]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

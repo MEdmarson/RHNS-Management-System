@@ -7,114 +7,144 @@
   <link rel="icon" href="rnshs-logo.png">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .welcome-banner {
-      background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 100%);
-      color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px;
-      box-shadow: 0 4px 12px rgba(30, 58, 138, 0.2);
+    /* ---------- Hero: one look at where you stand ---------- */
+    .hero {
+      background: var(--primary); color: #fff; border: 2px solid #000;
+      border-radius: 12px; padding: 22px 24px; margin-bottom: 20px;
+      box-shadow: 6px 6px 0 var(--accent);
     }
-    .welcome-banner h1 { margin: 0 0 8px 0; font-size: 24px; font-weight: 700; }
-    .welcome-banner p { margin: 0; opacity: 0.9; font-size: 14px; }
+    .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .hero h1 { font-size: 26px; line-height: 1.2; margin-bottom: 6px; }
+    .hero p { font-size: 14px; opacity: .92; max-width: 52ch; line-height: 1.5; }
+    .standing { background: #fff; color: var(--primary); border: 2px solid #000; border-radius: 8px; padding: 8px 14px; text-align: right; }
+    .standing span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+    .standing strong { font-size: 15px; }
+    .blocks { display: flex; gap: 4px; margin: 18px 0 10px; }
+    .block { flex: 1; min-width: 6px; height: 16px; border-radius: 3px; border: 1.5px solid #fff; background: rgba(255,255,255,.18); }
+    .c-passed   { background: var(--success); }
+    .c-failed   { background: var(--danger); }
+    .c-inc      { background: var(--warning); }
+    .c-progress { background: #93c5fd; }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; border: 1px solid #fff; vertical-align: -1px; }
+    .legend i.c-idle { background: rgba(255,255,255,.18); }
 
-    .status-pill {
-      display: inline-block; padding: 4px 10px; border-radius: 6px;
-      font-weight: 700; font-size: 12px;
-      background: #f3f4f6; color: #374151;
-    }
+    /* ---------- Summary tiles ---------- */
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .tile { background: #fff; border: 2px solid #000; border-radius: 10px; padding: 14px 16px; }
+    .tile span { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+    .tile strong { display: block; font-size: 28px; line-height: 1.25; color: var(--primary); }
+    .tile small { font-size: 12px; color: var(--muted); }
+    .tile.alert strong { color: var(--accent); }
+
+    /* ---------- Page grid ---------- */
+    .dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+    .dash-main, .dash-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .dash-grid .card { margin-bottom: 0; }
+    .sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .sec-head h3 { font-size: 16px; color: var(--primary); }
+    .sec-head span { font-size: 12px; color: var(--muted); }
+    .empty { text-align: center; padding: 20px; color: var(--muted); font-size: 14px; }
+    .link-btn { background: none; border: none; color: var(--primary); font-weight: 700; font-size: 13px; cursor: pointer; padding: 6px 0 0; }
+    .link-btn:hover { text-decoration: underline; }
+
+    /* ---------- What to do next ---------- */
+    .focus { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .focus-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; background: #fff; cursor: pointer;
+      border: 1.5px solid var(--border); border-left: 5px solid var(--muted); border-radius: 8px; }
+    .focus-item:hover, .focus-item:focus-visible { background: #f9fafb; outline: none; box-shadow: 0 0 0 3px rgba(30,58,138,.18); }
+    .focus-item.sev-3 { border-left-color: var(--danger); }
+    .focus-item.sev-2 { border-left-color: var(--warning); }
+    .focus-item.sev-1 { border-left-color: var(--primary); }
+    .focus-item.sev-0 { border-left-color: var(--success); cursor: default; }
+    .focus-item b { display: block; font-size: 14px; }
+    .focus-item p { font-size: 13px; color: #4b5563; margin-top: 2px; line-height: 1.45; }
+    .sev-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; background: #f3f4f6; color: #374151; margin-top: 1px; }
+    .sev-3 .sev-tag { background: #fee2e2; color: #991b1b; }
+    .sev-2 .sev-tag { background: #fef3c7; color: #92400e; }
+    .sev-1 .sev-tag { background: #dbeafe; color: #1e3a8a; }
+    .sev-0 .sev-tag { background: #dcfce7; color: #166534; }
+
+    /* ---------- Subject cards ---------- */
+    .subj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+    .subj { background: #fff; border: 2px solid #000; border-radius: 12px; padding: 16px; cursor: pointer; transition: box-shadow .15s; }
+    .subj:hover, .subj:focus-visible { box-shadow: 4px 4px 0 var(--warning); outline: none; }
+    .subj-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .subj h4 { font-size: 16px; line-height: 1.25; }
+    .subj .teacher { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+    .terms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .term { border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center; background: #f9fafb; color: var(--muted); }
+    .term span { display: block; font-size: 11px; }
+    .term strong { font-size: 16px; }
+    .term.passed  { background: #dcfce7; border-color: #86efac; color: #166534; }
+    .term.failed  { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+    .term.inc     { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+    .term.ongoing { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+    .term.ongoing strong { font-size: 13px; line-height: 24px; }
+    .hint { font-size: 12px; margin-top: 10px; color: #374151; line-height: 1.45; }
+    .hint.bad { color: #991b1b; font-weight: 600; }
+    .hint.good { color: #166534; }
+
+    .status-pill { display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; background: #f3f4f6; color: #374151; white-space: nowrap; }
     .status-pill.in-progress { background: #eff6ff; color: #1e3a8a; }
-    .status-pill.passed      { background: #dcfce7; color: #166534; }
-    .status-pill.failed      { background: #fee2e2; color: #991b1b; }
-    .status-pill.inc         { background: #fef3c7; color: #92400e; }
+    .status-pill.passed { background: #dcfce7; color: #166534; }
+    .status-pill.failed { background: #fee2e2; color: #991b1b; }
+    .status-pill.inc    { background: #fef3c7; color: #92400e; }
 
-    .term-inc {
-      color: #92400e; font-weight: 700; font-size: 12px;
-      cursor: help; border-bottom: 1px dotted #92400e;
-    }
+    .clickable-row { cursor: pointer; }
+    .clickable-row:hover td { background: #f0f5ff; }
+    details.card > summary { cursor: pointer; font-weight: 700; color: var(--primary); font-size: 16px; }
+    details.card[open] > summary { margin-bottom: 14px; }
 
-    .clickable-row { cursor: pointer; transition: background 0.2s; }
-    .clickable-row:hover { background-color: #f0f5ff !important; }
+    /* ---------- Attendance ---------- */
+    .meter { background: #e5e7eb; border: 1.5px solid #000; border-radius: 8px; height: 14px; overflow: hidden; }
+    .meter-fill { height: 100%; transition: width .4s; }
+    .snap-line { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; }
+    .att-note { font-size: 13px; color: #4b5563; margin-top: 12px; line-height: 1.5; }
 
-    .modal {
-      display: none; position: fixed; z-index: 2000;
-      left: 0; top: 0; width: 100%; height: 100%;
-      background-color: rgba(0,0,0,0.5);
-      align-items: center; justify-content: center;
-    }
-    .modal-content {
-      background: #fff; padding: 24px; border-radius: 12px;
-      width: 100%; max-width: 700px; position: relative;
-      max-height: 90vh; overflow-y: auto;
-      animation: fadeIn 0.2s;
-    }
-    .close-btn {
-      position: absolute; top: 15px; right: 20px;
-      font-size: 24px; cursor: pointer; color: var(--muted);
-    }
-    .close-btn:hover { color: var(--danger); }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-    .breakdown-table th, .breakdown-table td { padding: 8px 10px; font-size: 13px; }
-    .breakdown-table th { background: #f9fafb; }
-    .breakdown-table td { border-bottom: 1px solid #e5e7eb; }
-    .bg-ww { background: #e0e7ff; }
-    .bg-pt { background: #dcfce7; }
-    .bg-ex { background: #fef3c7; }
-
-    .notif-preview {
-      padding: 12px; border-bottom: 1px solid var(--border);
-      display: flex; gap: 12px; align-items: flex-start;
-    }
+    /* ---------- Notifications ---------- */
+    .list-title { font-size: 13px; color: var(--muted); margin: 14px 0 4px; }
+    .list-title:first-child { margin-top: 0; }
+    .notif-preview { padding: 12px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
     .notif-preview:last-child { border-bottom: none; }
-    .notif-icon {
-      font-size: 20px; background: #f3f4f6; width: 36px; height: 36px;
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 50%; flex-shrink: 0;
-    }
+    .notif-preview.unread { background: #eff6ff; border-radius: 8px; }
+    .notif-icon { font-size: 18px; background: #f3f4f6; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; }
+    .notif-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .notif-head strong { font-size: 14px; }
+    .notif-when { font-size: 11px; color: #6b7280; }
+    .notif-body { margin-top: 4px; font-size: 13px; color: #374151; line-height: 1.45; }
+    .notif-badge { background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; margin-left: auto; box-shadow: 0 0 0 2px var(--accent); animation: popIn .3s cubic-bezier(.175,.885,.32,1.275); }
+    @keyframes popIn { 0% { transform: scale(0); } 100% { transform: scale(1); } }
 
-    /* Notification Badge */
-    .notif-badge {
-      background: var(--danger);
-      color: white;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 10px;
-      margin-left: auto; 
-      box-shadow: 0 0 0 2px var(--accent); 
-      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
+    /* ---------- Subject modal ---------- */
+    .modal { display: none; position: fixed; z-index: 2000; inset: 0; background: rgba(0,0,0,.5); align-items: center; justify-content: center; padding: 12px; }
+    .modal-content { background: #fff; padding: 24px; border: 2px solid #000; border-radius: 12px; width: 100%; max-width: 720px; position: relative; max-height: 90vh; overflow-y: auto; animation: fadeIn .2s; }
+    .close-btn { position: absolute; top: 12px; right: 14px; font-size: 26px; line-height: 1; cursor: pointer; color: var(--muted); background: none; border: none; padding: 4px 8px; }
+    .close-btn:hover { color: var(--danger); }
+    .modal-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13px; margin-bottom: 14px; }
+    .breakdown-table th, .breakdown-table td { padding: 8px 10px; font-size: 13px; text-align: center; vertical-align: middle; border-bottom: 1px solid #e5e7eb; }
+    .breakdown-table th { background: #f9fafb; color: #111827; text-transform: none; }
+    .bg-ww { background: #e0e7ff; } .bg-pt { background: #dcfce7; } .bg-ex { background: #fef3c7; }
+    .modal-note { font-size: 12px; color: #111827; margin-top: 14px; text-align: center; }
 
-    @keyframes popIn {
-      0% { transform: scale(0); }
-      100% { transform: scale(1); }
-    }
-
-    @media (max-width: 768px) {
-      .notif-badge {
-        margin-left: 0;
-        position: absolute;
-        top: 5px;
-        right: 15px;
-      }
-    }
-
-    /* Toast Notifications */
-    #toastContainer {
-      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-      display: flex; flex-direction: column; gap: 12px;
-    }
-    .toast {
-      background: #ffffff; padding: 16px; border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      display: flex; align-items: flex-start; gap: 12px;
-      width: 320px; border-left: 4px solid var(--primary);
-      animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
+    /* ---------- Toasts ---------- */
+    #toastContainer { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 12px; }
+    .toast { background: #fff; padding: 14px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.15); display: flex; align-items: flex-start; gap: 12px; width: 320px; border-left: 4px solid var(--primary); }
     .toast.warning { border-left-color: var(--warning); }
     .toast.error { border-left-color: var(--danger); }
     .toast:hover { background: #f9fafb; }
-    @keyframes slideInRight {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
+
+    @media (max-width: 1000px) { .dash-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) {
+      .hero { padding: 16px; box-shadow: 4px 4px 0 var(--accent); }
+      .hero h1 { font-size: 22px; }
+      .standing { text-align: left; width: 100%; }
+      .tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .tile strong { font-size: 24px; }
+      .subj-grid { grid-template-columns: 1fr; }
+      .modal-content { padding: 18px 14px; }
+      #toastContainer { bottom: 80px; left: 10px; right: 10px; }
+      .toast { width: auto; }
     }
   </style>
 </head>
@@ -122,7 +152,7 @@
 
 <div id="loadingOverlay">
   <div class="spinner"></div>
-  <div style="font-weight: 600; color: var(--primary);">Loading...</div>
+  <div style="font-weight: 600; color: var(--primary);">Loading your records…</div>
 </div>
 
 <div class="app">
@@ -132,13 +162,13 @@
       <span>RNHS</span>
     </div>
 
-    <button class="nav-item active" onclick="showView('dashboard', this)">
+    <button class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
       <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
     </button>
-    <button class="nav-item" onclick="showView('attendance', this)">
+    <button class="nav-item" data-view="attendance" onclick="showView('attendance')">
       <span class="nav-icon">📅</span><span class="nav-label">Attendance</span>
     </button>
-    <button class="nav-item" id="navNotifs" onclick="showView('notifs', this)">
+    <button class="nav-item" data-view="notifs" id="navNotifs" onclick="showView('notifs')">
       <span class="nav-icon">🔔</span><span class="nav-label">Notifications</span>
       <span id="notifBadge" class="notif-badge" style="display: none;">0</span>
     </button>
@@ -161,82 +191,91 @@
     <!-- 1. DASHBOARD -->
     <div class="view active" id="view-dashboard">
 
-      <div class="welcome-banner">
-        <h1 id="welcomeName">Welcome back!</h1>
-        <p>Here is a summary of your academic performance.</p>
-      </div>
-
-      <div class="stats-grid" id="stats"></div>
-
-      <div class="card" id="progressCard" style="margin-bottom:24px;">
-        <h3>🎯 Promotion Progress</h3>
-        <div style="background:#e5e7eb; border-radius:8px; height:24px; overflow:hidden; margin-bottom:8px;">
-          <div id="progressBar" style="height:100%; width:0%; background:var(--success); transition:width .5s;"></div>
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <h1 id="welcomeName">Welcome back!</h1>
+            <p id="heroLine">Loading your summary…</p>
+          </div>
+          <div class="standing">
+            <span>Promotion status</span>
+            <strong id="promotionStatus">—</strong>
+          </div>
         </div>
-        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:12px;">
-          <span id="progressText">Loading…</span>
-          <strong id="promotionStatus"></strong>
-        </div>
-        <div class="stats-grid" id="progressStats"></div>
-      </div>
+        <div class="blocks" id="subjectBlocks" role="img" aria-label="One block per subject, colored by result"></div>
+        <div class="legend" id="blocksLegend"></div>
+      </section>
 
-      <div class="card">
-        <h3>📖 Active Subjects</h3>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Subject</th>
-                <th>Teacher</th>
-                <th>Term 1</th>
-                <th>Term 2</th>
-                <th>Term 3</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="activeSubjectsBody"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="tiles" id="stats"></div>
 
-      <div class="card" style="margin-top: 24px;">
-        <h3>📚 Past Subjects</h3>
-        <div style="overflow-x: auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Subject</th>
-                <th>Teacher</th>
-                <th>Grade Level</th>
-                <th>Final Grade</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="pastSubjectsBody"></tbody>
-          </table>
+      <div class="dash-grid">
+        <div class="dash-main">
+
+          <section class="card">
+            <h3>What to do next</h3>
+            <ul class="focus" id="focusList"></ul>
+          </section>
+
+          <section>
+            <div class="sec-head">
+              <h3>Active subjects</h3>
+              <span id="activeCount"></span>
+            </div>
+            <div class="subj-grid" id="activeSubjects"></div>
+          </section>
+
+          <details class="card" id="pastCard" open>
+            <summary>Past subjects (<span id="pastCount">0</span>)</summary>
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Teacher</th>
+                    <th>Grade level</th>
+                    <th>Final grade</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="pastSubjectsBody"></tbody>
+              </table>
+            </div>
+          </details>
         </div>
+
+        <aside class="dash-side">
+          <section class="card">
+            <h3>Attendance</h3>
+            <div id="attSnapshot"></div>
+            <button class="link-btn" onclick="showView('attendance')">View attendance details</button>
+          </section>
+
+          <section class="card">
+            <h3>Latest notifications</h3>
+            <div id="notifPreview"></div>
+            <button class="link-btn" onclick="showView('notifs')">See all notifications</button>
+          </section>
+        </aside>
       </div>
     </div>
 
     <!-- 2. ATTENDANCE -->
     <div class="view" id="view-attendance" style="display:none">
-      <div class="stats-grid" id="attStats"></div>
+      <div class="tiles" id="attStats"></div>
       <div class="card">
-        <h3>📊 Absence Limit Tracker</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">
-          DepEd allows a maximum of 20 absences per school year.
+        <h3>Absence limit</h3>
+        <p class="att-note" style="margin: 0 0 14px;">
+          DepEd allows a maximum of 20 absences per school year. Every 3 lates count as 1 absence.
         </p>
-        <div style="background: #e5e7eb; border-radius: 8px; height: 24px; width: 100%; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">
-          <div id="attProgressBar" style="height: 100%; width: 0%; background: var(--success); transition: width 0.5s ease-in-out; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; color: white; font-size: 12px; font-weight: bold;"></div>
-        </div>
-        <p style="text-align: right; font-size: 13px; font-weight: 600; margin-top: 8px;" id="attProgressText">0 / 20 Absences</p>
+        <div id="attMeter"></div>
+        <p class="att-note" id="attMessage"></p>
       </div>
     </div>
 
     <!-- 3. NOTIFICATIONS -->
     <div class="view" id="view-notifs" style="display:none">
       <div class="card">
-        <h3>🔔 All Notifications</h3>
+        <h3>All notifications</h3>
         <div id="notifsList"></div>
       </div>
     </div>
@@ -244,15 +283,15 @@
   </main>
 </div>
 
-<div class="modal" id="subjectDetailModal">
+<div class="modal" id="subjectDetailModal" role="dialog" aria-modal="true" aria-labelledby="modalSubjectTitle">
   <div class="modal-content">
-    <span class="close-btn" onclick="closeSubjectModal()">&times;</span>
-    <h3 id="modalSubjectTitle" style="margin-bottom: 20px; color: var(--primary);">Subject Details</h3>
+    <button class="close-btn" id="modalClose" aria-label="Close" onclick="closeSubjectModal()">&times;</button>
+    <h3 id="modalSubjectTitle" style="margin-bottom: 14px; color: var(--primary); padding-right: 32px;">Subject details</h3>
     <div id="modalContent"></div>
   </div>
 </div>
 
-<div id="toastContainer"></div>
+<div id="toastContainer" aria-live="polite"></div>
 
 <script src="js/api.js"></script>
 <script src="js/student-dashboard.js"></script>

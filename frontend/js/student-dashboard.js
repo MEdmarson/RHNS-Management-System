@@ -1,41 +1,48 @@
 // js/student-dashboard.js
 requireAuth('student');
 const user = getUser();
-document.getElementById('userChip').textContent = '🎓 ' + user.name;
-document.getElementById('welcomeName').textContent = `Welcome back, ${user.name.split(' ')[0]}!`;
+const $ = id => document.getElementById(id);
+
+$('userChip').textContent = '🎓 ' + user.name;
+$('welcomeName').textContent = `Welcome back, ${user.name.split(' ')[0]}!`;
+
+const VIEWS = { dashboard: 'Dashboard', attendance: 'My Attendance', notifs: 'Notifications' };
+const REFRESH_MS = 120000;   // background refresh while the tab is visible
+const STALE_MS = 60000;      // refresh when switching views if data is older than this
+
+const state = {
+  subjects: [], progress: null, attendance: null,
+  alerts: [], messages: [], suggestions: [],
+  view: 'dashboard', lastLoad: 0, lastBadge: null,
+};
+let lastFocus = null;
 
 // ---- Helpers ----
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 function showToast(message, type = 'info', onClick = null) {
-  const container = document.getElementById('toastContainer');
+  const container = $('toastContainer');
   if (!container) return;
 
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.style.cursor = onClick ? 'pointer' : 'default';
-  
   const icon = type === 'warning' ? '⚠️' : type === 'error' ? '🚨' : '🔔';
-  
+
   toast.innerHTML = `
     <div style="font-size: 20px;">${icon}</div>
     <div style="flex: 1;">
       <strong>${escapeHtml(message.title)}</strong>
       <div style="font-size: 12px; color: #4b5563; margin-top: 4px;">${escapeHtml(message.body)}</div>
-    </div>
-  `;
+    </div>`;
 
-  if (onClick) {
-    toast.addEventListener('click', () => {
-      onClick();
-      toast.remove();
-    });
-  }
-
+  if (onClick) toast.addEventListener('click', () => { onClick(); toast.remove(); });
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -45,289 +52,454 @@ function showToast(message, type = 'info', onClick = null) {
   }, 6000);
 }
 
-function statusPill(status) {
-  const map = {
-    'Passed':              'passed',
-    'Failed':              'failed',
-    'INC / Not Submitted': 'inc',
-    'In Progress':         'in-progress',
-    'Not Started':         'in-progress',
-  };
-  const cls = map[status] || 'in-progress';
-  return `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
+const STATUS_CLASS = {
+  'Passed': 'passed', 'Failed': 'failed', 'INC / Not Submitted': 'inc',
+  'In Progress': 'in-progress', 'Not Started': '',
+};
+const statusPill = s => `<span class="status-pill ${STATUS_CLASS[s] ?? ''}">${escapeHtml(s)}</span>`;
+const meter = (pct, color) =>
+  `<div class="meter" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100">
+     <div class="meter-fill" style="width:${pct}%; background:${color};"></div></div>`;
+
+// ---- Which live alerts has this student already seen? (kept in this browser) ----
+const SEEN_KEY = `rnhs_seen_alerts_${user.id ?? user.name}`;
+function loadSeen() { try { return JSON.parse(localStorage.getItem(SEEN_KEY)) || {}; } catch { return {}; } }
+function saveSeen(o) { try { localStorage.setItem(SEEN_KEY, JSON.stringify(o)); } catch { /* storage unavailable */ } }
+
+function unreadTotal() {
+  const seen = loadSeen();
+  return state.alerts.filter(a => seen[a.id] !== a.sig).length + state.messages.filter(m => !m.is_read).length;
 }
 
-function termCell(termNum, subj) {
-  const st = subj.term_status?.[termNum];
-  
-  if (st === 'inc') {
-    return `<span class="term-inc" title="Missing requirements">INC</span>`;
-  }
-  
-  if (st === 'Passed') return `<span style="color: #166534; font-weight: 700; font-size: 12px;">Passed</span>`;
-  if (st === 'Failed') return `<span style="color: #991b1b; font-weight: 700; font-size: 12px;">Failed</span>`;
-  if (st === 'in-progress') return `<span style="color: #1e3a8a; font-weight: 700; font-size: 12px;">In Progress</span>`;
-  if (st === 'pending') return `<span style="color: #6b7280; font-weight: 600; font-size: 12px;">Not Started</span>`;
-  
-  return '—';
+function updateBadge() {
+  const n = unreadTotal();
+  const badge = $('notifBadge');
+  badge.textContent = n > 9 ? '9+' : n;
+  badge.style.display = n > 0 ? 'inline-block' : 'none';
+  return n;
 }
 
 // ---- Navigation ----
-function showView(name, el) {
+function showView(name, { push = true } = {}) {
+  if (!VIEWS[name]) name = 'dashboard';
+  state.view = name;
+
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-  document.getElementById(`view-${name}`).style.display = 'block';
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  el.classList.add('active');
+  $(`view-${name}`).style.display = 'block';
+  document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  $('pageTitle').textContent = VIEWS[name];
 
-  const titles = {
-    'dashboard':  'Dashboard',
-    'attendance': 'My Attendance',
-    'notifs':     'Notifications',
+  if (push && history.state?.view !== name) history.pushState({ view: name }, '', '#' + name);
+
+  if (name === 'notifs') { renderNotifs(); markAllRead(); }
+  if (state.lastLoad && Date.now() - state.lastLoad > STALE_MS) loadAll({ silent: true });
+}
+
+window.addEventListener('popstate', e => showView(e.state?.view || location.hash.slice(1), { push: false }));
+
+// ---- Suggestions ----
+function subjectHint(s) {
+  const incTerm = [1, 2, 3].find(n => s.term_status[n] === 'inc');
+  if (incTerm) return { cls: 'bad', text: `INC in Term ${incTerm}. Submit the missing requirements to your teacher.` };
+
+  const t = s.target;
+  if (!t) return null;
+  if (t.state === 'secured') return { cls: 'good', text: 'You are on track to pass this subject.' };
+  if (t.state === 'out_of_reach') return { cls: 'bad', text: 'Passing by grades alone is no longer possible. Ask your teacher about remediation.' };
+  return {
+    cls: '',
+    text: t.termsLeft === 1
+      ? `You need at least ${t.needed} in the last term to pass.`
+      : `You need an average of at least ${t.needed} over the remaining ${t.termsLeft} terms to pass.`,
   };
-  document.getElementById('pageTitle').textContent = titles[name];
+}
 
-  if (name === 'attendance') loadAttendance();
-  
-  if (name === 'notifs') {
-    document.getElementById('notifBadge').style.display = 'none';
-    loadNotifs(false);
+function buildSuggestions() {
+  const out = [];
+  const push = (sev, title, body, action = {}) => out.push({ sev, title, body, ...action });
+
+  for (const s of state.subjects) {
+    for (const n of [1, 2, 3]) {
+      const overdue = s.term_overdue[n] || [];
+      const st = s.term_status[n];
+      if (overdue.length) {
+        push(st === 'inc' ? 3 : 2,
+          `${s.subject}, Term ${n}: ${plural(overdue.length, 'item')} missing`,
+          `Submit ${overdue.join(', ')} to your teacher${st === 'inc' ? ' to clear your INC.' : ' to avoid an INC.'}`,
+          { id: s.subject_id });
+      }
+      if (st === 'failed') {
+        const g = s[`term${n}`];
+        push(2, `${s.subject}, Term ${n}: ${g ?? 'below 75'}`,
+          'This is under the passing grade of 75. Ask your teacher about make-up work and review the topics you missed.',
+          { id: s.subject_id });
+      }
+    }
+    if (s.target?.state === 'out_of_reach') {
+      push(3, `${s.subject}: passing is at risk`, subjectHint(s).text, { id: s.subject_id });
+    } else if (s.target?.state === 'reachable') {
+      push(1, `${s.subject}: aim for ${s.target.needed}+`, subjectHint(s).text, { id: s.subject_id });
+    }
+  }
+
+  const a = state.attendance;
+  if (a) {
+    if (a.remaining <= 0) {
+      push(3, 'You reached the absence limit', 'Talk to your adviser right away about your attendance.', { view: 'attendance' });
+    } else if (a.absent >= 15) {
+      push(3, `Only ${plural(a.remaining, 'absence')} left`, 'Avoid missing any more classes this school year.', { view: 'attendance' });
+    } else if (a.absent >= 10) {
+      push(2, `${a.absent} of ${a.limit} absences used`, `You can miss ${plural(a.remaining, 'more day')}. Try to attend every class from here on.`, { view: 'attendance' });
+    }
+    if (a.late % 3 === 2) {
+      push(1, 'One more late counts as an absence', 'Every 3 lates are counted as 1 absence. Arrive on time to keep your record clean.', { view: 'attendance' });
+    }
+  }
+
+  const p = state.progress;
+  if (!out.length && p?.total) {
+    if (p.completed === p.total) {
+      push(0, 'All subjects completed', 'You have finished every subject. Check your promotion status above.');
+    } else {
+      push(0, 'You are on track', 'Nothing needs your attention right now. Keep submitting your activities on time.');
+    }
+  }
+
+  return out.sort((x, y) => y.sev - x.sev).slice(0, 6);
+}
+
+const SEV_LABEL = { 3: 'Urgent', 2: 'Soon', 1: 'Tip', 0: 'Good news' };
+
+function renderFocus() {
+  const list = state.suggestions;
+  $('focusList').innerHTML = list.length
+    ? list.map(s => `
+      <li class="focus-item sev-${s.sev}" ${s.id || s.view ? `tabindex="0" role="button" data-id="${s.id ?? ''}" data-view="${s.view ?? ''}"` : ''}>
+        <span class="sev-tag">${SEV_LABEL[s.sev]}</span>
+        <div><b>${escapeHtml(s.title)}</b><p>${escapeHtml(s.body)}</p></div>
+      </li>`).join('')
+    : '<li class="empty">Your suggestions will appear once you have subjects.</li>';
+}
+
+// ---- Dashboard renderers ----
+function renderHero() {
+  const p = state.progress;
+  const urgent = state.suggestions.filter(s => s.sev >= 2).length;
+
+  $('promotionStatus').textContent = p.promotionStatus;
+  $('heroLine').textContent = !p.total
+    ? 'No subjects are assigned to your section yet.'
+    : `${p.completed} of ${p.total} subjects completed. ` +
+      (urgent ? `${plural(urgent, 'item')} need${urgent === 1 ? 's' : ''} your attention.` : 'Nothing urgent right now.');
+
+  const cls = { 'Passed': 'c-passed', 'Failed': 'c-failed', 'INC / Not Submitted': 'c-inc', 'In Progress': 'c-progress' };
+  $('subjectBlocks').innerHTML = state.subjects
+    .map(s => `<div class="block ${cls[s.status] || ''}" title="${escapeHtml(s.subject)}: ${escapeHtml(s.status)}"></div>`).join('');
+
+  const parts = [
+    ['c-passed', 'Passed', p.passed], ['c-failed', 'Failed', p.failed], ['c-inc', 'INC', p.inc],
+    ['c-progress', 'In progress', p.inProgress], ['c-idle', 'Not started', p.notStarted],
+  ].filter(x => x[2] > 0);
+  $('blocksLegend').innerHTML = parts.map(([c, label, n]) => `<span><i class="${c}"></i>${label} ${n}</span>`).join('');
+}
+
+function renderTiles() {
+  const p = state.progress, a = state.attendance;
+  const attention = p.failed + p.inc;
+  $('stats').innerHTML = `
+    <div class="tile"><span>Active subjects</span><strong>${state.subjects.filter(s => s.is_active).length}</strong></div>
+    <div class="tile"><span>Passed</span><strong>${p.passed}</strong></div>
+    <div class="tile ${attention ? 'alert' : ''}"><span>Needs attention</span><strong>${attention}</strong>
+      <small>${p.failed} failed, ${p.inc} INC</small></div>
+    <div class="tile ${a.remaining <= 5 ? 'alert' : ''}"><span>Absences used</span><strong>${a.absent} / ${a.limit}</strong>
+      <small>${a.remaining} left</small></div>`;
+}
+
+function termChip(n, s) {
+  const st = s.term_status[n], g = s[`term${n}`];
+  let text = '—', cls = '';
+  if (st === 'passed' || st === 'failed') { text = g ?? (st === 'passed' ? 'Passed' : 'Failed'); cls = st; }
+  else if (st === 'inc')                  { text = 'INC'; cls = 'inc'; }
+  else if (st === 'in-progress')          { text = 'Ongoing'; cls = 'ongoing'; }
+  return `<div class="term ${cls}"><span>Term ${n}</span><strong>${text}</strong></div>`;
+}
+
+function renderSubjects() {
+  const active = state.subjects.filter(s => s.is_active);
+  const past = state.subjects.filter(s => !s.is_active);
+
+  $('activeCount').textContent = active.length ? plural(active.length, 'subject') : '';
+  $('activeSubjects').innerHTML = active.map(s => {
+    const hint = subjectHint(s);
+    return `
+      <article class="subj" tabindex="0" role="button" data-id="${s.subject_id}" aria-label="Open ${escapeHtml(s.subject)} details">
+        <div class="subj-top"><h4>${escapeHtml(s.subject)}</h4>${statusPill(s.status)}</div>
+        <p class="teacher">${escapeHtml(s.teacher)}</p>
+        <div class="terms">${[1, 2, 3].map(n => termChip(n, s)).join('')}</div>
+        ${hint ? `<p class="hint ${hint.cls}">${escapeHtml(hint.text)}</p>` : ''}
+      </article>`;
+  }).join('') || '<div class="card empty" style="grid-column: 1 / -1;">No active subjects. Finished subjects are listed under Past subjects.</div>';
+
+  $('pastCount').textContent = past.length;
+  $('pastSubjectsBody').innerHTML = past.map(s => `
+    <tr class="clickable-row" tabindex="0" data-id="${s.subject_id}">
+      <td><strong>${escapeHtml(s.subject)}</strong></td>
+      <td>${escapeHtml(s.teacher)}</td>
+      <td>${s.grade_level != null ? 'Grade ' + escapeHtml(s.grade_level) : '—'}</td>
+      <td style="font-weight:bold;">${s.term_grade ?? '—'}</td>
+      <td>${statusPill(s.status)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">No past subjects yet.</td></tr>';
+}
+
+// ---- Attendance ----
+function attInfo() {
+  const a = state.attendance;
+  const pct = Math.min((a.absent / a.limit) * 100, 100);
+  const color = pct > 75 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
+  return { a, pct, color };
+}
+
+function attMessage(a) {
+  if (a.remaining <= 0) return 'You reached the 20-absence limit. Talk to your adviser right away.';
+  if (a.remaining <= 5) return `Only ${plural(a.remaining, 'absence')} left. Avoid missing any more classes.`;
+  if (a.remaining <= 10) return `You have ${a.remaining} absences left. Keep an eye on it.`;
+  return `You have ${a.remaining} absences left. Keep it up.`;
+}
+
+function renderAttendance() {
+  const { a, pct, color } = attInfo();
+
+  $('attSnapshot').innerHTML = `
+    <div class="snap-line"><strong>${a.absent} of ${a.limit} absences used</strong><span>${a.rate != null ? a.rate + '% attendance' : ''}</span></div>
+    ${meter(pct, color)}
+    <p class="att-note">${escapeHtml(attMessage(a))}</p>`;
+
+  $('attStats').innerHTML = `
+    <div class="tile"><span>Attendance rate</span><strong>${a.rate != null ? a.rate + '%' : '—'}</strong></div>
+    <div class="tile"><span>Days present</span><strong>${a.present}</strong></div>
+    <div class="tile ${a.absent > 4 ? 'alert' : ''}"><span>Absences counted</span><strong>${a.absent}</strong></div>
+    <div class="tile"><span>Days late</span><strong>${a.late}</strong>
+      <small>${a.converted ? plural(a.converted, 'absence') + ' from lates' : 'None converted'}</small></div>
+    <div class="tile"><span>Excused</span><strong>${a.excused}</strong></div>`;
+
+  $('attMeter').innerHTML = meter(pct, color);
+  $('attMessage').textContent = `${a.absent} / ${a.limit} absences. ${attMessage(a)}`;
+}
+
+// ---- Notifications ----
+const NOTIF_ICON = { warning: '⚠️', error: '🚨' };
+
+function notifItem(n, unread) {
+  const when = n.created_at ? new Date(n.created_at).toLocaleString() : 'Current';
+  return `
+    <div class="notif-preview ${unread ? 'unread' : ''}">
+      <div class="notif-icon">${NOTIF_ICON[n.type] || '📢'}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="notif-head"><strong>${escapeHtml(n.title)}</strong><span class="notif-when">${escapeHtml(when)}</span></div>
+        <div class="notif-body">${escapeHtml(n.body || '')}</div>
+      </div>
+    </div>`;
+}
+
+function renderPreview() {
+  const seen = loadSeen();
+  const items = [
+    ...state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig)),
+    ...state.messages.map(m => notifItem(m, !m.is_read)),
+  ].slice(0, 3);
+  $('notifPreview').innerHTML = items.join('') || '<p class="empty">No notifications yet.</p>';
+}
+
+function renderNotifs() {
+  const seen = loadSeen();
+  const alerts = state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig)).join('');
+  const msgs = state.messages.map(m => notifItem(m, !m.is_read)).join('');
+  $('notifsList').innerHTML =
+    (alerts ? `<h4 class="list-title">Needs your attention</h4>${alerts}` : '') +
+    (msgs ? `<h4 class="list-title">Messages</h4>${msgs}` : '') ||
+    '<p class="empty">No notifications yet.</p>';
+}
+
+// Opening the Notifications page counts as reading everything on it
+async function markAllRead() {
+  const seen = loadSeen();
+  state.alerts.forEach(a => { seen[a.id] = a.sig; });
+  saveSeen(seen);
+
+  const hadUnread = state.messages.some(m => !m.is_read);
+  state.messages.forEach(m => { m.is_read = true; });
+  updateBadge();
+  state.lastBadge = 0;
+  renderPreview();
+
+  if (hadUnread) {
+    try { await apiFetch('/student/notifications/read', { method: 'POST' }); }
+    catch (err) { console.error('Could not mark notifications as read:', err); }
   }
 }
 
-// ---- Dashboard ----
-async function loadDashboard() {
-  try {
-    const [subjects, progress] = await Promise.all([
-      apiFetch('/student/subjects'),
-      apiFetch('/student/progress'),
-    ]);
+// One short toast, only when there is something new
+function announce() {
+  const n = updateBadge();
+  const grew = state.lastBadge !== null && n > state.lastBadge;
+  let shown = false;
+  try { shown = sessionStorage.getItem('rnhs_toast_shown') === '1'; } catch { /* ignore */ }
 
-    document.getElementById('stats').innerHTML = `
-      <div class="stat-card" style="border-left-color: var(--warning);">
-        <h4>Subjects Enrolled</h4>
-        <div class="value">${subjects.filter(s => s.is_active).length}</div>
-      </div>
-      <div class="stat-card success">
-        <h4>Passed</h4>
-        <div class="value">${subjects.filter(s => s.status === 'Passed').length}</div>
-      </div>
-      <div class="stat-card warn">
-        <h4>INC / Pending</h4>
-        <div class="value">${subjects.filter(s => s.has_inc).length}</div>
-      </div>
-    `;
-
-    const progressCard = document.getElementById('progressCard');
-    if (progressCard) {
-      document.getElementById('progressBar').style.width = `${progress.pctComplete}%`;
-      document.getElementById('progressText').textContent =
-        `${progress.completed} of ${progress.total} subjects completed (${progress.pctComplete}%)`;
-      document.getElementById('promotionStatus').textContent = progress.promotionStatus;
-      document.getElementById('progressStats').innerHTML = `
-        <div class="stat-card success"><h4>Passed</h4><div class="value">${progress.passed}</div></div>
-        <div class="stat-card danger"><h4>Failed</h4><div class="value">${progress.failed}</div></div>
-        <div class="stat-card warn"><h4>INC / Pending</h4><div class="value">${progress.inc}</div></div>
-        <div class="stat-card"><h4>In Progress</h4><div class="value">${progress.inProgress}</div></div>
-      `;
-    }
-
-    const active = subjects.filter(s => s.is_active);
-    const past   = subjects.filter(s => !s.is_active);
-
-    document.getElementById('activeSubjectsBody').innerHTML = active.map(s => `
-      <tr class="clickable-row" data-id="${s.subject_id}" data-name="${escapeHtml(s.subject)}">
-        <td><strong>${escapeHtml(s.subject)}</strong></td>
-        <td>${escapeHtml(s.teacher)}</td>
-        <td style="text-align:center;">${termCell(1, s)}</td>
-        <td style="text-align:center;">${termCell(2, s)}</td>
-        <td style="text-align:center;">${termCell(3, s)}</td>
-        <td>${statusPill(s.status)}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--muted);">No active subjects.</td></tr>';
-
-    document.getElementById('pastSubjectsBody').innerHTML = past.map(s => `
-      <tr class="clickable-row" data-id="${s.subject_id}" data-name="${escapeHtml(s.subject)}">
-        <td><strong>${escapeHtml(s.subject)}</strong></td>
-        <td>${escapeHtml(s.teacher)}</td>
-        <td style="text-align:center;">Grade ${s.grade_level ?? '—'}</td>
-        <td style="text-align:center; font-weight:bold;">${s.term_grade ?? '—'}</td>
-        <td>${statusPill(s.status)}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--muted);">No past subjects found.</td></tr>';
-
-    document.querySelectorAll('.clickable-row[data-id]').forEach(tr => {
-      tr.addEventListener('click', () => {
-        openSubjectModal(Number(tr.dataset.id), tr.dataset.name);
-      });
-    });
-
-    loadNotifs(true);
-
-  } catch (err) {
-    console.error(err);
-    document.getElementById('activeSubjectsBody').innerHTML =
-      `<tr><td colspan="6" style="text-align:center; padding:20px; color:red;">Failed to load: ${escapeHtml(err.message)}</td></tr>`;
+  if (n > 0 && state.view !== 'notifs' && (!shown || grew)) {
+    try { sessionStorage.setItem('rnhs_toast_shown', '1'); } catch { /* ignore */ }
+    showToast(
+      { title: `You have ${plural(n, 'new notification')}`, body: 'Click to read them.' },
+      state.alerts.some(a => a.type === 'error') ? 'error' : 'warning',
+      () => showView('notifs')
+    );
   }
+  state.lastBadge = n;
 }
 
 // ---- Subject modal ----
-async function openSubjectModal(subjectId, subjectName) {
-  document.getElementById('modalSubjectTitle').textContent = subjectName;
-  document.getElementById('modalContent').innerHTML =
-    '<p style="text-align:center; color:var(--muted);">Loading details...</p>';
-  document.getElementById('subjectDetailModal').style.display = 'flex';
+async function openSubjectModal(subjectId, trigger) {
+  const s = state.subjects.find(x => x.subject_id === subjectId);
+  lastFocus = trigger || document.activeElement;
+  $('modalSubjectTitle').textContent = s ? s.subject : 'Subject details';
+  $('modalContent').innerHTML = '<p class="empty">Loading details…</p>';
+  $('subjectDetailModal').style.display = 'flex';
+  $('modalClose').focus();
+
+  let head = '';
+  if (s) {
+    const hint = subjectHint(s);
+    head = `<div class="modal-summary">
+        ${statusPill(s.status)}
+        ${s.term_grade != null ? `<span>${s.is_final ? 'Final grade' : 'Average so far'}: <strong>${s.term_grade}</strong></span>` : ''}
+        <span>${escapeHtml(s.teacher)}</span>
+      </div>
+      ${hint ? `<p class="hint ${hint.cls}" style="margin: 0 0 14px;">${escapeHtml(hint.text)}</p>` : ''}`;
+  }
 
   try {
     const grades = await apiFetch(`/student/subjects/${subjectId}/details`);
-    if (!grades.length) {
-      document.getElementById('modalContent').innerHTML =
-        '<p style="text-align:center; color:var(--muted);">No grades recorded yet.</p>';
-      return;
-    }
+    const descColor = {
+      Advancing: 'green', Benchmarking: '#1e3a8a', Connecting: '#0369a1', Developing: '#b45309', Emerging: 'red',
+    };
+    const qualColor = { 'Passed': '#166534', 'Failed': '#991b1b', 'INC / Not Submitted': '#92400e', 'In Progress': '#1e3a8a' };
 
-    let html = '<div style="overflow-x: auto;"><table class="breakdown-table" style="width:100%; border-collapse:collapse;">';
-    
-    // Headers (Fixed syntax error from before to ensure they are black)
-    html += `<thead><tr>
-        <th style="text-align:center; width: 60px; color: #111827;">Term</th>
-        <th class="bg-ww" style="text-align:center; color: #111827;">WRITTEN / ORAL WORKS</th>
-        <th class="bg-pt" style="text-align:center; color: #111827;">PRODUCT / PERFORMANCE TASKS</th>
-        <th class="bg-ex" style="text-align:center; color: #111827;">EXAMINATIONS</th>
-        <th style="text-align:center; width: 90px; color: #111827;">Term Grade</th>
-        <th style="text-align:center; width: 100px; color: #111827;">Status</th>
-      </tr></thead><tbody>`;
+    const formatGroup = (g, prefix) => {
+      if (!g.activities) return '—';
+      return g.activities.filter(a => a.field.startsWith(prefix)).map(a => {
+        if (a.score !== null && a.score !== undefined) {
+          return `<div><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps}</span></div>`;
+        }
+        return a.hps > 0 ? `<div style="color:#92400e; font-size:12px; font-weight:600;">— / ${a.hps}</div>` : null;
+      }).filter(Boolean).join('') || '—';
+    };
 
-    grades.forEach(g => {
-      const formatGroup = (prefix) => {
-        if (!g.activities) return '—';
-        const items = g.activities.filter(a => a.field.startsWith(prefix));
-        
-        return items.map(a => {
-          if (a.score !== null && a.score !== undefined) {
-             return `<div style="margin-bottom: 2px;"><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps || 0}</span></div>`;
-          } else if (a.hps > 0) {
-             return `<div style="margin-bottom: 2px; color:#92400e; font-size:12px; font-weight:600;">— / ${a.hps}</div>`;
-          }
-          return null; 
-        }).filter(Boolean).join('') || '—';
-      };
-
-      const isFinished = g.qualitative === 'Passed' || g.qualitative === 'Failed';
-      
-      const descColor =
-        g.descriptor === 'Advancing'    ? 'green' :
-        g.descriptor === 'Benchmarking' ? '#1e3a8a'  :
-        g.descriptor === 'Connecting'   ? '#0369a1' :
-        g.descriptor === 'Developing'   ? '#b45309' :
-        g.descriptor === 'Emerging'     ? 'red'   : 'inherit';
-
-      let statusText = '—';
-      if (g.qualitative === 'Passed') statusText = '<span style="color:#166534; font-weight:700;">Passed</span>';
-      if (g.qualitative === 'Failed') statusText = '<span style="color:#991b1b; font-weight:700;">Failed</span>';
-      if (g.qualitative === 'INC / Not Submitted') statusText = '<span style="color:#92400e; font-weight:700;">INC</span>';
-      if (g.qualitative === 'In Progress') statusText = '<span style="color:#1e3a8a; font-weight:700;">In Progress</span>';
-
-      // CHANGED: vertical-align: middle; ensures text stays perfectly centered
-      html += `<tr>
-        <td style="text-align:center; font-weight:bold; font-size:14px; background:#f9fafb; vertical-align:middle;">${g.term}</td>
-        <td class="bg-ww" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('ww')}</td>
-        <td class="bg-pt" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('pt')}</td>
-        <td class="bg-ex" style="text-align:center; font-size:13px; vertical-align:middle;">${formatGroup('ex')}</td>
-        <td style="text-align:center; font-weight:bold; font-size:16px; background:#f9fafb; vertical-align:middle;">
-          ${isFinished ? (g.term_grade ?? '—') : '—'}<br>
-          <span style="font-size:11px; color:${descColor}; font-weight:600;">
-            ${isFinished ? escapeHtml(g.descriptor || '') : ''}
-          </span>
+    const rows = grades.map(g => {
+      const done = g.qualitative === 'Passed' || g.qualitative === 'Failed';
+      const qual = g.qualitative === 'INC / Not Submitted' ? 'INC' : g.qualitative;
+      return `<tr>
+        <td style="font-weight:bold; background:#f9fafb;">${g.term}</td>
+        <td class="bg-ww">${formatGroup(g, 'ww')}</td>
+        <td class="bg-pt">${formatGroup(g, 'pt')}</td>
+        <td class="bg-ex">${formatGroup(g, 'ex')}</td>
+        <td style="font-weight:bold; font-size:16px; background:#f9fafb;">
+          ${done && g.term_grade != null ? g.term_grade : '—'}<br>
+          <span style="font-size:11px; color:${descColor[g.descriptor] || 'inherit'}; font-weight:600;">${done ? escapeHtml(g.descriptor || '') : ''}</span>
         </td>
-        <td style="text-align:center; background:#f9fafb; vertical-align:middle;">${statusText}</td>
+        <td style="background:#f9fafb; font-weight:700; color:${qualColor[g.qualitative] || 'inherit'};">${escapeHtml(qual)}</td>
       </tr>`;
-    });
-    
-    html += '</tbody></table></div>';
-    
-    html += `<p style="font-size:12px; color:#111827; margin-top:16px; text-align:center; font-weight:500;">Scores are displayed as <strong>Your Score</strong> / Max Possible Score (HPS)</p>`;
-    
-    document.getElementById('modalContent').innerHTML = html;
+    }).join('');
+
+    $('modalContent').innerHTML = `${head}
+      <div style="overflow-x:auto;">
+        <table class="breakdown-table" style="width:100%; border-collapse:collapse;">
+          <thead><tr>
+            <th style="width:60px;">Term</th>
+            <th class="bg-ww">Written / oral works</th>
+            <th class="bg-pt">Product / performance tasks</th>
+            <th class="bg-ex">Examinations</th>
+            <th style="width:90px;">Term grade</th>
+            <th style="width:100px;">Status</th>
+          </tr></thead><tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="modal-note">Scores are shown as <strong>your score</strong> / highest possible score. An orange “— /” means the item is not submitted yet.</p>`;
   } catch (err) {
-    document.getElementById('modalContent').innerHTML =
-      `<p style="text-align:center; color:red;">Error: ${escapeHtml(err.message)}</p>`;
+    $('modalContent').innerHTML = `${head}<p class="empty" style="color:var(--danger);">Could not load details: ${escapeHtml(err.message)}</p>`;
   }
 }
 
 function closeSubjectModal() {
-  document.getElementById('subjectDetailModal').style.display = 'none';
+  $('subjectDetailModal').style.display = 'none';
+  if (lastFocus && lastFocus.focus) lastFocus.focus();
 }
 
-// ---- Attendance ----
-async function loadAttendance() {
-  const a = await apiFetch('/student/attendance');
-  const absences = parseInt(a.absent) || 0;
-  const limit = 20;
-  const percentage = Math.min((absences / limit) * 100, 100);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('subjectDetailModal').style.display === 'flex') closeSubjectModal();
+});
+$('subjectDetailModal').addEventListener('click', e => { if (e.target.id === 'subjectDetailModal') closeSubjectModal(); });
 
-  let color = 'var(--success)';
-  if (percentage > 50) color = 'var(--warning)';
-  if (percentage > 75) color = 'var(--danger)';
+// Open a subject (or jump to a view) from cards, table rows and suggestions
+function activate(e) {
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest('[data-id], [data-view]');
+  if (!el) return;
+  if (e.type === 'keydown') e.preventDefault();
+  if (el.dataset.id) openSubjectModal(Number(el.dataset.id), el);
+  else if (el.dataset.view) showView(el.dataset.view);
+}
+['activeSubjects', 'pastSubjectsBody', 'focusList'].forEach(id => {
+  $(id).addEventListener('click', activate);
+  $(id).addEventListener('keydown', activate);
+});
 
-  document.getElementById('attStats').innerHTML = `
-    <div class="stat-card success"><h4>Days Present</h4><div class="value">${a.present || 0}</div></div>
-    <div class="stat-card ${absences > 4 ? 'danger' : 'warn'}"><h4>Days Absent</h4><div class="value">${absences}</div></div>
-    <div class="stat-card"><h4>Days Late</h4><div class="value">${a.late || 0}</div></div>
-  `;
-
-  const bar = document.getElementById('attProgressBar');
-  bar.style.width = `${percentage}%`;
-  bar.style.background = color;
-  bar.textContent = percentage > 15 ? `${Math.round(percentage)}%` : '';
-  document.getElementById('attProgressText').textContent = `${absences} / ${limit} Absences`;
+// ---- Load everything in one request ----
+function renderAll() {
+  state.suggestions = buildSuggestions();
+  renderHero();
+  renderTiles();
+  renderFocus();
+  renderSubjects();
+  renderAttendance();
+  renderPreview();
+  if (state.view === 'notifs') { renderNotifs(); markAllRead(); }
+  else announce();
 }
 
-// ---- Notifications ----
-async function loadNotifs(showPopup = false) {
+function showLoadError(err) {
+  const msg = `<div class="card empty" style="grid-column: 1 / -1;">
+      Could not load your records: ${escapeHtml(err.message)}<br>
+      <button class="btn btn-small" style="margin-top:10px;" onclick="loadAll()">Try again</button></div>`;
+  $('activeSubjects').innerHTML = msg;
+  $('heroLine').textContent = 'We could not load your records.';
+}
+
+async function loadAll({ silent = false } = {}) {
+  if (!silent) $('loadingOverlay').style.display = 'flex';
   try {
-    const rows = await apiFetch('/student/notifications');
-    
-    const unreadCount = rows.filter(n => !n.is_read || n.type === 'warning').length;
-    const badge = document.getElementById('notifBadge');
-    
-    if (unreadCount > 0) {
-      badge.textContent = unreadCount > 9 ? '9+' : unreadCount; 
-      badge.style.display = 'inline-block';
-    } else {
-      badge.style.display = 'none';
-    }
-
-    document.getElementById('notifsList').innerHTML = rows.map(n => `
-      <div class="notif-preview">
-        <div class="notif-icon">${n.type === 'warning' ? '⚠️' : n.type === 'error' ? '🚨' : '📢'}</div>
-        <div style="flex:1;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${escapeHtml(n.title)}</strong>
-            <span style="font-size:11px; color:#6b7280;">${new Date(n.created_at).toLocaleString()}</span>
-          </div>
-          <div style="margin-top:6px; font-size:13px;">${escapeHtml(n.body || '')}</div>
-        </div>
-      </div>
-    `).join('') || '<p style="text-align:center; color:var(--muted); padding:20px;">No notifications yet.</p>';
-
-    if (showPopup && rows.length > 0) {
-      const latest = rows.find(n => !n.is_read || n.type === 'warning');
-      if (latest) {
-        showToast(
-          { title: latest.title, body: latest.body || 'Click to view all notifications.' },
-          latest.type === 'warning' ? 'warning' : 'info',
-          () => {
-            const notifBtn = document.getElementById('navNotifs');
-            if (notifBtn) showView('notifs', notifBtn);
-          }
-        );
-      }
-    }
+    const d = await apiFetch('/student/overview');
+    state.subjects = d.subjects;
+    state.progress = d.progress;
+    state.attendance = d.attendance;
+    state.alerts = d.notifications.alerts;
+    state.messages = d.notifications.messages;
+    state.lastLoad = Date.now();
+    renderAll();
   } catch (err) {
-    console.error('Failed to load notifications:', err);
+    console.error('Failed to load dashboard:', err);
+    if (!silent) showLoadError(err);
+  } finally {
+    $('loadingOverlay').style.display = 'none';
   }
 }
 
-// Fetch notifications immediately to show the badge on login
-loadNotifs(false); 
-loadDashboard();
+// Keep the page fresh while the student has it open
+setInterval(() => { if (!document.hidden) loadAll({ silent: true }); }, REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.lastLoad && Date.now() - state.lastLoad > STALE_MS) loadAll({ silent: true });
+});
+
+// Boot
+const startView = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard';
+history.replaceState({ view: startView }, '', '#' + startView);
+showView(startView, { push: false });
+loadAll();
