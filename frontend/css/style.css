@@ -893,3 +893,12 @@ tr:hover td {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The loading spinner must keep turning even with "reduce motion" on, otherwise the page looks frozen.
+   It is slower and gentler here, but still moving. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

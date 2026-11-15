@@ -38,8 +38,13 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(passwordValue, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Note: user.lrn will be undefined for students here because it's in the students table.
-    // But the token is created using the ID and role, which is what matters.
+    // Students keep their LRN in the students table; send it back so the change-password page can use it
+    let lrn = null;
+    if (user.role === 'student') {
+      const [s] = await pool.query('SELECT lrn FROM students WHERE user_id = ?', [user.id]);
+      lrn = s.length ? s[0].lrn : null;
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, name: user.full_name },
       process.env.JWT_SECRET,
@@ -51,6 +56,7 @@ router.post('/login', async (req, res) => {
       role: user.role, 
       name: user.full_name,
       email: user.email,
+      lrn,
       is_first_login: user.is_first_login 
     });
   } catch (e) {
@@ -65,6 +71,16 @@ router.post('/change-password', authenticate, async (req, res) => {
   const userId = req.user.id;
 
   try {
+    // Checked here too, because the browser checks can be skipped
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Your new password must be at least 6 characters.' });
+    }
+    // The first-login password is the LRN (students) or the email (teachers), so this also blocks reusing those
+    const [current] = await pool.query('SELECT password_hash FROM users WHERE id = ?', [userId]);
+    if (current.length && await bcrypt.compare(newPassword, current[0].password_hash)) {
+      return res.status(400).json({ error: 'Your new password must be different from your current password.' });
+    }
+
     const password_hash = await bcrypt.hash(newPassword, 10);
     
     // Update the password and turn off the first_login flag

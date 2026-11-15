@@ -1,4 +1,9 @@
-const API = '/api';
+// Where the API lives.
+//  - Leave '' when the pages and the API are on the same server (how it works now).
+//  - If the pages are hosted separately (e.g. a Render Static Site), put the API's address here,
+//    with no trailing slash, e.g. 'https://rnhs-api.onrender.com'
+const API_ORIGIN = 'https://rhns-management-system.onrender.com';
+const API = API_ORIGIN + '/api';
 
 function getToken() { return localStorage.getItem('token'); }
 function getUser()  { return JSON.parse(localStorage.getItem('user') || '{}'); }
@@ -12,8 +17,8 @@ const UI = {
   SLOW_MS: 6000,           // after this long, tell the user it is taking longer than usual
   WAKING_MS: 15000,        // after this long, explain that the server is waking up
   TIMEOUT_MS: 90000,       // give up on a single request after this long
-  RETRIES: 3,              // tries for requests that are safe to repeat (GET and login) when the server isn't ready
-  RETRY_WAIT_MS: 2000      // wait before retry n = n * this
+  RETRY_BUDGET_MS: 75000,  // keep retrying safe requests (GET and login) for this long while the server wakes up
+  RETRY_WAIT_MS: 3000      // pause between retries
 };
 
 let pendingLoads = 0;      // requests currently loading; the overlay hides only when this reaches 0
@@ -61,18 +66,25 @@ function fetchWithTimeout(url, opts) {
 
 // Retries only when it is safe (canRetry) and the server looks like it is still waking up (network error, 502/503/504)
 async function fetchWithRetry(url, opts, canRetry) {
-  const tries = canRetry ? UI.RETRIES : 1;
-  for (let attempt = 1; ; attempt++) {
+  const started = Date.now();
+  const mayRetry = () => canRetry && (Date.now() - started + UI.RETRY_WAIT_MS) < UI.RETRY_BUDGET_MS;
+  for (;;) {
     try {
       const res = await fetchWithTimeout(url, opts);
-      if (canRetry && [502, 503, 504].includes(res.status) && attempt < tries) { await sleep(UI.RETRY_WAIT_MS * attempt); continue; }
+      if ([502, 503, 504].includes(res.status) && mayRetry()) { await sleep(UI.RETRY_WAIT_MS); continue; }
       return res;
     } catch (err) {
       if (err.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
-      if (canRetry && attempt < tries) { await sleep(UI.RETRY_WAIT_MS * attempt); continue; }
+      if (mayRetry()) { await sleep(UI.RETRY_WAIT_MS); continue; }   // a sleeping server can fail fast, so keep trying
       throw new Error('Could not reach the server. Check your connection and try again.');
     }
   }
+}
+
+// When the API is on another address, start waking it as soon as any page opens,
+// so it is usually ready by the time the user has typed their password.
+if (API_ORIGIN) {
+  try { fetch(`${API_ORIGIN}/api/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) { /* ignore */ }
 }
 
 // options.silent = true: no overlay (used for background refreshes)

@@ -508,7 +508,7 @@ async function downloadSF2() {
   try {
     const params = new URLSearchParams({ month, year });
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-    const response = await fetch(`/api/teacher/sf2/${subj.section_id}/export?${params}`, {
+    const response = await fetch(`${API}/teacher/sf2/${subj.section_id}/export?${params}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 

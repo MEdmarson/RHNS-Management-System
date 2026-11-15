@@ -328,7 +328,7 @@ async function downloadExcel() {
 
   try {
     const typeQuery = encodeURIComponent(currentSubjectType);
-    const url = `/api/teacher/class-record/${currentSubjectId}/export?type=${typeQuery}`;
+    const url = `${API}/teacher/class-record/${currentSubjectId}/export?type=${typeQuery}`;
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');
 
     const response = await fetch(url, {
@@ -396,7 +396,7 @@ async function uploadGrades(event) {
 
   try {
     const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-    const response = await fetch('/api/teacher/grades/import', {
+    const response = await fetch(`${API}/teacher/grades/import`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData
