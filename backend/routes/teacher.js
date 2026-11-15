@@ -140,58 +140,7 @@ router.get('/gradebook', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
-// --- DOWNLOAD CSV TEMPLATE ---
-router.get('/grades/template/:subjectId', asyncRoute(async (req, res) => {
-  const { subjectId } = req.params;
-  const { term } = req.query;
-  
-  const [subj] = await pool.query('SELECT section_id FROM subjects WHERE id = ?', [subjectId]);
-  if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
-
-  const [students] = await pool.query(`
-    SELECT u.full_name, s.lrn, s.gender 
-    FROM students s 
-    JOIN users u ON u.id = s.user_id 
-    WHERE s.section_id = ? 
-    ORDER BY u.full_name
-  `, [subj[0].section_id]);
-
-  const males = students.filter(s => normalizeGender(s.gender) === 'male');
-  const females = students.filter(s => normalizeGender(s.gender) === 'female');
-
-  const [hpsRows] = await pool.query(`
-    SELECT ww1_hps, ww2_hps, ww3_hps, ww4_hps, ww5_hps, pt1_hps, pt2_hps, pt3_hps, ex1_hps, ex2_hps, ex3_hps
-    FROM grades WHERE subject_id = ? AND term = ?
-    ORDER BY (COALESCE(ww1_hps,0)+COALESCE(ww2_hps,0)+COALESCE(ww3_hps,0)+COALESCE(ww4_hps,0)+COALESCE(ww5_hps,0)
-            + COALESCE(pt1_hps,0)+COALESCE(pt2_hps,0)+COALESCE(pt3_hps,0)
-            + COALESCE(ex1_hps,0)+COALESCE(ex2_hps,0)+COALESCE(ex3_hps,0)) DESC
-    LIMIT 1
-  `, [subjectId, term]);
-  const hp = hpsRows[0] || {};
-  const hv = (k) => (Number(hp[k]) > 0 ? Number(hp[k]) : '');
-  const hpsLine = ['', 'HIGHEST POSSIBLE SCORE',
-    hv('ww1_hps'), hv('ww2_hps'), hv('ww3_hps'), hv('ww4_hps'), hv('ww5_hps'),
-    hv('pt1_hps'), hv('pt2_hps'), hv('pt3_hps'), hv('ex1_hps'), hv('ex2_hps'), hv('ex3_hps')].join(',');
-
-  let csvContent = 'LRN,Full Name,WW1,WW2,WW3,WW4,WW5,PT1,PT2,PT3,SA1,SA2,TE\n';
-  csvContent += hpsLine + '\n';
-  
-  csvContent += '\nMALE,,,,,,,,,,,,,\n';
-  males.forEach(s => {
-    csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
-  });
-
-  csvContent += '\nFEMALE,,,,,,,,,,,,,\n';
-  females.forEach(s => {
-    csvContent += `"${s.lrn}","${s.full_name}",,,,,,,,,,,,,\n`;
-  });
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="Grade_Import_Template_Term${term}.csv"`);
-  res.send(csvContent);
-}));
-
-// --- IMPORT GRADES FROM CSV ---
+// --- IMPORT GRADES (class-record .xlsx, or CSV) ---
 // Parse CSV text -> array of row objects (headers are upper-cased / trimmed / BOM-stripped)
 const parseCsv = (text) => new Promise((resolve, reject) => {
   const rows = [];

@@ -86,24 +86,28 @@
               <span id="unsavedIndicator" style="display:none; color: var(--danger); font-size: 12px; font-weight: bold;">● Unsaved changes</span>
             </div>
             
-            <div class="gb-controls" style="display: flex; align-items: center; gap: 10px;">
-              <label id="subjectTypeLabel" style="font-weight: 600; font-size: 14px;">Subject Type: </label>
-              <select id="subjectTypeSelect" class="input gb-select" style="font-weight: bold;" onchange="changeSubjectType()"></select>
-              
-              <label style="font-weight: 600; font-size: 14px;">Term: </label>
-              <select id="termSelect" class="input gb-select gb-term" style="font-weight: bold;" onchange="loadGradebook()">
-                <option value="1">Term 1</option>
-                <option value="2">Term 2</option>
-                <option value="3">Term 3</option>
-                <option value="final">Final Grade</option>
-              </select>
-              
-              <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
-              <button class="btn btn-secondary" onclick="downloadExcel()">📥 Download Excel</button>
-              <button class="btn btn-secondary" onclick="downloadImportTemplate()">📄 Download Template</button>
-              <input type="file" id="excelUpload" accept=".xlsx,.xls,.csv" style="display: none;" onchange="uploadGrades(event)">
-              <button class="btn btn-secondary" onclick="document.getElementById('excelUpload').click()">📤 Upload Grades</button>
-              
+            <div class="gb-controls">
+              <div class="gb-group">
+                <label id="subjectTypeLabel">Subject Type</label>
+                <select id="subjectTypeSelect" class="input gb-select" style="font-weight: bold;" onchange="changeSubjectType()"></select>
+              </div>
+
+              <div class="gb-group">
+                <label for="termSelect">Term</label>
+                <select id="termSelect" class="input gb-select gb-term" style="font-weight: bold;" onchange="loadGradebook()">
+                  <option value="1">Term 1</option>
+                  <option value="2">Term 2</option>
+                  <option value="3">Term 3</option>
+                  <option value="final">Final Grade</option>
+                </select>
+              </div>
+
+              <div class="gb-actions">
+                <button class="btn" id="saveBtn" onclick="saveAllGrades()">💾 Save All Changes</button>
+                <button class="btn btn-secondary" onclick="downloadExcel()" title="Download the class record as an Excel file">📥 Download Excel</button>
+                <input type="file" id="excelUpload" accept=".xlsx" style="display: none;" onchange="uploadGrades(event)">
+                <button class="btn btn-secondary" onclick="document.getElementById('excelUpload').click()" title="Upload the class record (.xlsx). The sheet for the selected term is imported.">📤 Upload Grades</button>
+              </div>
             </div>
           </div>
 

@@ -1,3 +1,11 @@
+/* --- Class record toolbar --- */
+.gb-controls { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.gb-group { display: flex; align-items: center; gap: 8px; }
+.gb-group label { font-weight: 600; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.gb-group:has(> select[style*="display: none"]) { display: none; } /* hidden on the Final Grade view */
+.gb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gb-actions .btn { white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
 /* --- Specific Styles for the Class Record --- */
 .excel-wrapper {
   overflow-x: auto;
@@ -7,6 +15,12 @@
   border-radius: 8px;
   background: #fff;
 }
+
+/* slim scrollbars for the class record */
+.excel-wrapper { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.excel-wrapper::-webkit-scrollbar { height: 10px; width: 10px; }
+.excel-wrapper::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; border: 2px solid #fff; }
+.excel-wrapper::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
 .excel-table {
   width: 100%;
@@ -218,8 +232,11 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
   #view-gradebook .card { padding: 8px !important; }
   .gb-toolbar { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
   .gb-title { gap: 10px !important; flex-wrap: wrap; }
-  .gb-title h3 { font-size: 15px; flex: 1; min-width: 0; }
-  .gb-controls { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-items: center; }
+  .gb-title h3 { font-size: 15px; line-height: 1.3; flex: 1 1 100%; order: 3; min-width: 0; } /* title gets its own line */
+  .gb-controls { display: flex !important; flex-direction: column; align-items: stretch; gap: 8px !important; width: 100%; }
+  .gb-group { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
+  .gb-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+  .gb-actions .btn { min-height: 40px; }
   .gb-select { width: 100% !important; max-width: none !important; min-height: 38px; font-size: 14px; }
   #gradebookSearch { max-width: none !important; min-height: 40px; font-size: 16px; }
 
@@ -263,7 +280,6 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
 /* Add a visual indicator inside the cell */
 .excel-table input.missing-req::placeholder {
   color: var(--danger);
-  content: "Missing"; 
   font-weight: bold;
   font-size: 10px;
 }
