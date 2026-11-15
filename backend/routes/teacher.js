@@ -44,6 +44,13 @@ const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v
 // Make sure the finished-class columns exist (safe to run every boot; duplicate-column errors are ignored)
 pool.query("ALTER TABLE subjects ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'").catch(() => {});
 pool.query("ALTER TABLE subjects ADD COLUMN finished_at DATETIME NULL").catch(() => {});
+pool.query("ALTER TABLE subjects ADD COLUMN subject_type VARCHAR(100) NULL").catch(() => {});
+
+// Keep the subject type (WW/PT/EX weights) in the database, so the at-risk checks and student alerts can use it
+const saveSubjectType = async (subjectId, teacherId, type) => {
+  if (!subjectId || !SUBJECT_WEIGHTS[type]) return;
+  await pool.query('UPDATE subjects SET subject_type = ? WHERE id = ? AND teacher_id = ? AND (subject_type IS NULL OR subject_type <> ?)', [type, subjectId, teacherId, type]);
+};
 
 // ?status=active (default) | finished | all
 router.get('/my-subjects', asyncRoute(async (req, res) => {
@@ -51,7 +58,7 @@ router.get('/my-subjects', asyncRoute(async (req, res) => {
   let where = 'sub.teacher_id = ?';
   if (status === 'finished') where += " AND sub.status = 'finished'";
   else if (status !== 'all') where += " AND sub.status = 'active'";
-  const [rows] = await pool.query(`SELECT sub.id, sub.name, sub.code, sub.status, sub.finished_at, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE ${where} ORDER BY sub.name`, [req.user.id]);
+  const [rows] = await pool.query(`SELECT sub.id, sub.name, sub.code, sub.status, sub.finished_at, sub.subject_type, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE ${where} ORDER BY sub.name`, [req.user.id]);
   res.json(rows);
 }));
 
@@ -234,6 +241,7 @@ router.post('/grades/import', upload.single('file'), asyncRoute(async (req, res)
     'SELECT section_id FROM subjects WHERE id = ? AND teacher_id = ?',
     [subject_id, req.user.id]
   );
+  if (subj.length) await saveSubjectType(subject_id, req.user.id, req.body.subject_type);
   if (!subj.length) return res.status(404).json({ error: 'Subject not found' });
 
   // 2. Parse the upload: the class-record .xlsx directly, or the CSV template
@@ -407,6 +415,7 @@ router.post('/grades', asyncRoute(async (req, res) => {
   try {
     const g = req.body;
     if (!g.student_id) return res.json({ ok: true, skipped: true });
+    await saveSubjectType(g.subject_id, req.user.id, g.subject_type);
 
     const n = (v) => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
     const calcN = (v) => n(v) || 0; 
@@ -542,91 +551,28 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
 }));
 
 // --- AT-RISK (Early Warning) ---
-// Tuning knobs. A student is only tagged "failing" when the grade is below passing OR they have
-// missed a SIGNIFICANT amount of the current term's work (not just one late activity).
-const AT_RISK = {
-  PASSING_GRADE: 75,        // term grade below this = failing
-  MISSING_WEIGHT_PCT: 20,   // missed work worth >= this many points of the term's initial grade = significant
-  MISSING_COUNT: 3,         // ...or this many missed activities in the term = significant
-  ABSENCE_LIMIT: 4,         // more than this many effective absences = at risk of dropping
-  LATES_PER_ABSENCE: 3,     // every N lates counts as 1 absence (keep in sync with teacher-utils.js)
-  WINDOW_DAYS: 30           // attendance look-back window
-};
-
-const ACTIVITIES = [
-  ['ww1', 'ww', 'Written Work 1'], ['ww2', 'ww', 'Written Work 2'], ['ww3', 'ww', 'Written Work 3'],
-  ['ww4', 'ww', 'Written Work 4'], ['ww5', 'ww', 'Written Work 5'],
-  ['pt1', 'pt', 'Performance Task 1'], ['pt2', 'pt', 'Performance Task 2'], ['pt3', 'pt', 'Performance Task 3'],
-  ['ex1', 'ex', 'Summative Assessment 1'], ['ex2', 'ex', 'Summative Assessment 2'], ['ex3', 'ex', 'Term Exam']
-];
-const COMP_NAMES = { ww: 'Written Work', pt: 'Performance Tasks', ex: 'Exams' };
-
-// Looks at one student's grade row for one term: what is missing, how much it is worth, how each component is doing.
-function analyzeTerm(row, weights) {
-  const w = { ww: weights[0], pt: weights[1], ex: weights[2] };
-  const comp = { ww: { hps: 0, got: 0, missedHps: 0 }, pt: { hps: 0, got: 0, missedHps: 0 }, ex: { hps: 0, got: 0, missedHps: 0 } };
-  const missed = [];
-  let total = 0;
-
-  for (const [key, c, label] of ACTIVITIES) {
-    const hps = Number(row[key + '_hps']) || 0;
-    if (hps <= 0) continue;                       // activity was never given in this term
-    total++;
-    comp[c].hps += hps;
-    const score = row[key];
-    if (score === null || score === undefined || score === '') {
-      comp[c].missedHps += hps;
-      missed.push({ key: key.toUpperCase(), label, hps, component: c });
-    } else {
-      comp[c].got += Number(score) || 0;
-    }
-  }
-
-  // points of the initial grade lost if every missed activity counts as zero
-  let missedWeightPct = 0;
-  const components = {};
-  for (const c of ['ww', 'pt', 'ex']) {
-    if (comp[c].hps > 0) missedWeightPct += (comp[c].missedHps / comp[c].hps) * w[c] * 100;
-    components[c] = comp[c].hps > 0 ? Math.round((comp[c].got / comp[c].hps) * 1000) / 10 : null;
-  }
-
-  // Grade on SUBMITTED work: judged only on activities that were handed in, with the weights spread over the
-  // components that have actual scores. A component that hasn't been given yet (e.g. no exam HPS) or an activity
-  // that's missing does not count as 0 here - missing work is judged separately by the "significant" rule below.
-  let wsum = 0, wscore = 0;
-  for (const c of ['ww', 'pt', 'ex']) {
-    const givenHps = comp[c].hps - comp[c].missedHps;     // HPS of the activities that have a score
-    if (givenHps > 0 && w[c] > 0) { wsum += w[c]; wscore += (comp[c].got / givenHps) * 100 * w[c]; }
-  }
-  const workInitial = wsum > 0 ? wscore / wsum : null;
-  const workGrade = workInitial === null ? null : (workInitial === 0 ? 0 : transmute(workInitial));
-  missedWeightPct = Math.round(missedWeightPct * 10) / 10;
-
-  const significant = missed.length > 0 &&
-    (missedWeightPct >= AT_RISK.MISSING_WEIGHT_PCT || missed.length >= AT_RISK.MISSING_COUNT);
-
-  // weakest component among those the student actually has scores for (ignore components with nothing handed in)
-  let weakest = null;
-  for (const c of ['ww', 'pt', 'ex']) {
-    if (components[c] !== null && comp[c].got > 0 && (weakest === null || components[c] < components[weakest])) weakest = c;
-  }
-
-  return {
-    missed, total, missedWeightPct, significant, components, workGrade,
-    weakest: weakest ? { key: weakest, name: COMP_NAMES[weakest], pct: components[weakest] } : null
-  };
-}
+// The rules live in routes/atRisk.js so the student portal's alert uses exactly the same logic.
+const risk = require('./atRisk');
 
 router.get('/at-risk', asyncRoute(async (req, res) => {
-  // The subject type (which sets the WW/PT/EX weights) lives in the browser, so the page sends it along: {"12":"Core Subjects",...}
+  // Subject type sets the WW/PT/EX weights. The page sends what the teacher picked: {"12":"Core Subjects",...}
   let typeMap = {};
   try { typeMap = JSON.parse(req.query.types || '{}') || {}; } catch (e) { typeMap = {}; }
 
   const [subjects] = await pool.query(`
-    SELECT sub.id, sub.name, sub.section_id, sec.name AS section
+    SELECT sub.id, sub.name, sub.subject_type, sub.section_id, sec.name AS section
     FROM subjects sub JOIN sections sec ON sec.id = sub.section_id
     WHERE sub.teacher_id = ? AND sub.status = 'active' ORDER BY sub.name`, [req.user.id]);
-  if (!subjects.length) return res.json({ settings: AT_RISK, subjects: [], students: [] });
+  if (!subjects.length) return res.json({ settings: risk.AT_RISK, subjects: [], students: [] });
+
+  // Remember the chosen type in the database so students' notifications use the same weights
+  for (const sub of subjects) {
+    const picked = typeMap[sub.id];
+    if (risk.isSubjectType(picked) && picked !== sub.subject_type) {
+      await pool.query('UPDATE subjects SET subject_type = ? WHERE id = ? AND teacher_id = ?', [picked, sub.id, req.user.id]);
+      sub.subject_type = picked;
+    }
+  }
 
   const [students] = await pool.query(`
     SELECT DISTINCT u.id AS student_id, u.full_name, s.lrn, s.section_id, sec.name AS section
@@ -646,118 +592,41 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
     FROM attendance a
     JOIN students s ON s.user_id = a.student_id AND s.section_id = a.section_id
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ? AND sub.status = 'active'
-    WHERE a.date >= DATE_SUB(CURDATE(), INTERVAL ${AT_RISK.WINDOW_DAYS} DAY)
+    WHERE a.date >= DATE_SUB(CURDATE(), INTERVAL ${risk.AT_RISK.WINDOW_DAYS} DAY)
     GROUP BY a.student_id, a.date, a.status
     ORDER BY a.student_id, a.date`, [req.user.id]);
 
-  // index grades: subject -> term -> student -> row
+  // subject -> term -> student -> row
   const bySubject = {};
   for (const g of gradeRows) {
     if (!bySubject[g.subject_id]) bySubject[g.subject_id] = {};
     if (!bySubject[g.subject_id][g.term]) bySubject[g.subject_id][g.term] = {};
     bySubject[g.subject_id][g.term][g.student_id] = g;
   }
-  const hasData = (g) => ACTIVITIES.some(([k]) => (Number(g[k + '_hps']) || 0) > 0 || (g[k] !== null && g[k] !== undefined));
-
-  // per subject: which term is "current" and what its HPS looks like
-  const subjectInfo = {};
-  for (const sub of subjects) {
-    const terms = bySubject[sub.id] || {};
-    const live = Object.keys(terms).map(Number).filter(t => Object.values(terms[t]).some(hasData)).sort((a, b) => a - b);
-    if (!live.length) continue;
-    const current = live[live.length - 1];
-    // class-wide HPS = the row in that term with the most HPS entered (HPS is the same for everyone)
-    const hpsOf = (g) => ACTIVITIES.reduce((s, [k]) => s + (Number(g[k + '_hps']) || 0), 0);
-    const hpsRow = Object.values(terms[current]).sort((a, b) => hpsOf(b) - hpsOf(a))[0];
-    subjectInfo[sub.id] = { current, hpsRow };
-  }
-
-  // attendance per student
   const attByStudent = {};
   for (const a of attRows) { if (!attByStudent[a.student_id]) attByStudent[a.student_id] = []; attByStudent[a.student_id].push(a); }
 
   const result = [];
   for (const st of students) {
     const failing = [];
-
     for (const sub of subjects.filter(s => s.section_id === st.section_id)) {
-      const info = subjectInfo[sub.id];
-      if (!info) continue;                                         // nothing graded in this subject yet
-      const weights = SUBJECT_WEIGHTS[typeMap[sub.id]] || SUBJECT_WEIGHTS['Core Subjects'];
-      const terms = bySubject[sub.id];
-
-      // current term row; a student with no row at all is treated as having handed in nothing
-      let row = terms[info.current][st.student_id];
-      if (!row) {
-        row = { term_grade: null, initial_grade: null };
-        for (const [k] of ACTIVITIES) { row[k] = null; row[k + '_hps'] = info.hpsRow[k + '_hps']; }
-      }
-
-      const recordedGrade = row.term_grade === null || row.term_grade === undefined ? null : Number(row.term_grade);
-      const t = analyzeTerm(row, weights);
-      const termGrade = t.workGrade;                                // grade on work actually handed in
-      const lowGrade = termGrade !== null && termGrade < AT_RISK.PASSING_GRADE;
-      if (!lowGrade && !t.significant) continue;                   // one or two missed activities alone do not tag a student
-
-      const previous = Object.keys(terms).map(Number).filter(n => n < info.current)
-        .sort((a, b) => a - b)
-        .map(n => {
-          const pr = terms[n][st.student_id];
-          return pr && pr.term_grade !== null ? { term: n, grade: Number(pr.term_grade) } : null;
-        }).filter(Boolean);
-
-      failing.push({
-        subject_id: sub.id, subject: sub.name, term: info.current,
-        term_grade: termGrade,
-        recorded_grade: recordedGrade,
-        initial_grade: row.initial_grade === null || row.initial_grade === undefined ? null : Number(row.initial_grade),
-        low_grade: lowGrade,
-        missing: { count: t.missed.length, total: t.total, weight_pct: t.missedWeightPct, significant: t.significant, items: t.missed },
-        components: t.components,
-        weakest: t.weakest,
-        previous,
-        cause: lowGrade && t.significant ? 'both' : lowGrade ? 'scores' : 'missing'
-      });
+      const entry = risk.evaluateSubject(sub, bySubject[sub.id] || {}, st.student_id, risk.weightsFor(sub.subject_type));
+      if (entry) failing.push(entry);
     }
-
-    // attendance
-    let dropping = null;
-    const recs = attByStudent[st.student_id] || [];
-    if (recs.length) {
-      const count = (s) => recs.filter(r => r.status === s).length;
-      const absent = count('absent'), late = count('late'), excused = count('excused'), present = count('present');
-      const converted = Math.floor(late / AT_RISK.LATES_PER_ABSENCE);
-      const effective = absent + converted;
-      if (effective > AT_RISK.ABSENCE_LIMIT) {
-        let streak = 0;
-        for (let i = recs.length - 1; i >= 0 && recs[i].status === 'absent'; i--) streak++;
-        const fmt = (d) => new Date(d).toISOString().slice(0, 10);
-        dropping = {
-          effective_absences: effective, absent, late, excused, present, converted,
-          recorded_days: recs.length,
-          absence_rate: Math.round((effective / recs.length) * 100),
-          streak,
-          recent_absences: recs.filter(r => r.status === 'absent').slice(-5).map(r => fmt(r.date)),
-          window_days: AT_RISK.WINDOW_DAYS
-        };
-      }
-    }
-
+    const dropping = risk.evaluateAttendance(attByStudent[st.student_id]);
     if (!failing.length && !dropping) continue;
 
-    const worst = failing.reduce((m, f) => (f.term_grade !== null && f.term_grade < m ? f.term_grade : m), 100);
-    const severe = failing.some(f => f.cause === 'both' || (f.term_grade !== null && f.term_grade < 70)) ||
-                   (failing.length > 0 && dropping) || (dropping && dropping.streak >= 3);
     result.push({
       student_id: st.student_id, full_name: st.full_name, lrn: st.lrn,
       section_id: st.section_id, section: st.section,
-      failing, dropping, worst_grade: failing.length ? worst : null,
-      severity: severe ? 'high' : 'medium'
+      failing, dropping,
+      worst_grade: failing.length ? Math.min(...failing.map(f => f.term_grade ?? 100)) : null,
+      severity: risk.severityOf(failing, dropping)
     });
   }
 
   res.json({
-    settings: AT_RISK,
+    settings: risk.AT_RISK,
     subjects: subjects.map(s => ({ id: s.id, name: s.name, section: s.section, section_id: s.section_id })),
     students: result
   });

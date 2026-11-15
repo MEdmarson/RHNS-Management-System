@@ -2,6 +2,7 @@
 const router = require('express').Router();
 const pool = require('../config/db');
 const { authenticate, authorize } = require('../middleware/auth');
+const risk = require('./atRisk');   // same at-risk rules the teacher portal uses
 
 router.use(authenticate, authorize('student'));
 
@@ -243,6 +244,105 @@ async function loadAttendance(userId) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// AT RISK (failing / dropping) for the logged-in student - same rules as the teacher's At-Risk tab
+// ---------------------------------------------------------------------------
+async function loadAtRisk(userId) {
+  const [subs] = await pool.query(`
+    SELECT sub.id, sub.name, sub.subject_type, t.full_name AS teacher
+    FROM subjects sub
+    JOIN students s ON s.section_id = sub.section_id AND s.user_id = ?
+    JOIN users t    ON t.id = sub.teacher_id
+    WHERE sub.status = 'active'
+  `, [userId]);
+
+  let failing = [];
+  if (subs.length) {
+    // the whole class's rows, because "current term", HPS and "was this activity given yet" come from the class
+    const [rows] = await pool.query('SELECT * FROM grades WHERE subject_id IN (?)', [subs.map(s => s.id)]);
+    const bySubject = {};
+    for (const g of rows) {
+      if (!bySubject[g.subject_id]) bySubject[g.subject_id] = {};
+      if (!bySubject[g.subject_id][g.term]) bySubject[g.subject_id][g.term] = {};
+      bySubject[g.subject_id][g.term][g.student_id] = g;
+    }
+    for (const sub of subs) {
+      const entry = risk.evaluateSubject(sub, bySubject[sub.id] || {}, userId, risk.weightsFor(sub.subject_type));
+      if (entry) failing.push({ ...entry, teacher: sub.teacher });
+    }
+  }
+
+  const [att] = await pool.query(`
+    SELECT date, status FROM attendance
+    WHERE student_id = ? AND date >= DATE_SUB(CURDATE(), INTERVAL ${risk.AT_RISK.WINDOW_DAYS} DAY)
+    ORDER BY date
+  `, [userId]);
+  const dropping = risk.evaluateAttendance(att);
+
+  return { failing, dropping, severity: risk.severityOf(failing, dropping) };
+}
+
+// One notification that says WHICH risk (failing, dropping, or both) and WHY, subject by subject.
+function buildRiskAlert(r) {
+  if (!r || (!r.failing.length && !r.dropping)) return null;
+  const raw = showRaw();                                   // honour the "hide scores from students" setting
+  const S = risk.AT_RISK;
+  const kind = r.failing.length && r.dropping ? 'both' : r.failing.length ? 'failing' : 'dropping';
+
+  const facts = [];
+  for (const f of r.failing) {
+    const m = f.missing;
+    const codes = m.items.map(i => i.key).join(', ');
+    const where = `${f.subject} (Term ${f.term})`;
+    if (f.cause === 'missing') {
+      facts.push(`${where}: ${m.count} of ${m.total} activities not submitted (${codes}), worth up to ${m.weight_pct} points of your term grade.`);
+    } else if (f.cause === 'both') {
+      facts.push(`${where}: ${raw ? `grade of ${f.term_grade} on the work you submitted, below the passing mark of ${S.PASSING_GRADE}, and ` : 'your submitted work is below the passing mark, and '}` +
+                 `${m.count} of ${m.total} activities not submitted (${codes}), worth up to ${m.weight_pct} points.`);
+    } else {
+      let line = `${where}: ${raw ? `grade of ${f.term_grade} on the work you submitted, below the passing mark of ${S.PASSING_GRADE}` : 'your submitted work is below the passing mark'}`;
+      if (raw && f.weakest) line += `; lowest in ${f.weakest.name} (${f.weakest.pct}%)`;
+      facts.push(line + '.');
+    }
+  }
+  if (r.dropping) {
+    const d = r.dropping;
+    let line = `Attendance: ${d.effective_absences} absences in the last ${d.window_days} days (more than ${S.ABSENCE_LIMIT} puts you at risk)`;
+    if (d.converted) line += `, including ${d.converted} from ${d.late} lates`;
+    if (d.streak >= 2) line += `; absent ${d.streak} days in a row`;
+    facts.push(line + '.');
+  }
+
+  const title = kind === 'both' ? 'You are at risk of failing and dropping out'
+              : kind === 'failing' ? 'You are at risk of failing'
+              : 'You are at risk of dropping out';
+  const next = kind === 'both' ? 'Talk to your subject teachers about make-up work and to your adviser about your attendance as soon as you can.'
+             : kind === 'failing' ? 'Talk to your teacher about make-up work and how to bring your grade up.'
+             : 'Talk to your adviser, and try to attend every class from now on.';
+
+  const single = r.failing.length === 1 ? r.failing[0] : null;
+  const action = single && kind === 'failing' ? { label: 'View subject', view: 'subjects', subject_id: single.subject_id }
+               : kind === 'dropping'          ? { label: 'View attendance', view: 'attendance' }
+               :                                { label: 'View my subjects', view: 'subjects' };
+
+  return {
+    id: 'risk-status',
+    // changes whenever the reasons change, so the student is notified again
+    sig: r.failing.map(f => [f.subject_id, f.term, f.cause, f.term_grade, f.missing.count].join(':')).join('|') +
+         `|a${r.dropping ? r.dropping.effective_absences : 0}`,
+    type: r.severity === 'high' ? 'error' : 'warning',
+    category: 'atrisk', risk: kind,
+    title,
+    body: `${kind === 'dropping' ? 'Your absences are above the allowed number.' : kind === 'failing' ? 'Your current work puts your passing grade in danger.' : 'Both your grades and your attendance need attention.'} ${next}`,
+    subject_id: single && kind === 'failing' ? single.subject_id : undefined,
+    subject:    single && kind === 'failing' ? single.subject : undefined,
+    terms:      single && kind === 'failing' ? [single.term] : [],
+    items:      single && kind === 'failing' ? single.missing.items.map(i => i.key) : [],
+    facts,
+    action
+  };
+}
+
 // Live alerts worked out from the grades and attendance. They have no row in the
 // notifications table, so the browser remembers which ones the student has seen
 // (id + sig; a changed sig means something new happened).
@@ -253,9 +353,13 @@ async function loadAttendance(userId) {
 //   items[]   -> missing activities (WW1, PT2 ...) shown as chips
 //   facts[]   -> short supporting lines (grade vs passing, absences used ...)
 //   action    -> { label, view, subject_id? } for the button / dashboard link
-function buildAlerts(list, att) {
+function buildAlerts(list, att, atRisk = null) {
   const alerts = [];
   const add = a => alerts.push({ source: 'system', created_at: null, terms: [], items: [], facts: [], ...a });
+
+  // at-risk first, so it leads the Alerts tab and the dashboard preview
+  const riskAlert = buildRiskAlert(atRisk);
+  if (riskAlert) add(riskAlert);
 
   for (const s of list) {
     const ctx = { subject_id: s.subject_id, subject: s.subject };
@@ -373,7 +477,10 @@ async function loadNotifications(userId, subjects, attendance) {
     'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
     [userId]
   );
-  return { alerts: buildAlerts(subjects, attendance), messages: stored };
+  let atRisk = null;
+  try { atRisk = await loadAtRisk(userId); }
+  catch (err) { console.error('Student At-Risk Error:', err.message); }
+  return { alerts: buildAlerts(subjects, attendance, atRisk), messages: stored };
 }
 
 // ---------------------------------------------------------------------------
