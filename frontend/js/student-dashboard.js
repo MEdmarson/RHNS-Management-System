@@ -146,6 +146,10 @@ function subjectHint(s) {
       ? `INC in Term ${incTerm}. This subject is finished, so approach ${s.teacher} to ask how to clear it.`
       : `INC in Term ${incTerm}. Submit the missing requirements to your teacher.` };
   }
+  const missedTerm = TERM_IDS.find(n => (s.term_missed?.[n] || []).length);
+  if (missedTerm) {
+    return { cls: 'bad', text: `Missed ${s.term_missed[missedTerm].join(', ')} in Term ${missedTerm}. Submit it or ask ${s.teacher} about a make-up.` };
+  }
   const t = s.target;
   if (!t) return null;
   if (t.state === 'secured') return { cls: 'good', text: 'You are on track to pass this subject.' };
@@ -160,7 +164,7 @@ function subjectHint(s) {
 
 const needsAttention = s =>
   s.has_inc || s.status === 'Failed' ||
-  TERM_IDS.some(n => s.term_status[n] === 'failed') || s.target?.state === 'out_of_reach';
+  TERM_IDS.some(n => s.term_status[n] === 'failed' || (s.term_missed?.[n] || []).length) || s.target?.state === 'out_of_reach';
 
 // Order here is the order of the chips: current subjects first, "All" last
 const SUBJECT_FILTERS = {
@@ -178,6 +182,7 @@ function priority(s) {
   if (s.has_inc) return 4;
   if (s.status === 'Failed' || s.target?.state === 'out_of_reach') return 3;
   if (TERM_IDS.some(n => s.term_status[n] === 'failed')) return 3;
+  if (TERM_IDS.some(n => (s.term_missed?.[n] || []).length)) return 2;
   if (s.target?.state === 'reachable') return 1;
   return 0;
 }

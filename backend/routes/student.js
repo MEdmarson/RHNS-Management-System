@@ -63,12 +63,19 @@ function termSummary(g, subjectFinished) {
   return { status, grade, missing: a.missing, overdue: a.overdue };
 }
 
-function summarizeSubject(sub, gs) {
+// `given` = { [term]: { ww1: n, ... } } where n is how many classmates have a score
+// for that activity. An activity with a max score that classmates already have
+// scores for, but the student does not, counts as MISSED even before the term closes.
+function summarizeSubject(sub, gs, given = {}) {
   const raw = showRaw();
   const finished = sub.subject_status === 'finished';
 
   const terms = {};
   for (const t of TERMS) terms[t] = termSummary(gs.find(x => Number(x.term) === t), finished);
+
+  // Missed in a term that is still open (closed terms are already reported as overdue)
+  const missedIn = t => finished ? [] : terms[t].missing.filter(m =>
+    !terms[t].overdue.includes(m) && (Number(given[t]?.[m.toLowerCase()]) || 0) > 0);
 
   const graded   = TERMS.filter(t => terms[t].status === 'passed' || terms[t].status === 'failed');
   const incTerms = TERMS.filter(t => terms[t].status === 'inc');
@@ -112,6 +119,7 @@ function summarizeSubject(sub, gs) {
 
     term_status:  pick(t => t.status),
     term_overdue: pick(t => (finished ? [] : t.overdue)),
+    term_missed:  Object.fromEntries(TERMS.map(t => [t, missedIn(t)])),
 
     term_grade:  average,
     status,
@@ -172,10 +180,24 @@ async function loadSubjects(userId) {
     WHERE g.student_id = ?
   `, [userId]);
 
+  // How many classmates already have a score for each activity (tells us it was actually given)
+  const [givenRows] = await pool.query(`
+    SELECT g.subject_id, g.term,
+           ${ACTIVITIES.map(a => `COALESCE(SUM(g.${a} IS NOT NULL), 0) AS ${a}`).join(', ')}
+    FROM grades g
+    JOIN subjects sub ON sub.id = g.subject_id
+    JOIN students me  ON me.section_id = sub.section_id AND me.user_id = ?
+    WHERE g.student_id <> ?
+    GROUP BY g.subject_id, g.term
+  `, [userId, userId]);
+
+  const givenBySubject = {};
+  for (const r of givenRows) (givenBySubject[r.subject_id] ||= {})[Number(r.term)] = r;
+
   const bySubject = {};
   for (const g of grades) (bySubject[g.subject_id] ||= []).push(g);
 
-  return subjects.map(sub => summarizeSubject(sub, bySubject[sub.subject_id] || []));
+  return subjects.map(sub => summarizeSubject(sub, bySubject[sub.subject_id] || [], givenBySubject[sub.subject_id] || {}));
 }
 
 async function loadAttendance(userId) {
@@ -240,7 +262,22 @@ function buildAlerts(list, att) {
 
     for (const t of TERMS) {
       const overdue = s.term_overdue[t] || [];
+      const missed  = s.term_missed?.[t] || [];
       const st = s.term_status[t];
+
+      // Activity already given to the class, but nothing is recorded for this student
+      if (missed.length) {
+        add({
+          ...ctx, id: `missed-${s.subject_id}-${t}`, sig: missed.join(','),
+          type: 'warning', category: 'missed',
+          title: `Missed activity: ${s.subject} (Term ${t})`,
+          body: `Your teacher has recorded scores for ${missed.join(', ')}, but nothing is recorded for you yet. ` +
+                `Submit it or ask ${s.teacher} about a make-up so it does not become an INC.`,
+          terms: [t], items: missed,
+          facts: [`Teacher: ${s.teacher}`, `${missed.length} item${missed.length === 1 ? '' : 's'} to complete`],
+          action: open,
+        });
+      }
 
       if (overdue.length) {
         add({
