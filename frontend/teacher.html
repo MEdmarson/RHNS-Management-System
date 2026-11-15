@@ -69,9 +69,12 @@
 
       <!-- 1. SUBJECT DASHBOARD -->
       <div class="view active" id="view-subjects">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3 style="margin: 0; color: var(--primary);">📚 My Classes</h3>
-          <button class="btn" onclick="openSubjectModal()">+ Create Subject</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div class="subj-tabs">
+            <button class="btn btn-secondary subj-tab active" id="tabActive" onclick="setSubjectFilter('active')">📚 My Classes</button>
+            <button class="btn btn-secondary subj-tab" id="tabFinished" onclick="setSubjectFilter('finished')">🗂️ Past Classes</button>
+          </div>
+          <button class="btn" id="createSubjectBtn" onclick="openSubjectModal()">+ Create Subject</button>
         </div>
         <div class="stats-grid" id="subjectsGrid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));"></div>
       </div>

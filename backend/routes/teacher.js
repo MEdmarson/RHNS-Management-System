@@ -41,9 +41,29 @@ const normalizeGender = (g) => String(g || '').trim().toLowerCase().startsWith('
 const val = (v) => (v === null || v === undefined || v === '') ? null : Number(v);
 
 // --- DASHBOARD & SUBJECTS ---
+// Make sure the finished-class columns exist (safe to run every boot; duplicate-column errors are ignored)
+pool.query("ALTER TABLE subjects ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'").catch(() => {});
+pool.query("ALTER TABLE subjects ADD COLUMN finished_at DATETIME NULL").catch(() => {});
+
+// ?status=active (default) | finished | all
 router.get('/my-subjects', asyncRoute(async (req, res) => {
-  const [rows] = await pool.query(`SELECT sub.id, sub.name, sub.code, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE sub.teacher_id = ?`, [req.user.id]);
+  const status = req.query.status;
+  let where = 'sub.teacher_id = ?';
+  if (status === 'finished') where += " AND sub.status = 'finished'";
+  else if (status !== 'all') where += " AND sub.status = 'active'";
+  const [rows] = await pool.query(`SELECT sub.id, sub.name, sub.code, sub.status, sub.finished_at, sec.id AS section_id, sec.name AS section FROM subjects sub JOIN sections sec ON sec.id = sub.section_id WHERE ${where} ORDER BY sub.name`, [req.user.id]);
   res.json(rows);
+}));
+
+// Mark a class finished (moves it to Past Classes) or reopen it
+router.put('/subjects/:id/status', asyncRoute(async (req, res) => {
+  const { status } = req.body;
+  if (!['active', 'finished'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const [check] = await pool.query('SELECT id FROM subjects WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.id]);
+  if (!check.length) return res.status(403).json({ error: 'Unauthorized to update this subject' });
+  await pool.query('UPDATE subjects SET status = ?, finished_at = ? WHERE id = ?',
+    [status, status === 'finished' ? new Date() : null, req.params.id]);
+  res.json({ ok: true, status });
 }));
 
 router.get('/sections', asyncRoute(async (req, res) => {
@@ -533,7 +553,7 @@ router.get('/at-risk', asyncRoute(async (req, res) => {
            (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent
     FROM users u 
     JOIN students s ON s.user_id = u.id 
-    JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ?
+    JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ? AND sub.status = 'active'
     LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
     GROUP BY u.id, u.full_name 
     HAVING (missing_requirements IS NOT NULL) 

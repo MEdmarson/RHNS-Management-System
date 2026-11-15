@@ -241,7 +241,7 @@ async function loadSF2() {
     const monthInput = document.getElementById('sf2Month');
 
     if (!sf2Initialized || sel.options.length === 0) {
-      const subjects = await apiFetch('/teacher/my-subjects');
+      const subjects = await apiFetch('/teacher/my-subjects?status=all');
       mySubjectsData = subjects;
 
       if (subjects.length === 0) {
@@ -251,7 +251,7 @@ async function loadSF2() {
       }
 
       sel.innerHTML = subjects.map(s =>
-        `<option value="${s.id}">${s.name} — ${s.section}</option>`
+        `<option value="${s.id}">${s.name} — ${s.section}${s.status === 'finished' ? ' (Past)' : ''}</option>`
       ).join('');
 
       if (!monthInput.value) {

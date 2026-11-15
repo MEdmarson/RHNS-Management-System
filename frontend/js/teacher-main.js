@@ -4,6 +4,7 @@ document.getElementById('userChip').textContent = '👩‍🏫 ' + getUser().nam
 
 let mySubjectsData = []; 
 let currentViewName = 'subjects';
+let subjectFilter = 'active'; // 'active' | 'finished'
 
 window.addEventListener('beforeunload', (e) => {
   if (hasUnsavedChanges) { 
@@ -105,6 +106,7 @@ function navigateToView(name, el) {
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Teacher Portal';
 
+  if (name === 'subjects')   initDashboard();
   if (name === 'attendance') loadAttendanceDashboard();
   if (name === 'warning')    loadWarnings();
   if (name === 'sf2')        loadSF2();
@@ -216,40 +218,73 @@ async function deleteSubject(event, subjectId, subjectName) {
 }
 
 // --- DASHBOARD ---
+function setSubjectFilter(filter) {
+  subjectFilter = filter;
+  document.getElementById('tabActive').classList.toggle('active', filter === 'active');
+  document.getElementById('tabFinished').classList.toggle('active', filter === 'finished');
+  document.getElementById('createSubjectBtn').style.display = filter === 'active' ? '' : 'none';
+  initDashboard();
+}
+
+async function toggleSubjectStatus(event, subjectId, subjectName, newStatus) {
+  event.stopPropagation();
+  const msg = newStatus === 'finished'
+    ? `Mark "${subjectName}" as finished? It will move to Past Classes (grades and attendance are kept).`
+    : `Reopen "${subjectName}"? It will move back to My Classes.`;
+  if (!confirm(msg)) return;
+  try {
+    await apiFetch(`/teacher/subjects/${subjectId}/status`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+    showToast(newStatus === 'finished' ? 'Moved to Past Classes.' : 'Class reopened.');
+    initDashboard();
+  } catch (err) {
+    showToast('Error: ' + (err.message || 'Could not update subject.'), 'error');
+  }
+}
+
 async function initDashboard() {
-  const subjects = await apiFetch('/teacher/my-subjects');
+  const subjects = await apiFetch(`/teacher/my-subjects?status=${subjectFilter}`);
   mySubjectsData = subjects; 
   const grid = document.getElementById('subjectsGrid');
+  const isPast = subjectFilter === 'finished';
   
   if (subjects.length === 0) { 
-    grid.innerHTML = '<p style="text-align:center; width: 100%; padding: 20px; color: var(--muted);">No subjects assigned yet. Click "+ Create Subject" to start.</p>'; 
+    grid.innerHTML = isPast
+      ? '<p style="text-align:center; width: 100%; padding: 20px; color: var(--muted);">No past classes yet. Use ✅ on a class to mark it finished.</p>'
+      : '<p style="text-align:center; width: 100%; padding: 20px; color: var(--muted);">No subjects assigned yet. Click "+ Create Subject" to start.</p>'; 
     return; 
   }
+
+  const iconBtn = 'position: absolute; top: 12px; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;';
 
   grid.innerHTML = subjects.map(s => {
     const safeName = s.name.replace(/'/g, "\\'");
     const safeCode = (s.code || '').replace(/'/g, "\\'");
+    const finishedOn = s.finished_at ? new Date(s.finished_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
     
+    const statusBtn = isPast
+      ? `<button onclick="toggleSubjectStatus(event, ${s.id}, '${safeName}', 'active')" style="${iconBtn} right: 78px; background: #dbeafe; color: #1e40af;" title="Reopen class">↩</button>`
+      : `<button onclick="toggleSubjectStatus(event, ${s.id}, '${safeName}', 'finished')" style="${iconBtn} right: 78px; background: #dcfce7; color: #166534;" title="Mark as finished">✅</button>`;
+
     return `
-    <div class="subject-card" onclick="openClassRecord(${s.id})" style="position: relative;">
-      
+    <div class="subject-card ${isPast ? 'is-finished' : ''}" onclick="openClassRecord(${s.id})" style="position: relative;">
+      ${statusBtn}
+
       <button onclick="openEditSubjectModal(event, ${s.id}, '${safeCode}', '${safeName}', ${s.section_id})" 
-              style="position: absolute; top: 12px; right: 45px; background: #e0e7ff; color: #3730a3; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
-              onmouseover="this.style.background='#c7d2fe'" onmouseout="this.style.background='#e0e7ff'"
+              style="${iconBtn} right: 45px; background: #e0e7ff; color: #3730a3;"
               title="Edit Subject">
         ✏️
       </button>
 
       <button onclick="deleteSubject(event, ${s.id}, '${safeName}')" 
-              style="position: absolute; top: 12px; right: 12px; background: #fee2e2; color: #991b1b; border: none; border-radius: 4px; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: background 0.2s;"
-              onmouseover="this.style.background='#fca5a5'" onmouseout="this.style.background='#fee2e2'"
+              style="${iconBtn} right: 12px; background: #fee2e2; color: #991b1b;"
               title="Delete Subject">
         🗑️
       </button>
 
-      <h3 style="padding-right: 75px;">📚 ${s.name}</h3>
+      <h3 style="padding-right: 110px;">${isPast ? '🗂️' : '📚'} ${s.name}</h3>
       <p>Section: ${s.section}</p>
-      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">Open Class Record →</div>
+      ${isPast ? `<span class="finished-tag">Finished${finishedOn ? ' · ' + finishedOn : ''}</span>` : ''}
+      <div style="margin-top: 15px; font-size: 12px; font-weight: bold; color: var(--primary);">${isPast ? 'View Class Record →' : 'Open Class Record →'}</div>
     </div>
     `;
   }).join('');
