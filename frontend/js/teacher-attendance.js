@@ -64,7 +64,7 @@ function renderAttendance() {
     const warnLate = t.late > 0 ? ` <span style="font-size:10px; color: var(--muted);">${lateLeft}/${LATES_PER_ABSENCE}</span>` : '';
 
     const buttons = ATT_BUTTONS.map(b =>
-      `<button class="btn btn-small att-btn att-${b.status} ${r.status === b.status ? 'active' : ''}" onclick="mark(${r.student_id},'${b.status}')"><span class="att-icon">${b.icon}</span> ${b.label}</button>`
+      `<button type="button" class="att-btn att-${b.status} ${r.status === b.status ? 'active' : ''}" aria-pressed="${r.status === b.status}" onclick="mark(${r.student_id},'${b.status}')"><span class="att-icon">${b.icon}</span> ${b.label}</button>`
     ).join('');
 
     return `
@@ -89,8 +89,14 @@ function renderAttendance() {
 
 async function mark(student_id, status) {
   const date = document.getElementById('attDate').value || new Date().toISOString().slice(0,10);
+  // Clicking the already-active button clears the status
+  const current = currentAttendanceData.find(r => r.student_id === student_id);
+  const clearing = current && current.status === status;
   try {
-    await apiFetch('/teacher/attendance', { method: 'POST', body: JSON.stringify({ student_id, section_id: currentSectionId, date, status }) });
+    await apiFetch('/teacher/attendance', {
+      method: 'POST',
+      body: JSON.stringify({ student_id, section_id: currentSectionId, date, status: clearing ? null : status })
+    });
     loadAttendanceSheet();
   } catch (err) {
     showToast('Error saving attendance: ' + err.message, 'error');

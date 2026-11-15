@@ -138,31 +138,39 @@
 .remarks-failed { background: #fee2e2; color: #991b1b; font-weight: 700; }
 
 /* ---------- Attendance Status Buttons ---------- */
-.att-btns { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+/* Neutral by default (white + black border). Colour appears only on the active button.
+   Click the active button again to clear the status. */
+.att-btns { display: grid; grid-template-columns: repeat(4, minmax(78px, 1fr)); gap: 6px; min-width: 340px; }
 
-button.att-btn { 
-  background: #f3f4f6; 
-  color: var(--text); 
-  border: 1px solid var(--border); 
-  white-space: nowrap; 
-  transition: all 0.15s ease-in-out;
-  border-radius: 4px;
-  cursor: pointer;
-  padding: 6px 12px;
+button.att-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  background: #fff;
+  color: #111;
+  border: 1.5px solid #111;
+  border-radius: 6px;
+  padding: 7px 6px;
+  min-height: 34px;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
 }
-button.att-btn:hover { filter: brightness(0.92); }
+button.att-btn:hover { background: #f3f4f6; color: #111; }
+button.att-btn:active { transform: translateY(1px); }
+button.att-btn:focus-visible { outline: 3px solid rgba(30, 58, 138, 0.35); outline-offset: 2px; }
+button.att-btn:disabled { opacity: .6; cursor: wait; }
 
-button.att-btn.att-present { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
-button.att-btn.att-late    { background: #fef3c7; border-color: #fde68a; color: #92400e; }
-button.att-btn.att-excused { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
-button.att-btn.att-absent  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
-
-button.att-btn.att-present.active { background: var(--success); border-color: var(--success); color: #fff; }
-button.att-btn.att-late.active    { background: var(--warning); border-color: var(--warning); color: #3b2300; }
-button.att-btn.att-excused.active { background: #3b82f6;        border-color: #3b82f6;        color: #fff; }
-button.att-btn.att-absent.active  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+/* Active states: colour fill, border stays black */
+button.att-btn.att-present.active,
+button.att-btn.att-present.active:hover { background: var(--success); color: #fff; }
+button.att-btn.att-late.active,
+button.att-btn.att-late.active:hover    { background: var(--warning); color: #3b2300; }
+button.att-btn.att-excused.active,
+button.att-btn.att-excused.active:hover { background: #3b82f6; color: #fff; }
+button.att-btn.att-absent.active,
+button.att-btn.att-absent.active:hover  { background: var(--danger); color: #fff; }
+button.att-btn.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
 
 .att-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
 
@@ -213,8 +221,8 @@ button.att-btn.att-absent.active  { background: var(--danger);  border-color: va
   }
   .mobile-only-logout .nav-icon { font-size: 20px; }
 
-  .att-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 150px; }
-  button.att-btn { padding: 9px 4px; font-size: 12px; min-height: 38px; }
+  .att-btns { grid-template-columns: 1fr 1fr; gap: 6px; min-width: 0; width: 100%; }
+  button.att-btn { padding: 9px 4px; font-size: 12px; min-height: 40px; }
 
   .main { padding: 12px 10px 90px; max-height: none; overflow-y: auto; }
   .topbar { flex-direction: row !important; align-items: center !important; justify-content: space-between; margin-bottom: 12px; gap: 8px; }

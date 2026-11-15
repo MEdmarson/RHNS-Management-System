@@ -503,6 +503,11 @@ router.get('/attendance/:subjectId/:date', asyncRoute(async (req, res) => {
 
 router.post('/attendance', asyncRoute(async (req, res) => {
   const { student_id, section_id, date, status } = req.body;
+  // status null / '' = clear the record for that day (toggle off)
+  if (!status) {
+    await pool.query('DELETE FROM attendance WHERE student_id = ? AND section_id = ? AND date = ?', [student_id, section_id, date]);
+    return res.json({ ok: true, cleared: true });
+  }
   await pool.query(`INSERT INTO attendance (student_id, section_id, date, status, recorded_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`, [student_id, section_id, date, status, req.user.id]);
   res.json({ ok: true });
 }));
