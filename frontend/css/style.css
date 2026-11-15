@@ -612,6 +612,13 @@ tr:hover td {
   background-color: #f9fafb;
 }
 
+.card,
+.stat-card,
+.subject-card,
+.warning-card {
+  border: 2px solid #000;
+}
+
 /* GLOBAL LOADING SPINNER */
 #loadingOverlay {
   display: none;
@@ -874,12 +881,6 @@ tr:hover td {
     right: 15px;
   }
 
-  .card,
-.stat-card,
-.subject-card,
-.warning-card {
-  border: 2px solid #000;
-}
 }
 
 /* respect "reduce motion" system setting */
