@@ -12,7 +12,7 @@ const PASSING = 75;
 const INC_THRESHOLD = 3;       // missing items in a closed term that make it INC
 const ABSENCE_LIMIT = 20;      // DepEd limit per school year
 const LATES_PER_ABSENCE = 3;   // same rule as the teacher portal
-
+const MISSED_MIN_CLASSMATES = 3;   // classmates who must have a score before it counts as missed
 const showRaw = () => process.env.STUDENT_SHOW_RAW !== 'false';
 const QUALITATIVE = {
   passed: 'Passed', failed: 'Failed', inc: 'INC / Not Submitted',
@@ -74,21 +74,10 @@ function summarizeSubject(sub, gs, given = {}) {
   for (const t of TERMS) terms[t] = termSummary(gs.find(x => Number(x.term) === t), finished);
 
   // Missed in a term that is still open (closed terms are already reported as overdue).
-  // An activity counts as missed when EITHER
-  //   1. classmates already have a score for it, OR
-  //   2. the student has a score for a later activity in the same group
-  //      (e.g. WW1 and WW3 scored but WW2 blank), since activities are given in order.
-  const GROUPS = [['ww1','ww2','ww3','ww4','ww5'], ['pt1','pt2','pt3'], ['ex1','ex2','ex3']];
-  const missedIn = t => {
-    if (finished) return [];
-    const g = gs.find(x => Number(x.term) === t);
-    const has = a => g && g[a] !== null && g[a] !== undefined;
-    const gap = new Set();
-    for (const grp of GROUPS) grp.forEach((a, i) => { if (grp.slice(i + 1).some(has)) gap.add(a.toUpperCase()); });
-    return terms[t].missing.filter(m =>
-      !terms[t].overdue.includes(m) &&
-      ((Number(given[t]?.[m.toLowerCase()]) || 0) > 0 || gap.has(m)));
-  };
+  // Only counts when at least one classmate already has a score for the activity, so an
+  // activity the teacher has only planned (HPS set, nobody scored yet) is NOT missed.
+  const missedIn = t => finished ? [] : terms[t].missing.filter(m =>
+    !terms[t].overdue.includes(m) && (Number(given[t]?.[m.toLowerCase()]) || 0) >= MISSED_MIN_CLASSMATES);
 
   const graded   = TERMS.filter(t => terms[t].status === 'passed' || terms[t].status === 'failed');
   const incTerms = TERMS.filter(t => terms[t].status === 'inc');
