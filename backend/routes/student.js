@@ -111,7 +111,7 @@ function summarizeSubject(sub, gs) {
     term3: raw ? terms[3].grade : null,
 
     term_status:  pick(t => t.status),
-    term_overdue: pick(t => t.overdue),
+    term_overdue: pick(t => (finished ? [] : t.overdue)),
 
     term_grade:  average,
     status,
@@ -215,6 +215,14 @@ function buildAlerts(list, att) {
   const alerts = [];
 
   for (const s of list) {
+    const incTerms = TERMS.filter(t => s.term_status[t] === 'inc');
+    if (s.finished_by_teacher && incTerms.length) {
+      alerts.push({
+        id: `inc-fin-${s.subject_id}`, sig: incTerms.join(','), type: 'error',
+        title: `INC: ${s.subject} (${incTerms.length > 1 ? 'Terms' : 'Term'} ${incTerms.join(', ')})`,
+        body: `This subject is already marked finished, so requirements are settled in person. Approach ${s.teacher} and ask how to clear your INC.`,
+      });
+    }
     for (const t of TERMS) {
       const overdue = s.term_overdue[t] || [];
       const st = s.term_status[t];
@@ -244,9 +252,9 @@ function buildAlerts(list, att) {
     const high = att.absent >= 15;
     alerts.push({
       id: 'att-limit', sig: String(att.absent), type: high ? 'error' : 'warning',
-      title: `Attendance: ${att.absent} of ${ABSENCE_LIMIT} absences used`,
+      title: `Attendance: ${att.absent} absences recorded`,
       body: att.remaining > 0
-        ? `You can miss ${att.remaining} more day${att.remaining === 1 ? '' : 's'} this school year.`
+        ? `The limit is ${ABSENCE_LIMIT} per school year. Avoid missing more classes.`
         : 'You have reached the absence limit. Talk to your adviser right away.',
     });
   }
@@ -384,10 +392,21 @@ router.get('/notifications', async (req, res) => {
 
 router.post('/notifications/read', async (req, res) => {
   try {
-    await pool.query(
-      'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (is_read = 0 OR is_read IS NULL)',
-      [req.user.id]
-    );
+    const sent = req.body && req.body.ids;
+    if (Array.isArray(sent)) {
+      const ids = sent.map(Number).filter(Number.isInteger);
+      if (ids.length) {
+        await pool.query(
+          'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id IN (?)',
+          [req.user.id, ids]
+        );
+      }
+    } else {
+      await pool.query(
+        'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (is_read = 0 OR is_read IS NULL)',
+        [req.user.id]
+      );
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

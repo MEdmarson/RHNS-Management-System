@@ -4,7 +4,13 @@ const user = getUser();
 const $ = id => document.getElementById(id);
 
 $('userChip').textContent = '🎓 ' + user.name;
-$('welcomeName').textContent = `Welcome back, ${user.name.split(' ')[0]}!`;
+// Names are stored as "LAST, FIRST MIDDLE", so greet by the first name
+function firstName(full) {
+  const part = full.includes(',') ? full.split(',')[1] : full;
+  const w = part.trim().split(/\s+/)[0] || full;
+  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+}
+$('welcomeName').textContent = `Welcome back, ${firstName(user.name)}!`;
 
 const VIEWS = { dashboard: 'Dashboard', attendance: 'My Attendance', notifs: 'Notifications' };
 const REFRESH_MS = 120000;   // background refresh while the tab is visible
@@ -91,7 +97,7 @@ function showView(name, { push = true } = {}) {
 
   if (push && history.state?.view !== name) history.pushState({ view: name }, '', '#' + name);
 
-  if (name === 'notifs') { renderNotifs(); markAllRead(); }
+  if (name === 'notifs') renderNotifs();
   if (state.lastLoad && Date.now() - state.lastLoad > STALE_MS) loadAll({ silent: true });
 }
 
@@ -100,7 +106,11 @@ window.addEventListener('popstate', e => showView(e.state?.view || location.hash
 // ---- Suggestions ----
 function subjectHint(s) {
   const incTerm = [1, 2, 3].find(n => s.term_status[n] === 'inc');
-  if (incTerm) return { cls: 'bad', text: `INC in Term ${incTerm}. Submit the missing requirements to your teacher.` };
+  if (incTerm) {
+    return { cls: 'bad', text: s.finished_by_teacher
+      ? `INC in Term ${incTerm}. This subject is finished, so approach ${s.teacher} to ask how to clear it.`
+      : `INC in Term ${incTerm}. Submit the missing requirements to your teacher.` };
+  }
 
   const t = s.target;
   if (!t) return null;
@@ -119,6 +129,12 @@ function buildSuggestions() {
   const push = (sev, title, body, action = {}) => out.push({ sev, title, body, ...action });
 
   for (const s of state.subjects) {
+    const incTerms = [1, 2, 3].filter(n => s.term_status[n] === 'inc');
+    if (s.finished_by_teacher && incTerms.length) {
+      push(3, `${s.subject}: INC in ${incTerms.length > 1 ? 'Terms' : 'Term'} ${incTerms.join(', ')}`,
+        `This subject is already marked finished, so requirements are settled in person. Approach ${s.teacher} and ask how to clear your INC.`,
+        { id: s.subject_id });
+    }
     for (const n of [1, 2, 3]) {
       const overdue = s.term_overdue[n] || [];
       const st = s.term_status[n];
@@ -147,9 +163,9 @@ function buildSuggestions() {
     if (a.remaining <= 0) {
       push(3, 'You reached the absence limit', 'Talk to your adviser right away about your attendance.', { view: 'attendance' });
     } else if (a.absent >= 15) {
-      push(3, `Only ${plural(a.remaining, 'absence')} left`, 'Avoid missing any more classes this school year.', { view: 'attendance' });
+      push(3, `${a.absent} absences recorded`, `The limit is ${a.limit} per school year, and only ${plural(a.remaining, 'more absence')} would reach it. Avoid missing classes.`, { view: 'attendance' });
     } else if (a.absent >= 10) {
-      push(2, `${a.absent} of ${a.limit} absences used`, `You can miss ${plural(a.remaining, 'more day')}. Try to attend every class from here on.`, { view: 'attendance' });
+      push(2, `${a.absent} absences recorded`, `The limit is ${a.limit} per school year. Try to attend every class from here on.`, { view: 'attendance' });
     }
     if (a.late % 3 === 2) {
       push(1, 'One more late counts as an absence', 'Every 3 lates are counted as 1 absence. Arrive on time to keep your record clean.', { view: 'attendance' });
@@ -211,8 +227,8 @@ function renderTiles() {
     <div class="tile"><span>Passed</span><strong>${p.passed}</strong></div>
     <div class="tile ${attention ? 'alert' : ''}"><span>Needs attention</span><strong>${attention}</strong>
       <small>${p.failed} failed, ${p.inc} INC</small></div>
-    <div class="tile ${a.remaining <= 5 ? 'alert' : ''}"><span>Absences used</span><strong>${a.absent} / ${a.limit}</strong>
-      <small>${a.remaining} left</small></div>`;
+    <div class="tile ${a.remaining <= 5 ? 'alert' : ''}"><span>Total absences</span><strong>${a.absent}</strong>
+      <small>Limit is ${a.limit} per year</small></div>`;
 }
 
 function termChip(n, s) {
@@ -260,39 +276,40 @@ function attInfo() {
 }
 
 function attMessage(a) {
+  if (a.absent === 0)   return 'No absences recorded so far.';
   if (a.remaining <= 0) return 'You reached the 20-absence limit. Talk to your adviser right away.';
-  if (a.remaining <= 5) return `Only ${plural(a.remaining, 'absence')} left. Avoid missing any more classes.`;
-  if (a.remaining <= 10) return `You have ${a.remaining} absences left. Keep an eye on it.`;
-  return `You have ${a.remaining} absences left. Keep it up.`;
+  if (a.remaining <= 5) return 'You are close to the 20-absence limit. Avoid missing more classes.';
+  if (a.remaining <= 10) return 'Your absences are adding up. The limit is 20 per school year.';
+  return 'The limit is 20 absences per school year.';
 }
 
 function renderAttendance() {
   const { a, pct, color } = attInfo();
 
   $('attSnapshot').innerHTML = `
-    <div class="snap-line"><strong>${a.absent} of ${a.limit} absences used</strong><span>${a.rate != null ? a.rate + '% attendance' : ''}</span></div>
+    <div class="snap-line"><strong>${plural(a.absent, 'total absence')}</strong><span>${a.rate != null ? a.rate + '% attendance' : ''}</span></div>
     ${meter(pct, color)}
     <p class="att-note">${escapeHtml(attMessage(a))}</p>`;
 
   $('attStats').innerHTML = `
     <div class="tile"><span>Attendance rate</span><strong>${a.rate != null ? a.rate + '%' : '—'}</strong></div>
     <div class="tile"><span>Days present</span><strong>${a.present}</strong></div>
-    <div class="tile ${a.absent > 4 ? 'alert' : ''}"><span>Absences counted</span><strong>${a.absent}</strong></div>
+    <div class="tile ${a.absent > 4 ? 'alert' : ''}"><span>Total absences</span><strong>${a.absent}</strong></div>
     <div class="tile"><span>Days late</span><strong>${a.late}</strong>
       <small>${a.converted ? plural(a.converted, 'absence') + ' from lates' : 'None converted'}</small></div>
     <div class="tile"><span>Excused</span><strong>${a.excused}</strong></div>`;
 
   $('attMeter').innerHTML = meter(pct, color);
-  $('attMessage').textContent = `${a.absent} / ${a.limit} absences. ${attMessage(a)}`;
+  $('attMessage').textContent = `${plural(a.absent, 'total absence')}. ${attMessage(a)}`;
 }
 
 // ---- Notifications ----
 const NOTIF_ICON = { warning: '⚠️', error: '🚨' };
 
-function notifItem(n, unread) {
+function notifItem(n, unread, kind) {
   const when = n.created_at ? new Date(n.created_at).toLocaleString() : 'Current';
   return `
-    <div class="notif-preview ${unread ? 'unread' : ''}">
+    <div class="notif-preview ${unread ? 'unread' : ''}" data-kind="${kind}" data-nid="${escapeHtml(n.id)}">
       <div class="notif-icon">${NOTIF_ICON[n.type] || '📢'}</div>
       <div style="flex:1; min-width:0;">
         <div class="notif-head"><strong>${escapeHtml(n.title)}</strong><span class="notif-when">${escapeHtml(when)}</span></div>
@@ -304,38 +321,80 @@ function notifItem(n, unread) {
 function renderPreview() {
   const seen = loadSeen();
   const items = [
-    ...state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig)),
-    ...state.messages.map(m => notifItem(m, !m.is_read)),
+    ...state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig, 'alert')),
+    ...state.messages.map(m => notifItem(m, !m.is_read, 'msg')),
   ].slice(0, 3);
   $('notifPreview').innerHTML = items.join('') || '<p class="empty">No notifications yet.</p>';
 }
 
 function renderNotifs() {
   const seen = loadSeen();
-  const alerts = state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig)).join('');
-  const msgs = state.messages.map(m => notifItem(m, !m.is_read)).join('');
+  const alerts = state.alerts.map(a => notifItem(a, seen[a.id] !== a.sig, 'alert')).join('');
+  const msgs = state.messages.map(m => notifItem(m, !m.is_read, 'msg')).join('');
   $('notifsList').innerHTML =
     (alerts ? `<h4 class="list-title">Needs your attention</h4>${alerts}` : '') +
     (msgs ? `<h4 class="list-title">Messages</h4>${msgs}` : '') ||
     '<p class="empty">No notifications yet.</p>';
+  watchUnread();
 }
 
-// Opening the Notifications page counts as reading everything on it
-async function markAllRead() {
-  const seen = loadSeen();
-  state.alerts.forEach(a => { seen[a.id] = a.sig; });
-  saveSeen(seen);
+// ---- A notification counts as seen once it has been on screen, or when it is clicked ----
+const pendingReads = new Set();
+let flushTimer = null;
 
-  const hadUnread = state.messages.some(m => !m.is_read);
-  state.messages.forEach(m => { m.is_read = true; });
-  updateBadge();
-  state.lastBadge = 0;
-  renderPreview();
-
-  if (hadUnread) {
-    try { await apiFetch('/student/notifications/read', { method: 'POST' }); }
+function flushReads() {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(async () => {
+    const ids = [...pendingReads];
+    pendingReads.clear();
+    if (!ids.length) return;
+    try { await apiFetch('/student/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }); }
     catch (err) { console.error('Could not mark notifications as read:', err); }
+  }, 500);
+}
+
+function markSeen(el) {
+  if (!el.classList.contains('unread')) return;
+  el.classList.remove('unread');
+  clearTimeout(el._seenTimer);
+
+  const id = el.dataset.nid;
+  if (el.dataset.kind === 'alert') {
+    const a = state.alerts.find(x => x.id === id);
+    if (a) { const seen = loadSeen(); seen[a.id] = a.sig; saveSeen(seen); }
+  } else {
+    const m = state.messages.find(x => String(x.id) === id);
+    if (m && !m.is_read) { m.is_read = true; pendingReads.add(m.id); flushReads(); }
   }
+  state.lastBadge = updateBadge();
+  renderPreview();
+}
+
+const seenObserver = 'IntersectionObserver' in window
+  ? new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          e.target._seenTimer = setTimeout(() => { markSeen(e.target); seenObserver.unobserve(e.target); }, 700);
+        } else {
+          clearTimeout(e.target._seenTimer);
+        }
+      }
+    }, { threshold: 0.6 })
+  : null;
+
+function watchUnread() {
+  if (seenObserver) seenObserver.disconnect();
+  $('notifsList').querySelectorAll('.notif-preview.unread')
+    .forEach(el => (seenObserver ? seenObserver.observe(el) : markSeen(el)));
+}
+
+$('notifsList').addEventListener('click', e => {
+  const el = e.target.closest('.notif-preview');
+  if (el) markSeen(el);
+});
+
+function markAllRead() {
+  $('notifsList').querySelectorAll('.notif-preview.unread').forEach(markSeen);
 }
 
 // One short toast, only when there is something new
@@ -389,7 +448,7 @@ async function openSubjectModal(subjectId, trigger) {
         if (a.score !== null && a.score !== undefined) {
           return `<div><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps}</span></div>`;
         }
-        return a.hps > 0 ? `<div style="color:#92400e; font-size:12px; font-weight:600;">— / ${a.hps}</div>` : null;
+        return a.hps > 0 ? `<div style="color:${s && s.finished_by_teacher ? '#6b7280' : '#92400e'}; font-size:12px; font-weight:600;">— / ${a.hps}</div>` : null;
       }).filter(Boolean).join('') || '—';
     };
 
@@ -422,7 +481,7 @@ async function openSubjectModal(subjectId, trigger) {
           </tr></thead><tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="modal-note">Scores are shown as <strong>your score</strong> / highest possible score. An orange “— /” means the item is not submitted yet.</p>`;
+      <p class="modal-note">Scores are shown as <strong>your score</strong> / highest possible score. ${s && s.finished_by_teacher ? 'A dash means no score was recorded.' : 'An orange “— /” means the item is not submitted yet.'}</p>`;
   } catch (err) {
     $('modalContent').innerHTML = `${head}<p class="empty" style="color:var(--danger);">Could not load details: ${escapeHtml(err.message)}</p>`;
   }
@@ -461,8 +520,8 @@ function renderAll() {
   renderSubjects();
   renderAttendance();
   renderPreview();
-  if (state.view === 'notifs') { renderNotifs(); markAllRead(); }
-  else announce();
+  if (state.view === 'notifs') renderNotifs();
+  announce();
 }
 
 function showLoadError(err) {

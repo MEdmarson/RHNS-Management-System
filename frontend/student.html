@@ -275,7 +275,10 @@
     <!-- 3. NOTIFICATIONS -->
     <div class="view" id="view-notifs" style="display:none">
       <div class="card">
-        <h3>All notifications</h3>
+        <div class="sec-head">
+          <h3 style="margin: 0;">All notifications</h3>
+          <button class="btn btn-small btn-secondary" onclick="markAllRead()">Mark all as read</button>
+        </div>
         <div id="notifsList"></div>
       </div>
     </div>
