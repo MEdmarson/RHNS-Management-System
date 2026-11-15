@@ -24,9 +24,9 @@ function analyzeTerm(grade) {
 
     // Only count as missing if HPS is set and score is blank
     if (hps > 0 && !hasScore) missing.push(a.toUpperCase());
-    
+
     if (hasScore) hasAnyScore = true;
-    
+
     // Check if the Final Exam (ex3 / TE) has been taken
     if (a === 'ex3' && hasScore) hasFinalExam = true;
   }
@@ -60,11 +60,14 @@ function qualitativeFromTerm(analysis, termGrade) {
 // ---------------------------------------------------------------------------
 router.get('/subjects', async (req, res) => {
   try {
+    // CHANGED: also select the teacher's status tag (active / finished) and finished_at
     const [subjects] = await pool.query(`
-      SELECT sub.id        AS subject_id,
-             sub.name      AS subject,
-             t.full_name   AS teacher,
-             s.grade_level AS grade_level
+      SELECT sub.id          AS subject_id,
+             sub.name        AS subject,
+             sub.status      AS subject_status,
+             sub.finished_at AS finished_at,
+             t.full_name     AS teacher,
+             s.grade_level   AS grade_level
       FROM subjects sub
       JOIN students s ON s.section_id = sub.section_id
       JOIN users t    ON t.id = sub.teacher_id
@@ -94,7 +97,7 @@ router.get('/subjects', async (req, res) => {
       const termStatus = {};
       const termMissing = {};
 
-            let previousTermFinished = true; // Term 1 always starts as true
+      let previousTermFinished = true; // Term 1 always starts as true
 
       for (const term of [1, 2, 3]) {
         const g = gs.find(x => Number(x.term) === term);
@@ -113,13 +116,13 @@ router.get('/subjects', async (req, res) => {
             termStatus[term] = 'inc';
             previousTermFinished = false; // INC means this term isn't done
           } else {
-            termStatus[term] = 'in-progress'; 
+            termStatus[term] = 'in-progress';
             previousTermFinished = false; // Still in progress, so stop the chain
           }
         } else {
           termStatus[term] = analysis.status === 'inc' ? 'inc' : 'in-progress';
           if (termStatus[term] === 'in-progress' || termStatus[term] === 'inc') {
-             previousTermFinished = false;
+            previousTermFinished = false;
           }
         }
       }
@@ -133,6 +136,9 @@ router.get('/subjects', async (req, res) => {
         : null;
 
       const isCompleted = gradedTerms.length === 3 && incTerms.length === 0;
+
+      // NEW: teacher tagged this subject as finished
+      const isFinishedByTeacher = sub.subject_status === 'finished';
 
       let status;
       if (incTerms.length > 0)          status = 'INC / Not Submitted';
@@ -155,8 +161,11 @@ router.get('/subjects', async (req, res) => {
 
         term_grade: finalGrade,
         status,
-        is_active:  !isCompleted,
-        has_inc:    incTerms.length > 0,
+
+        // CHANGED: a subject is past if all terms are done OR the teacher marked it finished
+        is_active:   !isCompleted && !isFinishedByTeacher,
+        finished_at: sub.finished_at || null,
+        has_inc:     incTerms.length > 0,
       };
     });
 
@@ -203,7 +212,7 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
 
       return {
         term:               g.term,
-        activities:         showRaw ? activities : undefined, 
+        activities:         showRaw ? activities : undefined,
         initial_grade:      showRaw ? g.initial_grade : undefined,
         term_grade:         showRaw ? g.term_grade : undefined,
         descriptor:         g.descriptor,
