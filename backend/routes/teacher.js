@@ -584,5 +584,6 @@ router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {
 // --- EXCEL EXPORT ---
 // Class-record Excel download lives in routes/classRecordExport.js (fills templates/class-record-template.xlsx)
 router.use(require('./classRecordExport'));
+router.use(require('./sf2Export'));   // GET /sf2/:sectionId/export (fills templates/sf2-template.xlsx)
 
 module.exports = router;

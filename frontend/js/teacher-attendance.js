@@ -234,25 +234,50 @@ async function loadWarnings() {
   `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
 }
 
-// ... rest of the file remains the same ...
+// ---------- SF2 report ----------
+let sf2Filter = 'active'; // 'active' (current classes) | 'finished' (past classes)
+
+function setSf2Filter(filter) {
+  sf2Filter = filter;
+  sf2Initialized = false;
+  document.getElementById('sf2TabActive').classList.toggle('active', filter === 'active');
+  document.getElementById('sf2TabFinished').classList.toggle('active', filter === 'finished');
+  loadSF2();
+}
+
+// remember School ID / School Name between visits
+(function initSf2School() {
+  ['sf2SchoolId', 'sf2SchoolName'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    try { el.value = localStorage.getItem(id) || ''; } catch (e) {}
+    el.addEventListener('input', () => { try { localStorage.setItem(id, el.value); } catch (e) {} });
+  });
+})();
+
 async function loadSF2() {
   try {
     const sel = document.getElementById('sf2SubjectSelect');
     const monthInput = document.getElementById('sf2Month');
 
-    if (!sf2Initialized || sel.options.length === 0) {
-      const subjects = await apiFetch('/teacher/my-subjects?status=all');
+    if (!sf2Initialized) {
+      const previous = sel.value;
+      const subjects = await apiFetch(`/teacher/my-subjects?status=${sf2Filter}`);
       mySubjectsData = subjects;
 
       if (subjects.length === 0) {
-        document.getElementById('sf2Body').innerHTML =
-          '<tr><td colspan="7" style="text-align:center;">No subjects assigned to you.</td></tr>';
+        sel.innerHTML = '';
+        document.getElementById('sf2Title').textContent = '🏫 School Form 2 (SF2)';
+        document.getElementById('sf2Range').textContent = '';
+        document.getElementById('sf2Body').innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 20px; color: var(--muted);">${
+          sf2Filter === 'finished' ? 'No past classes yet. Mark a class as finished to see its SF2 here.' : 'No subjects assigned to you.'}</td></tr>`;
         return;
       }
 
       sel.innerHTML = subjects.map(s =>
-        `<option value="${s.id}">${s.name} — ${s.section}${s.status === 'finished' ? ' (Past)' : ''}</option>`
+        `<option value="${s.id}">${s.name} — ${s.section}</option>`
       ).join('');
+      if (previous && subjects.some(s => String(s.id) === previous)) sel.value = previous;
 
       if (!monthInput.value) {
         const now = new Date();
@@ -306,5 +331,55 @@ async function loadSF2() {
   } catch (err) {
     console.error("SF2 Error:", err);
     showToast("Failed to load SF2 report.", "error");
+  }
+}
+
+// Download the official SF2 layout (.xlsx) for the selected class and month
+async function downloadSF2() {
+  const sel = document.getElementById('sf2SubjectSelect');
+  const subj = mySubjectsData.find(s => s.id === Number(sel.value));
+  const monthVal = document.getElementById('sf2Month').value;
+  if (!subj || !monthVal) { showToast('Choose a class and a month first.', 'error'); return; }
+  const [year, month] = monthVal.split('-');
+
+  const btn = document.getElementById('sf2ExportBtn');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Generating...';
+  btn.disabled = true;
+
+  try {
+    const params = new URLSearchParams({
+      month, year,
+      school_id: document.getElementById('sf2SchoolId').value.trim(),
+      school_name: document.getElementById('sf2SchoolName').value.trim()
+    });
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const response = await fetch(`/api/teacher/sf2/${subj.section_id}/export?${params}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!response.ok) {
+      let msg = `Server returned ${response.status}`;
+      try { const j = await response.json(); if (j.error) msg = j.error; } catch (e) {}
+      throw new Error(msg);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const cd = response.headers.get('Content-Disposition');
+    let filename = `SF2_${year}-${month}.xlsx`;
+    if (cd && cd.includes('filename="')) filename = cd.split('filename="')[1].split('"')[0];
+
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    window.URL.revokeObjectURL(url);
+    showToast('SF2 downloaded successfully!');
+  } catch (err) {
+    console.error('SF2 download error:', err);
+    showToast(err.message || 'Failed to download SF2.', 'error');
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   }
 }

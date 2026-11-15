@@ -109,7 +109,7 @@ function navigateToView(name, el) {
   if (name === 'subjects')   initDashboard();
   if (name === 'attendance') loadAttendanceDashboard();
   if (name === 'warning')    loadWarnings();
-  if (name === 'sf2')        loadSF2();
+  if (name === 'sf2')      { sf2Initialized = false; loadSF2(); }
 }
 
 // --- SUBJECT MANAGEMENT ---
