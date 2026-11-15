@@ -170,68 +170,235 @@ async function loadAttendanceHistory() {
   }).join('');
 }
 
+// ---------- At-Risk (early warning) ----------
+let riskData = { settings: {}, subjects: [], students: [] };
+let riskTab = 'all';          // all | failing | dropping | both
+const RISK_PAGE = 20;         // rows rendered at a time, so a long list stays fast
+let riskLimit = RISK_PAGE;
+const riskOpen = new Set();   // student ids whose details are expanded
+
+const riskEsc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 async function loadWarnings() {
-  const rows = await apiFetch('/teacher/at-risk');
+  const list = document.getElementById('riskList');
+  list.innerHTML = '<div class="risk-empty">Loading…</div>';
+  try {
+    // the subject type (sets the WW/PT/EX weights) is remembered in this browser, so send it with the request
+    const types = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k.startsWith('subjectType-')) types[k.slice('subjectType-'.length)] = localStorage.getItem(k);
+      }
+    } catch (e) {}
+    riskData = await apiFetch('/teacher/at-risk?types=' + encodeURIComponent(JSON.stringify(types)));
+  } catch (err) {
+    list.innerHTML = `<div class="risk-empty">❌ Could not load at-risk students. ${riskEsc(err.message || '')}</div>`;
+    return;
+  }
 
-  // 1. Failing / Missing Requirements
-  const failing = rows.filter(r => {
-    const isLowGrade = r.avg_grade !== null && Number(r.avg_grade) < 75;
-    const hasMissing = r.missing_requirements !== null && r.missing_requirements !== undefined;
-    return isLowGrade || hasMissing;
+  const s = riskData.settings || {};
+  document.getElementById('riskRules').innerHTML =
+    `<strong>Failing:</strong> current term grade below ${s.PASSING_GRADE ?? 75}, or missed work worth ${s.MISSING_WEIGHT_PCT ?? 20}+ points of the term grade ` +
+    `(or ${s.MISSING_COUNT ?? 3}+ missed activities) — one or two missed activities alone won't tag a student. ` +
+    `<strong>Dropping:</strong> more than ${s.ABSENCE_LIMIT ?? 4} absences in the last ${s.WINDOW_DAYS ?? 30} days (every ${s.LATES_PER_ABSENCE ?? 3} lates = 1 absence).`;
+
+  const sel = document.getElementById('riskSubject');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">All subjects</option>' +
+    (riskData.subjects || []).map(x => `<option value="${x.id}">${riskEsc(x.name)} — ${riskEsc(x.section)}</option>`).join('');
+  sel.value = (riskData.subjects || []).some(x => String(x.id) === keep) ? keep : '';
+
+  riskLimit = RISK_PAGE;
+  renderRisk();
+}
+
+function setRiskTab(tab) {
+  riskTab = tab;
+  riskLimit = RISK_PAGE;
+  renderRisk();
+}
+
+function onRiskFilterChange() {
+  riskLimit = RISK_PAGE;
+  renderRisk();
+}
+
+function showMoreRisk() {
+  riskLimit += RISK_PAGE;
+  renderRisk();
+}
+
+function toggleRisk(id) {
+  const el = document.getElementById('risk-' + id);
+  if (!el) return;
+  const open = el.classList.toggle('open');
+  el.querySelector('.risk-head').setAttribute('aria-expanded', open);
+  open ? riskOpen.add(id) : riskOpen.delete(id);
+}
+
+function toggleAllRisk(open) {
+  document.querySelectorAll('#riskList .risk-row').forEach(el => {
+    const id = Number(el.dataset.id);
+    el.classList.toggle('open', open);
+    el.querySelector('.risk-head').setAttribute('aria-expanded', open);
+    open ? riskOpen.add(id) : riskOpen.delete(id);
+  });
+}
+
+// one-line reason for a failing subject
+function failReasonText(f) {
+  const g = f.term_grade;
+  const m = f.missing;
+  if (f.cause === 'both') {
+    return `Grade ${g} and missing ${m.count} of ${m.total} activities (up to ${m.weight_pct} pts of the term grade)`;
+  }
+  if (f.cause === 'missing') {
+    return `Missing ${m.count} of ${m.total} activities — worth up to ${m.weight_pct} pts of the term grade` + (g !== null ? ` (current grade ${g})` : ' (no grade computed yet)');
+  }
+  let t = `Grade ${g} — below passing`;
+  if (f.weakest) t += `, weakest in ${f.weakest.name} (${f.weakest.pct}%)`;
+  t += m.count ? `; ${m.count} missed so far` : '; all activities handed in';
+  return t;
+}
+
+function dropReasonText(d) {
+  let t = `${d.effective_absences} absences in the last ${d.window_days} days`;
+  if (d.converted) t += ` (${d.absent} absent + ${d.converted} from ${d.late} lates)`;
+  if (d.streak >= 2) t += `; absent ${d.streak} days in a row`;
+  return t;
+}
+
+function failDetailHtml(f) {
+  const m = f.missing;
+  const bars = ['ww', 'pt', 'ex'].filter(c => f.components[c] !== null).map(c => {
+    const names = { ww: 'Written Work', pt: 'Performance Tasks', ex: 'Exams' };
+    const pct = f.components[c];
+    return `<div class="risk-comp"><span>${names[c]}</span><div class="risk-bar"><i class="${pct < (riskData.settings.PASSING_GRADE ?? 75) ? 'low' : ''}" style="width:${Math.max(0, Math.min(100, pct))}%"></i></div><b>${pct}%</b></div>`;
+  }).join('');
+  const trend = f.previous.length
+    ? `<div class="risk-note">Earlier terms: ${f.previous.map(p => `Term ${p.term}: <strong>${p.grade}</strong>`).join(' → ')} → Term ${f.term}: <strong>${f.term_grade ?? '—'}</strong></div>`
+    : '';
+  const chips = m.count
+    ? `<div class="risk-chips">${m.items.map(i => `<span class="risk-chip" title="${riskEsc(i.label)}">${riskEsc(i.key)} · ${riskEsc(i.label)} (${i.hps} pts)</span>`).join('')}</div>`
+    : '';
+  return `
+    <div class="risk-section">
+      <h4>📚 ${riskEsc(f.subject)} <span class="badge ${f.low_grade ? 'danger' : 'warn'}" style="font-size:10px;">Term ${f.term} · ${f.term_grade ?? 'no grade'}</span></h4>
+      <p class="why">${riskEsc(failReasonText(f))}</p>
+      ${bars}
+      ${m.count ? `<div style="font-size:12px; margin-top:8px;"><strong>Missing (${m.count} of ${m.total}):</strong></div>${chips}` : ''}
+      ${trend}
+    </div>`;
+}
+
+function dropDetailHtml(d) {
+  const stat = (v, l) => `<div class="risk-stat"><b>${v}</b><span>${l}</span></div>`;
+  return `
+    <div class="risk-section">
+      <h4>🚪 Attendance — last ${d.window_days} days</h4>
+      <p class="why">${riskEsc(dropReasonText(d))}</p>
+      <div class="risk-stats">
+        ${stat(d.effective_absences, 'Effective absences')}
+        ${stat(d.absent, 'Absent')}
+        ${stat(d.late, 'Late')}
+        ${stat(d.excused, 'Excused')}
+        ${stat(d.absence_rate + '%', 'Of recorded days')}
+        ${stat(d.streak, 'Current streak')}
+      </div>
+      ${d.recent_absences.length ? `<div class="risk-note">Recent absences: ${d.recent_absences.join(', ')}</div>` : ''}
+    </div>`;
+}
+
+function renderRisk() {
+  const q = document.getElementById('riskSearch').value.trim().toLowerCase();
+  const subjId = document.getElementById('riskSubject').value;
+  const sort = document.getElementById('riskSort').value;
+  const subj = subjId ? riskData.subjects.find(x => String(x.id) === subjId) : null;
+
+  // 1) search + subject filter (the tab counts reflect these)
+  let rows = (riskData.students || []).map(s => {
+    let failing = s.failing;
+    let dropping = s.dropping;
+    if (subj) {
+      failing = failing.filter(f => String(f.subject_id) === subjId);
+      if (s.section_id !== subj.section_id) dropping = null;   // attendance is per section
+    }
+    return { ...s, failing, dropping };
+  }).filter(s => (s.failing.length || s.dropping) &&
+                 (!q || s.full_name.toLowerCase().includes(q)));
+
+  const isBoth = s => s.failing.length > 0 && !!s.dropping;
+  const counts = {
+    all: rows.length,
+    failing: rows.filter(s => s.failing.length).length,
+    dropping: rows.filter(s => s.dropping).length,
+    both: rows.filter(isBoth).length
+  };
+  document.getElementById('riskCntAll').textContent = counts.all;
+  document.getElementById('riskCntFailing').textContent = counts.failing;
+  document.getElementById('riskCntDropping').textContent = counts.dropping;
+  document.getElementById('riskCntBoth').textContent = counts.both;
+  ['All', 'Failing', 'Dropping', 'Both'].forEach(n =>
+    document.getElementById('riskTab' + n).classList.toggle('active', riskTab === n.toLowerCase()));
+
+  // 2) tab filter
+  if (riskTab === 'failing') rows = rows.filter(s => s.failing.length);
+  else if (riskTab === 'dropping') rows = rows.filter(s => s.dropping);
+  else if (riskTab === 'both') rows = rows.filter(isBoth);
+
+  // 3) sort
+  const sevRank = s => (s.severity === 'high' ? 0 : 1);
+  const lowest = s => (s.failing.length ? Math.min(...s.failing.map(f => f.term_grade ?? 0)) : 999);
+  const absences = s => (s.dropping ? s.dropping.effective_absences : -1);
+  rows.sort((a, b) => {
+    if (sort === 'name') return a.full_name.localeCompare(b.full_name);
+    if (sort === 'grade') return lowest(a) - lowest(b) || a.full_name.localeCompare(b.full_name);
+    if (sort === 'absences') return absences(b) - absences(a) || a.full_name.localeCompare(b.full_name);
+    return sevRank(a) - sevRank(b) || lowest(a) - lowest(b) || absences(b) - absences(a) || a.full_name.localeCompare(b.full_name);
   });
 
-  document.getElementById('failingBody').innerHTML = failing.map(r => {
-    let reasons = [];
-    if (r.avg_grade !== null && Number(r.avg_grade) < 75) {
-      reasons.push(`<span class="badge danger" style="font-size:10px; margin-right:4px;">Low Grade (${r.avg_grade})</span>`);
-    }
-    if (r.missing_requirements) {
-      reasons.push(`<span class="badge warn" style="font-size:10px;">Missing: ${r.missing_requirements}</span>`);
-    }
-    
+  // 4) render (only the first riskLimit rows)
+  const list = document.getElementById('riskList');
+  const meta = document.getElementById('riskMeta');
+  const more = document.getElementById('riskMore');
+
+  if (!rows.length) {
+    const none = { all: '🎉 No students are at risk right now.', failing: '🎉 No students at risk of failing.', dropping: '🎉 No students at risk of dropping.', both: 'No student is at risk in both areas.' };
+    list.innerHTML = `<div class="risk-empty">${(q || subjId) ? 'No students match your search or filter.' : none[riskTab]}</div>`;
+    meta.textContent = '';
+    more.style.display = 'none';
+    return;
+  }
+
+  const shown = rows.slice(0, riskLimit);
+  list.innerHTML = shown.map(s => {
+    const open = riskOpen.has(s.student_id);
+    const reasons = [
+      ...s.failing.map(f => `<div class="risk-reason"><span class="rk fail">📉 ${riskEsc(f.subject)}:</span>${riskEsc(failReasonText(f))}</div>`),
+      ...(s.dropping ? [`<div class="risk-reason"><span class="rk drop">🚪 Attendance:</span>${riskEsc(dropReasonText(s.dropping))}</div>`] : [])
+    ].join('');
     return `
-    <tr>
-      <td>
-        <strong>${r.full_name}</strong><br>
-        <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;">${reasons.join('')}</div>
-      </td>
-      <td><span class="badge danger">${r.avg_grade || '—'}</span></td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of failing!</td></tr>';
+    <div class="risk-row sev-${s.severity} ${open ? 'open' : ''}" id="risk-${s.student_id}" data-id="${s.student_id}">
+      <button class="risk-head" onclick="toggleRisk(${s.student_id})" aria-expanded="${open}">
+        <span class="risk-who"><strong>${riskEsc(s.full_name)}</strong><small>${riskEsc(s.section || '')}${isBoth(s) ? ' · at risk in both areas' : ''}</small></span>
+        <span class="risk-reasons">${reasons}</span>
+        <span class="risk-caret">▸</span>
+      </button>
+      <div class="risk-body">
+        ${s.failing.map(failDetailHtml).join('')}
+        ${s.dropping ? dropDetailHtml(s.dropping) : ''}
+      </div>
+    </div>`;
+  }).join('');
 
-  // 2. Dropping / Attendance
-  const dropping = rows.filter(r => {
-    const t = computeAttendance({
-      present: 0, // We only care about absences for this calculation
-      late:    Number(r.raw_late)    || 0,
-      excused: 0,
-      absent:  Number(r.raw_absent)  || 0
-    });
-    return t.absent > 4;
-  }).map(r => {
-    const t = computeAttendance({
-      present: 0,
-      late:    Number(r.raw_late)    || 0,
-      excused: 0,
-      absent:  Number(r.raw_absent)  || 0
-    });
-    return { ...r, effective_absences: t.absent, converted: t.converted };
-  });
-
-  document.getElementById('droppingBody').innerHTML = dropping.map(r => `
-    <tr>
-      <td>
-        <strong>${r.full_name}</strong><br>
-        <div style="margin-top:6px;">
-          <span class="badge danger" style="font-size:10px;">Attendance (${r.effective_absences} absences)</span>
-        </div>
-      </td>
-      <td>
-        <span class="badge warn">${r.effective_absences}</span>
-        ${r.converted ? `<span style="font-size:10px; color: var(--muted);">(${r.converted} from lates)</span>` : ''}
-      </td>
-    </tr>
-  `).join('') || '<tr><td colspan="2" class="warning-empty">🎉 No students at risk of dropping!</td></tr>';
+  meta.textContent = `Showing ${shown.length} of ${rows.length} student${rows.length === 1 ? '' : 's'}`;
+  if (rows.length > shown.length) {
+    more.style.display = '';
+    more.textContent = `Show ${Math.min(RISK_PAGE, rows.length - shown.length)} more (${rows.length - shown.length} remaining)`;
+  } else {
+    more.style.display = 'none';
+  }
 }
 
 // ---------- SF2 report ----------

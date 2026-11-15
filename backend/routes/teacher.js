@@ -541,26 +541,213 @@ router.get('/attendance-history/:subjectId', asyncRoute(async (req, res) => {
   res.json(rows);
 }));
 
+// --- AT-RISK (Early Warning) ---
+// Tuning knobs. A student is only tagged "failing" when the grade is below passing OR they have
+// missed a SIGNIFICANT amount of the current term's work (not just one late activity).
+const AT_RISK = {
+  PASSING_GRADE: 75,        // term grade below this = failing
+  MISSING_WEIGHT_PCT: 20,   // missed work worth >= this many points of the term's initial grade = significant
+  MISSING_COUNT: 3,         // ...or this many missed activities in the term = significant
+  ABSENCE_LIMIT: 4,         // more than this many effective absences = at risk of dropping
+  LATES_PER_ABSENCE: 3,     // every N lates counts as 1 absence (keep in sync with teacher-utils.js)
+  WINDOW_DAYS: 30           // attendance look-back window
+};
+
+const ACTIVITIES = [
+  ['ww1', 'ww', 'Written Work 1'], ['ww2', 'ww', 'Written Work 2'], ['ww3', 'ww', 'Written Work 3'],
+  ['ww4', 'ww', 'Written Work 4'], ['ww5', 'ww', 'Written Work 5'],
+  ['pt1', 'pt', 'Performance Task 1'], ['pt2', 'pt', 'Performance Task 2'], ['pt3', 'pt', 'Performance Task 3'],
+  ['ex1', 'ex', 'Summative Assessment 1'], ['ex2', 'ex', 'Summative Assessment 2'], ['ex3', 'ex', 'Term Exam']
+];
+const COMP_NAMES = { ww: 'Written Work', pt: 'Performance Tasks', ex: 'Exams' };
+
+// Looks at one student's grade row for one term: what is missing, how much it is worth, how each component is doing.
+function analyzeTerm(row, weights) {
+  const w = { ww: weights[0], pt: weights[1], ex: weights[2] };
+  const comp = { ww: { hps: 0, got: 0, missedHps: 0 }, pt: { hps: 0, got: 0, missedHps: 0 }, ex: { hps: 0, got: 0, missedHps: 0 } };
+  const missed = [];
+  let total = 0;
+
+  for (const [key, c, label] of ACTIVITIES) {
+    const hps = Number(row[key + '_hps']) || 0;
+    if (hps <= 0) continue;                       // activity was never given in this term
+    total++;
+    comp[c].hps += hps;
+    const score = row[key];
+    if (score === null || score === undefined || score === '') {
+      comp[c].missedHps += hps;
+      missed.push({ key: key.toUpperCase(), label, hps, component: c });
+    } else {
+      comp[c].got += Number(score) || 0;
+    }
+  }
+
+  // points of the initial grade lost if every missed activity counts as zero
+  let missedWeightPct = 0;
+  const components = {};
+  for (const c of ['ww', 'pt', 'ex']) {
+    if (comp[c].hps > 0) missedWeightPct += (comp[c].missedHps / comp[c].hps) * w[c] * 100;
+    components[c] = comp[c].hps > 0 ? Math.round((comp[c].got / comp[c].hps) * 1000) / 10 : null;
+  }
+  missedWeightPct = Math.round(missedWeightPct * 10) / 10;
+
+  const significant = missed.length > 0 &&
+    (missedWeightPct >= AT_RISK.MISSING_WEIGHT_PCT || missed.length >= AT_RISK.MISSING_COUNT);
+
+  // weakest component among those the student actually has scores for (ignore components with nothing handed in)
+  let weakest = null;
+  for (const c of ['ww', 'pt', 'ex']) {
+    if (components[c] !== null && comp[c].got > 0 && (weakest === null || components[c] < components[weakest])) weakest = c;
+  }
+
+  return {
+    missed, total, missedWeightPct, significant, components,
+    weakest: weakest ? { key: weakest, name: COMP_NAMES[weakest], pct: components[weakest] } : null
+  };
+}
+
 router.get('/at-risk', asyncRoute(async (req, res) => {
-  const [rows] = await pool.query(`
-    SELECT u.id, u.full_name, 
-           ROUND(AVG(g.term_grade), 2) AS avg_grade,
-           COUNT(DISTINCT g.term_grade) AS graded_count,
-           MAX(g.missing_requirements) AS missing_requirements,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'present' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_present,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'late' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_late,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'excused' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_excused,
-           (SELECT COUNT(*) FROM attendance a WHERE a.student_id = u.id AND a.status = 'absent' AND a.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS raw_absent
-    FROM users u 
-    JOIN students s ON s.user_id = u.id 
+  // The subject type (which sets the WW/PT/EX weights) lives in the browser, so the page sends it along: {"12":"Core Subjects",...}
+  let typeMap = {};
+  try { typeMap = JSON.parse(req.query.types || '{}') || {}; } catch (e) { typeMap = {}; }
+
+  const [subjects] = await pool.query(`
+    SELECT sub.id, sub.name, sub.section_id, sec.name AS section
+    FROM subjects sub JOIN sections sec ON sec.id = sub.section_id
+    WHERE sub.teacher_id = ? AND sub.status = 'active' ORDER BY sub.name`, [req.user.id]);
+  if (!subjects.length) return res.json({ settings: AT_RISK, subjects: [], students: [] });
+
+  const [students] = await pool.query(`
+    SELECT DISTINCT u.id AS student_id, u.full_name, s.lrn, s.section_id, sec.name AS section
+    FROM subjects sub
+    JOIN students s ON s.section_id = sub.section_id
+    JOIN users u ON u.id = s.user_id
+    JOIN sections sec ON sec.id = s.section_id
+    WHERE sub.teacher_id = ? AND sub.status = 'active'
+    ORDER BY u.full_name`, [req.user.id]);
+
+  const [gradeRows] = await pool.query(`
+    SELECT g.* FROM grades g JOIN subjects sub ON sub.id = g.subject_id
+    WHERE sub.teacher_id = ? AND sub.status = 'active'`, [req.user.id]);
+
+  const [attRows] = await pool.query(`
+    SELECT a.student_id, a.date, a.status
+    FROM attendance a
+    JOIN students s ON s.user_id = a.student_id AND s.section_id = a.section_id
     JOIN subjects sub ON sub.section_id = s.section_id AND sub.teacher_id = ? AND sub.status = 'active'
-    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id
-    GROUP BY u.id, u.full_name 
-    HAVING (missing_requirements IS NOT NULL) 
-        OR (avg_grade < 75 AND avg_grade IS NOT NULL)
-        OR (raw_absent + FLOOR(raw_late / 3) > 4)
-  `, [req.user.id]);
-  res.json(rows);
+    WHERE a.date >= DATE_SUB(CURDATE(), INTERVAL ${AT_RISK.WINDOW_DAYS} DAY)
+    GROUP BY a.student_id, a.date, a.status
+    ORDER BY a.student_id, a.date`, [req.user.id]);
+
+  // index grades: subject -> term -> student -> row
+  const bySubject = {};
+  for (const g of gradeRows) {
+    if (!bySubject[g.subject_id]) bySubject[g.subject_id] = {};
+    if (!bySubject[g.subject_id][g.term]) bySubject[g.subject_id][g.term] = {};
+    bySubject[g.subject_id][g.term][g.student_id] = g;
+  }
+  const hasData = (g) => ACTIVITIES.some(([k]) => (Number(g[k + '_hps']) || 0) > 0 || (g[k] !== null && g[k] !== undefined));
+
+  // per subject: which term is "current" and what its HPS looks like
+  const subjectInfo = {};
+  for (const sub of subjects) {
+    const terms = bySubject[sub.id] || {};
+    const live = Object.keys(terms).map(Number).filter(t => Object.values(terms[t]).some(hasData)).sort((a, b) => a - b);
+    if (!live.length) continue;
+    const current = live[live.length - 1];
+    // class-wide HPS = the row in that term with the most HPS entered (HPS is the same for everyone)
+    const hpsOf = (g) => ACTIVITIES.reduce((s, [k]) => s + (Number(g[k + '_hps']) || 0), 0);
+    const hpsRow = Object.values(terms[current]).sort((a, b) => hpsOf(b) - hpsOf(a))[0];
+    subjectInfo[sub.id] = { current, hpsRow };
+  }
+
+  // attendance per student
+  const attByStudent = {};
+  for (const a of attRows) { if (!attByStudent[a.student_id]) attByStudent[a.student_id] = []; attByStudent[a.student_id].push(a); }
+
+  const result = [];
+  for (const st of students) {
+    const failing = [];
+
+    for (const sub of subjects.filter(s => s.section_id === st.section_id)) {
+      const info = subjectInfo[sub.id];
+      if (!info) continue;                                         // nothing graded in this subject yet
+      const weights = SUBJECT_WEIGHTS[typeMap[sub.id]] || SUBJECT_WEIGHTS['Core Subjects'];
+      const terms = bySubject[sub.id];
+
+      // current term row; a student with no row at all is treated as having handed in nothing
+      let row = terms[info.current][st.student_id];
+      if (!row) {
+        row = { term_grade: null, initial_grade: null };
+        for (const [k] of ACTIVITIES) { row[k] = null; row[k + '_hps'] = info.hpsRow[k + '_hps']; }
+      }
+
+      const termGrade = row.term_grade === null || row.term_grade === undefined ? null : Number(row.term_grade);
+      const lowGrade = termGrade !== null && termGrade < AT_RISK.PASSING_GRADE;
+      const t = analyzeTerm(row, weights);
+      if (!lowGrade && !t.significant) continue;                   // one or two missed activities alone do not tag a student
+
+      const previous = Object.keys(terms).map(Number).filter(n => n < info.current)
+        .sort((a, b) => a - b)
+        .map(n => {
+          const pr = terms[n][st.student_id];
+          return pr && pr.term_grade !== null ? { term: n, grade: Number(pr.term_grade) } : null;
+        }).filter(Boolean);
+
+      failing.push({
+        subject_id: sub.id, subject: sub.name, term: info.current,
+        term_grade: termGrade,
+        initial_grade: row.initial_grade === null || row.initial_grade === undefined ? null : Number(row.initial_grade),
+        low_grade: lowGrade,
+        missing: { count: t.missed.length, total: t.total, weight_pct: t.missedWeightPct, significant: t.significant, items: t.missed },
+        components: t.components,
+        weakest: t.weakest,
+        previous,
+        cause: lowGrade && t.significant ? 'both' : lowGrade ? 'scores' : 'missing'
+      });
+    }
+
+    // attendance
+    let dropping = null;
+    const recs = attByStudent[st.student_id] || [];
+    if (recs.length) {
+      const count = (s) => recs.filter(r => r.status === s).length;
+      const absent = count('absent'), late = count('late'), excused = count('excused'), present = count('present');
+      const converted = Math.floor(late / AT_RISK.LATES_PER_ABSENCE);
+      const effective = absent + converted;
+      if (effective > AT_RISK.ABSENCE_LIMIT) {
+        let streak = 0;
+        for (let i = recs.length - 1; i >= 0 && recs[i].status === 'absent'; i--) streak++;
+        const fmt = (d) => new Date(d).toISOString().slice(0, 10);
+        dropping = {
+          effective_absences: effective, absent, late, excused, present, converted,
+          recorded_days: recs.length,
+          absence_rate: Math.round((effective / recs.length) * 100),
+          streak,
+          recent_absences: recs.filter(r => r.status === 'absent').slice(-5).map(r => fmt(r.date)),
+          window_days: AT_RISK.WINDOW_DAYS
+        };
+      }
+    }
+
+    if (!failing.length && !dropping) continue;
+
+    const worst = failing.reduce((m, f) => (f.term_grade !== null && f.term_grade < m ? f.term_grade : m), 100);
+    const severe = failing.some(f => f.cause === 'both' || (f.term_grade !== null && f.term_grade < 70)) ||
+                   (failing.length > 0 && dropping) || (dropping && dropping.streak >= 3);
+    result.push({
+      student_id: st.student_id, full_name: st.full_name, lrn: st.lrn,
+      section_id: st.section_id, section: st.section,
+      failing, dropping, worst_grade: failing.length ? worst : null,
+      severity: severe ? 'high' : 'medium'
+    });
+  }
+
+  res.json({
+    settings: AT_RISK,
+    subjects: subjects.map(s => ({ id: s.id, name: s.name, section: s.section, section_id: s.section_id })),
+    students: result
+  });
 }));
 
 router.get('/sf2/:sectionId', asyncRoute(async (req, res) => {

@@ -22,6 +22,7 @@
     .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; color: var(--muted); }
     .close-btn:hover { color: var(--danger); }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
   </style>
 </head>
 <body>
@@ -269,27 +270,35 @@
 
       <!-- 6. EARLY WARNING -->
       <div class="view" id="view-warning" style="display:none">
-        <div class="warning-grid">
-          <div class="card warning-card failing">
-            <h3>📉 At Risk of Failing</h3>
-            <p class="warning-desc">Students whose average term grade falls below 75.</p>
-            <div style="overflow-x: auto;">
-              <table>
-                <thead><tr><th>Student</th><th>Avg Term Grade</th></tr></thead>
-                <tbody id="failingBody"></tbody>
-              </table>
-            </div>
+        <div class="card risk-panel">
+          <div class="subj-tabs risk-tabs">
+            <button class="btn btn-secondary subj-tab active" id="riskTabAll" onclick="setRiskTab('all')">All at risk <span class="risk-count" id="riskCntAll">0</span></button>
+            <button class="btn btn-secondary subj-tab" id="riskTabFailing" onclick="setRiskTab('failing')">📉 Failing <span class="risk-count" id="riskCntFailing">0</span></button>
+            <button class="btn btn-secondary subj-tab" id="riskTabDropping" onclick="setRiskTab('dropping')">🚪 Dropping <span class="risk-count" id="riskCntDropping">0</span></button>
+            <button class="btn btn-secondary subj-tab" id="riskTabBoth" onclick="setRiskTab('both')">⚠️ Both <span class="risk-count" id="riskCntBoth">0</span></button>
           </div>
 
-          <div class="card warning-card dropping">
-            <h3>🚪 At Risk of Dropping</h3>
-            <p class="warning-desc">Students with more than 4 absences (every 3 lates counts as 1 absence).</p>
-            <div style="overflow-x: auto;">
-              <table>
-                <thead><tr><th>Student</th><th>Absences</th></tr></thead>
-                <tbody id="droppingBody"></tbody>
-              </table>
-            </div>
+          <p class="risk-rules" id="riskRules"></p>
+
+          <div class="risk-toolbar">
+            <input type="search" class="input" id="riskSearch" placeholder="Search student name…" oninput="onRiskFilterChange()">
+            <select class="input" id="riskSubject" onchange="onRiskFilterChange()"><option value="">All subjects</option></select>
+            <select class="input" id="riskSort" onchange="onRiskFilterChange()">
+              <option value="severity">Sort: Most urgent first</option>
+              <option value="grade">Sort: Lowest grade</option>
+              <option value="absences">Sort: Most absences</option>
+              <option value="name">Sort: Name (A–Z)</option>
+            </select>
+            <span class="risk-toolbar-actions">
+              <button class="btn btn-secondary" onclick="toggleAllRisk(true)">Expand all</button>
+              <button class="btn btn-secondary" onclick="toggleAllRisk(false)">Collapse all</button>
+            </span>
+          </div>
+
+          <div class="risk-meta" id="riskMeta"></div>
+          <div id="riskList" class="risk-list"></div>
+          <div style="text-align:center; margin-top: 14px;">
+            <button class="btn btn-secondary" id="riskMore" style="display:none" onclick="showMoreRisk()"></button>
           </div>
         </div>
       </div>
