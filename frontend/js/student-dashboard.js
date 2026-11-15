@@ -104,6 +104,11 @@ function updateBadge() {
   return n;
 }
 
+// Ask before logging out (used by the sidebar and mobile logout buttons)
+function confirmLogout() {
+  if (confirm('Log out of the Student Portal?')) logout();
+}
+
 // ---------------------------------------------------------------------------
 // Navigation: every summary on the dashboard jumps to a tab via go()
 // ---------------------------------------------------------------------------
