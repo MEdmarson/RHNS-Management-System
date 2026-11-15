@@ -536,8 +536,7 @@ tr:hover td {
 .subject-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-  border-color: #000; 
-  border-left-color: var(--warning);
+  border-color: var(--warning);
 }
 
 .subject-card h3 {
