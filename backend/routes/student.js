@@ -211,57 +211,111 @@ async function loadAttendance(userId) {
 // Live alerts worked out from the grades and attendance. They have no row in the
 // notifications table, so the browser remembers which ones the student has seen
 // (id + sig; a changed sig means something new happened).
+//
+// Each alert carries the details the Alerts tab shows:
+//   category  : 'inc' | 'missing' | 'failing' | 'target' | 'attendance'
+//   subject_id, subject, terms[]   -> chips + "View subject" button
+//   items[]   -> missing activities (WW1, PT2 ...) shown as chips
+//   facts[]   -> short supporting lines (grade vs passing, absences used ...)
+//   action    -> { label, view, subject_id? } for the button / dashboard link
 function buildAlerts(list, att) {
   const alerts = [];
+  const add = a => alerts.push({ source: 'system', created_at: null, terms: [], items: [], facts: [], ...a });
 
   for (const s of list) {
+    const ctx = { subject_id: s.subject_id, subject: s.subject };
+    const open = { label: 'View subject', view: 'subjects', subject_id: s.subject_id };
     const incTerms = TERMS.filter(t => s.term_status[t] === 'inc');
+
     if (s.finished_by_teacher && incTerms.length) {
-      alerts.push({
-        id: `inc-fin-${s.subject_id}`, sig: incTerms.join(','), type: 'error',
+      add({
+        ...ctx, id: `inc-fin-${s.subject_id}`, sig: incTerms.join(','), type: 'error', category: 'inc',
         title: `INC: ${s.subject} (${incTerms.length > 1 ? 'Terms' : 'Term'} ${incTerms.join(', ')})`,
         body: `This subject is already marked finished, so requirements are settled in person. Approach ${s.teacher} and ask how to clear your INC.`,
+        terms: incTerms,
+        facts: [`Teacher: ${s.teacher}`],
+        action: open,
       });
     }
+
     for (const t of TERMS) {
       const overdue = s.term_overdue[t] || [];
       const st = s.term_status[t];
 
       if (overdue.length) {
-        alerts.push({
-          id: `miss-${s.subject_id}-${t}`, sig: overdue.join(','),
-          type: st === 'inc' ? 'error' : 'warning',
+        add({
+          ...ctx, id: `miss-${s.subject_id}-${t}`, sig: overdue.join(','),
+          type: st === 'inc' ? 'error' : 'warning', category: 'missing',
           title: `Missing requirements: ${s.subject} (Term ${t})`,
-          body: `Not yet submitted: ${overdue.join(', ')}. ` +
+          body: `You have ${overdue.length} item${overdue.length === 1 ? '' : 's'} not yet submitted. ` +
                 (st === 'inc' ? 'This term stays INC until they are complete.' : 'Submit them to your teacher to avoid an INC.'),
+          terms: [t], items: overdue,
+          facts: [`Teacher: ${s.teacher}`],
+          action: open,
         });
       }
+
       if (st === 'failed') {
         const g = s[`term${t}`];
-        alerts.push({
-          id: `fail-${s.subject_id}-${t}`, sig: String(g ?? 'failed'), type: 'error',
+        add({
+          ...ctx, id: `fail-${s.subject_id}-${t}`, sig: String(g ?? 'failed'), type: 'error', category: 'failing',
           title: `Below passing: ${s.subject} (Term ${t})`,
           body: (g != null ? `Your grade is ${g}; passing is ${PASSING}. ` : `Your grade is below the passing mark of ${PASSING}. `) +
                 'Ask your teacher about make-up work.',
+          terms: [t],
+          facts: g != null
+            ? [`Your grade: ${g}`, `Passing grade: ${PASSING}`, `Short by ${PASSING - g} point${PASSING - g === 1 ? '' : 's'}`]
+            : [`Passing grade: ${PASSING}`],
+          action: open,
         });
       }
     }
+
+    // Passing outlook (only exists when raw scores are visible to the student)
+    if (s.target && s.target.state !== 'secured') {
+      const { termsLeft, needed, state } = s.target;
+      const need = termsLeft === 1
+        ? `You need at least ${needed} in the last term to pass.`
+        : `You need an average of at least ${needed} over the remaining ${termsLeft} terms to pass.`;
+      add({
+        ...ctx, id: `target-${s.subject_id}`, sig: `${state}-${needed}-${termsLeft}`,
+        type: state === 'out_of_reach' ? 'error' : 'info', category: 'target',
+        title: state === 'out_of_reach' ? `${s.subject}: passing is at risk` : `${s.subject}: aim for ${needed}+`,
+        body: state === 'out_of_reach'
+          ? 'Passing by grades alone is no longer possible. Ask your teacher about remediation.'
+          : need,
+        facts: [`Terms left: ${termsLeft}`, `Target: ${needed}${termsLeft > 1 ? ' average' : ''}`],
+        action: open,
+      });
+    }
   }
 
+  const attAction = { label: 'View attendance', view: 'attendance' };
+  const attFacts = [`Absences used: ${att.absent} of ${att.limit}`, `Remaining before the limit: ${att.remaining}`];
+  if (att.converted) attFacts.push(`${att.converted} absence(s) came from ${att.late} lates`);
+
   if (att.absent >= 10) {
-    const high = att.absent >= 15;
-    alerts.push({
-      id: 'att-limit', sig: String(att.absent), type: high ? 'error' : 'warning',
+    add({
+      id: 'att-limit', sig: String(att.absent), type: att.absent >= 15 ? 'error' : 'warning', category: 'attendance',
       title: `Attendance: ${att.absent} absences recorded`,
       body: att.remaining > 0
-        ? `The limit is ${ABSENCE_LIMIT} per school year. Avoid missing more classes.`
+        ? `The limit is ${att.limit} per school year. Avoid missing more classes.`
         : 'You have reached the absence limit. Talk to your adviser right away.',
+      facts: attFacts, action: attAction,
     });
   }
 
-  const rank = { error: 0, warning: 1 };
-  return alerts.map(a => ({ ...a, source: 'system', created_at: null }))
-               .sort((a, b) => rank[a.type] - rank[b.type]);
+  if (att.late % LATES_PER_ABSENCE === LATES_PER_ABSENCE - 1) {
+    add({
+      id: 'att-late', sig: String(att.late), type: 'info', category: 'attendance',
+      title: 'One more late counts as an absence',
+      body: `Every ${LATES_PER_ABSENCE} lates are counted as 1 absence. Arrive on time to keep your record clean.`,
+      facts: [`Lates so far: ${att.late}`], action: attAction,
+    });
+  }
+
+  const rank = { error: 0, warning: 1, info: 2 };
+  return alerts.sort((a, b) => (rank[a.type] ?? 3) - (rank[b.type] ?? 3));
 }
 
 async function loadNotifications(userId, subjects, attendance) {
