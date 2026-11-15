@@ -385,6 +385,11 @@ function renderAttendance() {
       <small>${a.converted ? plural(a.converted, 'absence') + ' from lates' : 'None converted'}</small></div>
     <div class="tile"><span>Excused</span><strong>${a.excused}</strong><small>Not counted as absent</small></div>`;
 
+  if (a.school_year) {
+    const fmt = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    $('attYear').textContent = `School Year ${a.school_year.label} · ${fmt(a.school_year.start)} to ${fmt(a.school_year.end)}`;
+  }
+
   $('attMeter').innerHTML = meter(pct, color);
   $('attMessage').textContent = a.absent === 0 ? attMessage(a) : `${plural(a.absent, 'absence')} recorded. ${attMessage(a)}`;
 

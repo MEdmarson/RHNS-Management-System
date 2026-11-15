@@ -12,7 +12,16 @@ const PASSING = 75;
 const INC_THRESHOLD = 3;       // missing items in a closed term that make it INC
 const ABSENCE_LIMIT = 20;      // DepEd limit per school year
 const LATES_PER_ABSENCE = 3;   // same rule as the teacher portal
-const MISSED_MIN_CLASSMATES = 3;   // classmates who must have a score before it counts as missed
+
+// DepEd school year used for attendance totals. SY 2026-2027 runs June 8, 2026 to
+// April 8, 2027 (three-term calendar, Junior and Senior High). Update every year,
+// or set SCHOOL_YEAR_LABEL / SCHOOL_YEAR_START / SCHOOL_YEAR_END in your .env file.
+const SCHOOL_YEAR = {
+  label: process.env.SCHOOL_YEAR_LABEL || '2026–2027',
+  start: process.env.SCHOOL_YEAR_START || '2026-06-08',
+  end:   process.env.SCHOOL_YEAR_END   || '2027-04-08',
+};
+
 const showRaw = () => process.env.STUDENT_SHOW_RAW !== 'false';
 const QUALITATIVE = {
   passed: 'Passed', failed: 'Failed', inc: 'INC / Not Submitted',
@@ -77,7 +86,7 @@ function summarizeSubject(sub, gs, given = {}) {
   // Only counts when at least one classmate already has a score for the activity, so an
   // activity the teacher has only planned (HPS set, nobody scored yet) is NOT missed.
   const missedIn = t => finished ? [] : terms[t].missing.filter(m =>
-    !terms[t].overdue.includes(m) && (Number(given[t]?.[m.toLowerCase()]) || 0) >= MISSED_MIN_CLASSMATES);
+    !terms[t].overdue.includes(m) && (Number(given[t]?.[m.toLowerCase()]) || 0) > 0);
 
   const graded   = TERMS.filter(t => terms[t].status === 'passed' || terms[t].status === 'failed');
   const incTerms = TERMS.filter(t => terms[t].status === 'inc');
@@ -208,8 +217,9 @@ async function loadAttendance(userId) {
            COALESCE(SUM(status='absent'),  0) AS absent,
            COALESCE(SUM(status='late'),    0) AS late,
            COALESCE(SUM(status='excused'), 0) AS excused
-    FROM attendance WHERE student_id = ?
-  `, [userId]);
+    FROM attendance
+    WHERE student_id = ? AND date BETWEEN ? AND ?
+  `, [userId, SCHOOL_YEAR.start, SCHOOL_YEAR.end]);
 
   const r = rows[0] || {};
   const present = +r.present || 0, absent = +r.absent || 0;
@@ -228,6 +238,7 @@ async function loadAttendance(userId) {
     limit: ABSENCE_LIMIT,
     remaining: Math.max(ABSENCE_LIMIT - absences, 0),
     totalDays,
+    school_year: SCHOOL_YEAR,
     rate: totalDays ? Math.round(((presentAdj + excused) / totalDays) * 100) : null,
   };
 }
