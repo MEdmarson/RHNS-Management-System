@@ -8,9 +8,9 @@
   --accent-dark: #7f1d1d;
   --warning: #f59e0b;
   /* Sun yellow */
-  --success: #10b981;
+  --success: #16A34A;
   --danger: #ef4444;
-  --bg: #FFF8B3;
+  --bg: #FFF9CC;
   --card: #ffffff;
   --text: #1f2937;
   --muted: #6b7280;
@@ -270,7 +270,7 @@ body {
   gap: 12px;
   padding: 12px 24px 12px 20px;
   border-left: 4px solid transparent;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgb(255, 255, 255);
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
@@ -339,6 +339,7 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   font-size: 14px;
   font-weight: 600;
+  border: 2px solid #000;
 }
 
 /* CARDS & STATS */
