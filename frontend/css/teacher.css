@@ -233,6 +233,7 @@ button.att-btn.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
 .risk-stat { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; text-align: center; }
 .risk-stat b { display: block; font-size: 16px; }
 .risk-stat span { font-size: 11px; color: var(--muted); }
+.att-legend { display: none; }
 
 @media (max-width: 768px) {
   .risk-head { flex-wrap: wrap; }

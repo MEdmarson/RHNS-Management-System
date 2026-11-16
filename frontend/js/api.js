@@ -44,7 +44,7 @@ function showLoader() {
   if (pendingLoads !== 1) return;               // already counting; the overlay is on, or about to be
   showTimer   = setTimeout(() => { const el = loaderEl(); if (el) el.style.display = 'flex'; }, UI.SHOW_AFTER_MS);
   slowTimer   = setTimeout(() => setLoaderNote('This is taking longer than usual…'), UI.SLOW_MS);
-  wakingTimer = setTimeout(() => setLoaderNote('The server is waking up (free hosting sleeps when idle). This can take up to a minute, please wait.'), UI.WAKING_MS);
+  wakingTimer = setTimeout(() => setLoaderNote('Connecting to server. This can take up to a minute, please wait.'), UI.WAKING_MS);
 }
 
 function hideLoader() {
