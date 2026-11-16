@@ -86,12 +86,12 @@ function showLoader() {
   }, UI.SHOW_AFTER_MS);
 
   slowTimer = setTimeout(() => {
-    setLoaderNote('This is taking longer than usual…');
+    setLoaderNote('Server is waking up. This can take a few seconds, please wait.');
   }, UI.SLOW_MS);
 
   wakingTimer = setTimeout(() => {
     setLoaderNote(
-      'Connecting to server. This can take up to a minute, please wait.'
+      'Connecting to server. This can take a few seconds, please wait.'
     );
   }, UI.WAKING_MS);
 }
