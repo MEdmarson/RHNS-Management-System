@@ -117,7 +117,6 @@ router.delete('/subjects/:id', asyncRoute(async (req, res) => {
     if (check.length === 0) return res.status(403).json({ error: 'Unauthorized to delete this subject' });
     
     await pool.query('DELETE FROM grades WHERE subject_id = ?', [id]);
-    await pool.query('DELETE FROM attendance WHERE subject_id = ?', [id]).catch(() => {});
     await pool.query('DELETE FROM subjects WHERE id = ?', [id]);
     
     res.json({ ok: true, message: 'Subject deleted successfully' });
@@ -518,26 +517,34 @@ router.get('/final-grades', asyncRoute(async (req, res) => {
 
 // --- ATTENDANCE & WARNINGS ---
 router.get('/attendance/:subjectId/:date', asyncRoute(async (req, res) => {
+  const sy = require('./atRisk').getSchoolYear();            // totals count only the current school year
   const [rows] = await pool.query(`
     SELECT u.id AS student_id, u.full_name, a.status,
-           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present') AS days_present,
-           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'late') AS days_late,
-           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'excused') AS days_excused,
-           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent') AS days_absent
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'present' AND date BETWEEN ? AND ?) AS days_present,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'late'    AND date BETWEEN ? AND ?) AS days_late,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'excused' AND date BETWEEN ? AND ?) AS days_excused,
+           (SELECT COUNT(*) FROM attendance WHERE student_id = u.id AND status = 'absent'  AND date BETWEEN ? AND ?) AS days_absent
     FROM subjects sub JOIN students s ON s.section_id = sub.section_id JOIN users u ON u.id = s.user_id
     LEFT JOIN attendance a ON a.student_id = u.id AND a.date = ? AND a.section_id = sub.section_id
-    WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name, a.status ORDER BY u.full_name`, [req.params.date, req.user.id, req.params.subjectId]);
+    WHERE sub.teacher_id = ? AND sub.id = ? GROUP BY u.id, u.full_name, a.status ORDER BY u.full_name`,
+    [sy.start, sy.end, sy.start, sy.end, sy.start, sy.end, sy.start, sy.end, req.params.date, req.user.id, req.params.subjectId]);
   res.json(rows);
 }));
 
 router.post('/attendance', asyncRoute(async (req, res) => {
   const { student_id, section_id, date, status } = req.body;
+  // Only a teacher who teaches this section may record attendance for a student in it
+  const [allowed] = await pool.query(
+    `SELECT 1 FROM subjects sub JOIN students s ON s.section_id = sub.section_id
+     WHERE sub.teacher_id = ? AND sub.section_id = ? AND s.user_id = ? LIMIT 1`,
+    [req.user.id, section_id, student_id]);
+  if (!allowed.length) return res.status(403).json({ error: 'You are not allowed to record attendance for this student.' });
   // status null / '' = clear the record for that day (toggle off)
   if (!status) {
     await pool.query('DELETE FROM attendance WHERE student_id = ? AND section_id = ? AND date = ?', [student_id, section_id, date]);
     return res.json({ ok: true, cleared: true });
   }
-  await pool.query(`INSERT INTO attendance (student_id, section_id, date, status, recorded_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status)`, [student_id, section_id, date, status, req.user.id]);
+  await pool.query(`INSERT INTO attendance (student_id, section_id, date, status, recorded_by) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), recorded_by = VALUES(recorded_by)`, [student_id, section_id, date, status, req.user.id]);
   res.json({ ok: true });
 }));
 

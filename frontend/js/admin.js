@@ -1,6 +1,10 @@
 requireAuth('admin');
 document.getElementById('userChip').textContent = '🛡️ ' + getUser().name;
 
+const escHtml = (v) => String(v === null || v === undefined ? '' : v)
+  .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const agoText = (d) => (d === null || d === undefined ? 'Never' : d === 0 ? 'Today' : d === 1 ? '1 day ago' : d + ' days ago');
+
 let allUsersData = []; 
 let allSubjectsData = []; 
 let currentUserFilter = 'all'; 
@@ -9,7 +13,7 @@ function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'}</span> ${message}`;
+  toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️'}</span> ${escHtml(message)}`;
   container.appendChild(toast);
   setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
@@ -21,7 +25,7 @@ function showView(name, el) {
   el.classList.add('active');
   
   const titles = {
-    'dashboard': 'Administrator Dashboard', 'users': 'Manage Users', 'subjects': 'Manage Subjects',
+    'dashboard': 'Administrator Dashboard: School-Wide Oversight', 'users': 'Manage Users', 'subjects': 'Manage Subjects',
     'atrisk': 'At-Risk Students', 'compliance': 'Teacher Compliance', 'reports': 'Reports'
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Admin Portal';
@@ -105,7 +109,7 @@ function renderUsers() {
   if (currentUserFilter !== 'all') filtered = filtered.filter(u => u.role === currentUserFilter);
   if (searchQuery) {
     filtered = filtered.filter(u => 
-      u.full_name.toLowerCase().includes(searchQuery) || u.email.toLowerCase().includes(searchQuery) || (u.lrn && u.lrn.includes(searchQuery))
+      u.full_name.toLowerCase().includes(searchQuery) || (u.email || '').toLowerCase().includes(searchQuery) || (u.lrn && u.lrn.includes(searchQuery))
     );
   }
 
@@ -116,13 +120,13 @@ function renderUsers() {
 
   document.getElementById('usersListBody').innerHTML = filtered.map(u => `
     <tr>
-      <td><strong>${u.full_name}</strong></td>
-      <td>${u.email}</td>
+      <td><strong>${escHtml(u.full_name)}</strong></td>
+      <td>${escHtml(u.email)}</td>
       <td>${u.role === 'teacher' ? '<span class="badge ok">Teacher</span>' : '<span class="badge warn">Student</span>'}</td>
-      <td>${u.role === 'student' ? `${u.section || 'No Section'} / ${u.lrn}` : '—'}</td>
+      <td>${u.role === 'student' ? `${escHtml(u.section || 'No Section')} / ${escHtml(u.lrn)}` : '—'}</td>
       <td>
         <button class="btn-edit" onclick="editUser(${u.id})">Edit</button>
-        <button class="btn-delete" onclick="deleteUser(${u.id}, '${u.full_name}')">Delete</button>
+        <button class="btn-delete" onclick="deleteUser(${u.id})">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -145,7 +149,7 @@ function renderSubjects() {
   let filtered = allSubjectsData;
   if (searchQuery) {
     filtered = filtered.filter(s => 
-      s.name.toLowerCase().includes(searchQuery) || s.code.toLowerCase().includes(searchQuery) || (s.teacher_name && s.teacher_name.toLowerCase().includes(searchQuery))
+      s.name.toLowerCase().includes(searchQuery) || (s.code || '').toLowerCase().includes(searchQuery) || (s.teacher_name && s.teacher_name.toLowerCase().includes(searchQuery))
     );
   }
 
@@ -156,13 +160,13 @@ function renderSubjects() {
 
   document.getElementById('subjectsListBody').innerHTML = filtered.map(s => `
     <tr>
-      <td><strong>${s.code}</strong></td>
-      <td>${s.name}</td>
-      <td>${s.teacher_name || '<span style="color:red;">Unassigned</span>'}</td>
-      <td>${s.section_name || '<span style="color:red;">Unassigned</span>'}</td>
+      <td><strong>${escHtml(s.code)}</strong></td>
+      <td>${escHtml(s.name)}</td>
+      <td>${s.teacher_name ? escHtml(s.teacher_name) : '<span style="color:red;">Unassigned</span>'}</td>
+      <td>${s.section_name ? escHtml(s.section_name) : '<span style="color:red;">Unassigned</span>'}</td>
       <td>
         <button class="btn-edit" onclick="editSubject(${s.id})">Edit</button>
-        <button class="btn-delete" onclick="deleteSubject(${s.id}, '${s.name}')">Delete</button>
+        <button class="btn-delete" onclick="deleteSubject(${s.id})">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -172,9 +176,9 @@ async function loadDropdowns() {
   try {
     const teachers = await apiFetch('/admin/teachers');
     const sections = await apiFetch('/admin/sections');
-    document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${t.full_name}</option>`).join('');
-    document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${escHtml(t.full_name)}</option>`).join('');
+    document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+    document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
   } catch (err) { console.error("Failed to load dropdowns", err); }
 }
 
@@ -236,7 +240,9 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
   }
 });
 
-async function deleteUser(id, name) {
+async function deleteUser(id) {
+  const user = allUsersData.find(u => u.id === id);
+  const name = user ? user.full_name : 'this user';
   if (!confirm(`Are you sure you want to delete ${name}? This will also delete all their grades and attendance records.`)) return;
   try {
     await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
@@ -245,7 +251,9 @@ async function deleteUser(id, name) {
   } catch (err) { showToast('Error deleting user.', 'error'); }
 }
 
-async function deleteSubject(id, name) {
+async function deleteSubject(id) {
+  const subj = allSubjectsData.find(s => s.id === id);
+  const name = subj ? subj.name : 'this subject';
   if (!confirm(`Are you sure you want to delete the subject ${name}? This will delete all grades associated with it.`)) return;
   try {
     await apiFetch(`/admin/subjects/${id}`, { method: 'DELETE' });
@@ -255,50 +263,76 @@ async function deleteSubject(id, name) {
 }
 
 async function loadDashboard() {
-  const d = await apiFetch('/admin/dashboard');
-  document.getElementById('stats').innerHTML = `
-    <div class="stat-card"><h4>Total Students</h4><div class="value">${d.total_students || 0}</div></div>
-    <div class="stat-card success"><h4>School Average</h4><div class="value">${d.avg_grade || '—'}</div></div>
-    <div class="stat-card danger"><h4>At-Risk</h4><div class="value">${d.at_risk || 0}</div></div>
-  `;
+  // The dashboard is drawn by js/adminDashboard.js (loaded after this file; it loads itself the first time)
+  if (typeof window.loadOverview === 'function') await window.loadOverview();
 }
+
+// ---------- AT-RISK (all grade levels) ----------
+let atRiskData = [];
 
 async function loadAtRisk() {
-  const rows = await apiFetch('/admin/at-risk');
-  
+  atRiskData = await apiFetch('/admin/at-risk');
+  const levels = [...new Set(atRiskData.map(r => r.grade_level))].sort((a, b) => a - b);
+  const sel = document.getElementById('atRiskLevel');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="all">All grade levels</option>' + levels.map(l => `<option value="${l}">Grade ${l}</option>`).join('');
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  renderAtRisk();
+}
+
+function renderAtRisk() {
+  const q = document.getElementById('atRiskSearch').value.toLowerCase();
+  const lvl = document.getElementById('atRiskLevel').value;
+  const sev = document.getElementById('atRiskSeverity').value;
+  const rows = atRiskData.filter(r =>
+    (lvl === 'all' || String(r.grade_level) === lvl) &&
+    (sev === 'all' || r.severity === sev) &&
+    (!q || r.full_name.toLowerCase().includes(q) || (r.lrn || '').includes(q)));
+
+  document.getElementById('atRiskCount').textContent = `Showing ${rows.length} of ${atRiskData.length}`;
   document.getElementById('atRiskBody').innerHTML = rows.map(r => {
-    // Show a dash if the grade is null (meaning no grades have been inputted yet)
     const avgDisplay = r.avg_grade !== null ? `<span class="badge ${r.avg_grade < 75 ? 'danger' : 'ok'}">${r.avg_grade}</span>` : '—';
     const absDisplay = r.absences > 0 ? `<span class="badge danger">${r.absences}</span>` : '0';
-
+    const sevBadge = r.severity === 'high' ? '<span class="badge danger">High</span>' : '<span class="badge warn">Medium</span>';
     return `
       <tr>
-        <td><strong>${r.full_name}</strong></td>
-        <td>${r.section || '—'}</td>
+        <td><strong>${escHtml(r.full_name)}</strong></td>
+        <td>Grade ${escHtml(r.grade_level)}<br><span style="font-size:12px;color:var(--muted)">${escHtml(r.section || '—')}</span></td>
+        <td style="font-weight:500">${r.reasons.map(escHtml).join('<br>')}</td>
         <td>${avgDisplay}</td>
         <td>${absDisplay}</td>
+        <td>${sevBadge}</td>
       </tr>`;
-  }).join('') || '<tr><td colspan="4" style="text-align:center; padding: 20px;">🎉 No at-risk students.</td></tr>';
+  }).join('') || `<tr><td colspan="6" style="text-align:center; padding: 20px;">${atRiskData.length ? 'No students match these filters.' : '🎉 No at-risk students.'}</td></tr>`;
 }
 
+// ---------- TEACHER COMPLIANCE ----------
 async function loadCompliance() {
   const rows = await apiFetch('/admin/compliance');
-  document.getElementById('complianceBody').innerHTML = rows.map(r => {
-    const overdue = r.days_ago == null || r.days_ago > 7;
-    return `<tr>
-      <td>${r.teacher}</td>
-      <td>${r.last_update ? new Date(r.last_update).toLocaleString() : 'Never'}</td>
-      <td>${overdue ? '<span class="badge danger">Overdue</span>' : '<span class="badge ok">Up to date</span>'}</td>
-    </tr>`;
-  }).join('');
+  const badge = {
+    on_track: '<span class="badge ok">On track</span>',
+    behind: '<span class="badge warn">Behind</span>',
+    overdue: '<span class="badge danger">Overdue</span>',
+    no_subjects: '<span class="badge" style="background:#e5e7eb;color:#374151">No active subjects</span>'
+  };
+  document.getElementById('complianceBody').innerHTML = rows.map(r => `<tr>
+      <td>${escHtml(r.teacher)}</td>
+      <td>${r.active_subjects}</td>
+      <td>${r.last_update ? new Date(r.last_update).toLocaleDateString() : 'Never'}<br><span style="font-size:12px;color:var(--muted)">${r.last_update ? agoText(r.days_ago) : ''}</span></td>
+      <td>${r.last_attendance ? new Date(r.last_attendance).toLocaleDateString() : 'Never'}<br><span style="font-size:12px;color:var(--muted)">${r.last_attendance ? agoText(r.attendance_days_ago) : ''}</span></td>
+      <td>${badge[r.status] || ''}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center; padding: 20px;">No teachers found.</td></tr>';
 }
 
+// ---------- REPORTS ----------
 async function exportCSV() {
   const rows = await apiFetch('/admin/export');
-  const header = ['LRN','Name','Section','Subject','Term','Final'];
+  // Names are stored as "LAST, FIRST", so every value is quoted or the comma would split the column
+  const q = (v) => { const t = v === null || v === undefined ? '' : String(v); return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const header = ['LRN', 'Name', 'Grade Level', 'Section', 'Subject', 'Term', 'Final'];
   const lines = [header.join(',')];
-  rows.forEach(r => lines.push([r.lrn, r.full_name, r.section, r.subject, r.term, r.term_grade].join(',')));
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  rows.forEach(r => lines.push([r.lrn, r.full_name, r.grade_level, r.section, r.subject, r.term, r.term_grade].map(q).join(',')));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'school_report.csv';
