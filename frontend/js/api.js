@@ -8,7 +8,7 @@ const API_ORIGIN = 'https://rnhs-shs.onrender.com';
 const API = `${API_ORIGIN}/api`;
 
 // Frontend static website address
-const FRONTEND_ORIGIN = 'https://rhns-management-system.onrender.com';
+const FRONTEND_ORIGIN = 'https://rnhs-management.onrender.com';
 
 
 // ===========================================================================
