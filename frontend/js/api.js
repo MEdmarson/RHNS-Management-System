@@ -91,7 +91,7 @@ function showLoader() {
 
   wakingTimer = setTimeout(() => {
     setLoaderNote(
-      'Connecting to server. This can take a few seconds, please wait.'
+      'Connecting to server. Almost there, please wait.'
     );
   }, UI.WAKING_MS);
 }
