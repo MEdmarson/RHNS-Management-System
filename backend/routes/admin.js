@@ -351,10 +351,26 @@ router.get('/all-users', async (req, res) => {
   }
 });
 
+// Students log in with their LRN, so their email is optional (stored as NULL, never as an empty string,
+// so several students without an email do not clash on the unique index). Teachers still need one.
+const cleanEmail = (v) => { const t = String(v || '').trim(); return t === '' ? null : t; };
+
+// Make sure users.email accepts NULL (keeps the existing column type and unique index)
+pool.query(`SELECT COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'email'`)
+  .then(([[c]]) => c && c.IS_NULLABLE === 'NO' ? pool.query(`ALTER TABLE users MODIFY email ${c.COLUMN_TYPE} NULL`) : null)
+  .catch((e) => console.error('Could not make users.email nullable:', e.message));
+
 router.post('/users', async (req, res) => {
-  const { email, password, full_name, role, lrn, section_id, grade_level } = req.body;
+  const { password, full_name, role, lrn, section_id, grade_level } = req.body;
+  const email = cleanEmail(req.body.email);
   try {
-    const password_hash = await bcrypt.hash(password, 10);
+    if (role !== 'student' && !email) return res.status(400).json({ error: 'Email is required for teachers' });
+    if (role === 'student' && !String(lrn || '').trim()) return res.status(400).json({ error: 'LRN is required for students' });
+    // A student without a typed password starts with their LRN, like the login page tells them
+    const plain = password && String(password).trim() ? password : (role === 'student' ? String(lrn).trim() : '');
+    if (!plain) return res.status(400).json({ error: 'Password is required' });
+    const password_hash = await bcrypt.hash(plain, 10);
     const [result] = await pool.query(
       'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
       [email, password_hash, full_name, role]
@@ -364,7 +380,7 @@ router.post('/users', async (req, res) => {
     if (role === 'student') {
       await pool.query(
         'INSERT INTO students (user_id, lrn, section_id, grade_level) VALUES (?, ?, ?, ?)',
-        [newUserId, lrn, section_id || null, grade_level || 10]
+        [newUserId, String(lrn).trim(), section_id || null, grade_level || 10]
       );
     }
     res.json({ ok: true, message: 'User created successfully' });
@@ -376,8 +392,12 @@ router.post('/users', async (req, res) => {
 
 router.put('/users/:id', async (req, res) => {
   const userId = req.params.id;
-  const { full_name, email, lrn, section_id, password } = req.body;
+  const { full_name, lrn, section_id, password } = req.body;
+  const email = cleanEmail(req.body.email);
   try {
+    const [[existing]] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+    if (existing.role !== 'student' && !email) return res.status(400).json({ error: 'Email is required for teachers' });
     await pool.query(
       'UPDATE users SET full_name = ?, email = ? WHERE id = ?',
       [full_name, email, userId]

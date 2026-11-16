@@ -76,8 +76,15 @@ function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 window.onclick = function(event) { if (event.target.classList.contains('modal')) event.target.style.display = 'none'; }
 
 function toggleStudentFields() {
-  const role = document.getElementById('userRole').value;
-  document.getElementById('studentFields').style.display = role === 'student' ? 'grid' : 'none';
+  const isStudent = document.getElementById('userRole').value === 'student';
+  document.getElementById('studentFields').style.display = isStudent ? 'grid' : 'none';
+  // Students log in with their LRN: email is optional, and the password defaults to the LRN
+  document.getElementById('userEmail').required = !isStudent;
+  document.getElementById('userEmailLabel').textContent = isStudent ? 'Email Address (optional)' : 'Email Address';
+  document.getElementById('userEmail').placeholder = isStudent ? 'Leave blank if none' : 'email@school.edu';
+  const adding = !document.getElementById('editUserId').value;
+  document.getElementById('userPassword').required = adding && !isStudent;
+  document.getElementById('userPassword').placeholder = isStudent && adding ? 'Blank = LRN' : 'Set a password';
 }
 
 function openUserModal() {
@@ -87,6 +94,7 @@ function openUserModal() {
   document.getElementById('userPassword').required = true;
   document.getElementById('userMsg').textContent = '';
   document.getElementById('studentFields').style.display = 'none';
+  toggleStudentFields();
   openModal('userModal');
 }
 
@@ -116,6 +124,8 @@ function editUser(id) {
   }
   document.getElementById('userModalTitle').textContent = '✏️ Edit User';
   document.getElementById('userMsg').textContent = '';
+  toggleStudentFields();
+  document.getElementById('userPassword').required = false;
   openModal('userModal');
 }
 
@@ -155,7 +165,7 @@ function renderUsers() {
   document.getElementById('usersListBody').innerHTML = filtered.map(u => `
     <tr>
       <td><strong>${escHtml(u.full_name)}</strong></td>
-      <td>${escHtml(u.email)}</td>
+      <td>${u.email ? escHtml(u.email) : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${u.role === 'teacher' ? '<span class="badge ok">Teacher</span>' : '<span class="badge warn">Student</span>'}</td>
       <td>${u.role === 'student' ? `${escHtml(u.section || 'No Section')} / ${escHtml(u.lrn)}` : '—'}</td>
       <td>
