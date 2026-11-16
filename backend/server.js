@@ -1,4 +1,3 @@
-
 // ===========================================================================
 // RNHS MANAGEMENT SYSTEM - EXPRESS SERVER
 // ===========================================================================
@@ -9,6 +8,10 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
+
+// Render sits behind a proxy. This makes req.protocol report "https"
+// so the server can correctly recognise its own origin.
+app.set('trust proxy', 1);
 
 
 // ===========================================================================
@@ -30,50 +33,31 @@ const allowedOrigins = FRONTEND_URL
 //
 // Allows the separately hosted Render Static Site to access this API.
 // Multiple frontend origins can be configured using comma-separated URLs.
+// The server always trusts its own origin, so pages served directly by this
+// backend (express.static below) can still call the API.
 // ===========================================================================
 
-app.use(cors({
-  origin: (origin, callback) => {
+app.use(cors((req, callback) => {
 
-    // Allow requests without an Origin header.
-    // Example: server-side health checks.
-    if (!origin) {
-      return callback(null, true);
-    }
+  const origin = req.header('Origin');
+  const selfOrigin = `${req.protocol}://${req.get('host')}`;
 
-    // Allow all origins when FRONTEND_URL is not configured.
-    // Useful during local development.
-    if (allowedOrigins.length === 0) {
-      return callback(null, true);
-    }
+  const allowed =
+    !origin ||                        // No Origin header (health checks, etc.)
+    allowedOrigins.length === 0 ||    // FRONTEND_URL not set (local development)
+    origin === selfOrigin ||          // The backend serving its own pages
+    allowedOrigins.includes(origin);  // Configured frontend domains
 
-    // Allow configured frontend domains.
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+  if (!allowed) {
+    return callback(new Error(`CORS blocked request from: ${origin}`));
+  }
 
-    return callback(
-      new Error(`CORS blocked request from: ${origin}`)
-    );
-  },
-
-  methods: [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS'
-  ],
-
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization'
-  ],
-
-  exposedHeaders: [
-    'Content-Disposition'
-  ]
+  callback(null, {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Disposition']
+  });
 }));
 
 
@@ -122,9 +106,8 @@ app.use('/api/admin', require('./routes/admin'));
 // ===========================================================================
 // OPTIONAL FRONTEND STATIC FILE SERVING
 //
-// Your frontend is now hosted separately on Render Static Site.
+// Your frontend is hosted separately on Render Static Site.
 // This middleware is retained for backward compatibility.
-// It does not control where your users initially open the website.
 // ===========================================================================
 
 app.use(
@@ -190,6 +173,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('- All origins (FRONTEND_URL not configured)');
   }
 
+  console.log('(The backend\'s own origin is always allowed)');
   console.log('========================================');
 
 });
