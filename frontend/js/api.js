@@ -1,145 +1,327 @@
-// Where the API lives.
-//  - Leave '' when the pages and the API are on the same server (how it works now).
-//  - If the pages are hosted separately (e.g. a Render Static Site), put the API's address here,
-//    with no trailing slash, e.g. 'https://rnhs-api.onrender.com'
+
+// ===========================================================================
+// RNHS MANAGEMENT SYSTEM - API CONFIGURATION
+// ===========================================================================
+
+// Backend API address
 const API_ORIGIN = 'https://rnhs-shs.onrender.com';
-const API = API_ORIGIN + '/api';
+const API = `${API_ORIGIN}/api`;
 
-function getToken() { return localStorage.getItem('token'); }
-function getUser()  { return JSON.parse(localStorage.getItem('user') || '{}'); }
+// Frontend static website address
+const FRONTEND_ORIGIN = 'https://rhns-management-system.onrender.com';
 
-// ---------------------------------------------------------------------------
-// Loading overlay + request helpers
-// Tuned for free hosting (Render), where the server sleeps when idle and can take about a minute to wake.
-// ---------------------------------------------------------------------------
+
+// ===========================================================================
+// AUTHENTICATION HELPERS
+// ===========================================================================
+
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+function getUser() {
+  return JSON.parse(localStorage.getItem('user') || '{}');
+}
+
+
+// ===========================================================================
+// LOADING OVERLAY + REQUEST CONFIGURATION
+// Optimized for Render free hosting
+// ===========================================================================
+
 const UI = {
-  SHOW_AFTER_MS: 250,      // quick requests never flash the overlay; it only appears if loading takes longer than this
-  SLOW_MS: 6000,           // after this long, tell the user it is taking longer than usual
-  WAKING_MS: 15000,        // after this long, explain that the server is waking up
-  TIMEOUT_MS: 90000,       // give up on a single request after this long
-  RETRY_BUDGET_MS: 75000,  // keep retrying safe requests (GET and login) for this long while the server wakes up
-  RETRY_WAIT_MS: 3000      // pause between retries
+  SHOW_AFTER_MS: 250,       // Show overlay only after 250ms
+  SLOW_MS: 6000,            // Display slow connection message
+  WAKING_MS: 15000,         // Display backend waking message
+  TIMEOUT_MS: 90000,        // Maximum duration of one request
+  RETRY_BUDGET_MS: 75000,   // Retry budget for safe/repeatable requests
+  RETRY_WAIT_MS: 3000       // Delay between retries
 };
 
-let pendingLoads = 0;      // requests currently loading; the overlay hides only when this reaches 0
-let showTimer = null, slowTimer = null, wakingTimer = null;
+let pendingLoads = 0;
 
-function loaderEl() { return document.getElementById('loadingOverlay'); }
+let showTimer = null;
+let slowTimer = null;
+let wakingTimer = null;
+
+
+// ===========================================================================
+// LOADING OVERLAY HELPERS
+// ===========================================================================
+
+function loaderEl() {
+  return document.getElementById('loadingOverlay');
+}
 
 function setLoaderNote(text) {
   const el = loaderEl();
+
   if (!el) return;
+
   let note = document.getElementById('loadingNote');
+
   if (!note) {
     note = document.createElement('div');
     note.id = 'loadingNote';
-    note.style.cssText = 'margin-top:8px; max-width:320px; padding:0 16px; text-align:center; font-size:13px; color:var(--muted);';
+
+    note.style.cssText =
+      'margin-top:8px; max-width:320px; padding:0 16px; ' +
+      'text-align:center; font-size:13px; color:var(--muted);';
+
     el.appendChild(note);
   }
+
   note.textContent = text || '';
 }
 
 function showLoader() {
   pendingLoads++;
-  if (pendingLoads !== 1) return;               // already counting; the overlay is on, or about to be
-  showTimer   = setTimeout(() => { const el = loaderEl(); if (el) el.style.display = 'flex'; }, UI.SHOW_AFTER_MS);
-  slowTimer   = setTimeout(() => setLoaderNote('This is taking longer than usual…'), UI.SLOW_MS);
-  wakingTimer = setTimeout(() => setLoaderNote('Connecting to server. This can take up to a minute, please wait.'), UI.WAKING_MS);
+
+  if (pendingLoads !== 1) return;
+
+  showTimer = setTimeout(() => {
+    const el = loaderEl();
+
+    if (el) el.style.display = 'flex';
+  }, UI.SHOW_AFTER_MS);
+
+  slowTimer = setTimeout(() => {
+    setLoaderNote('This is taking longer than usual…');
+  }, UI.SLOW_MS);
+
+  wakingTimer = setTimeout(() => {
+    setLoaderNote(
+      'Connecting to server. This can take up to a minute, please wait.'
+    );
+  }, UI.WAKING_MS);
 }
 
 function hideLoader() {
   pendingLoads = Math.max(0, pendingLoads - 1);
-  if (pendingLoads > 0) return;                 // other requests are still loading
-  clearTimeout(showTimer); clearTimeout(slowTimer); clearTimeout(wakingTimer);
+
+  if (pendingLoads > 0) return;
+
+  clearTimeout(showTimer);
+  clearTimeout(slowTimer);
+  clearTimeout(wakingTimer);
+
   const el = loaderEl();
+
   if (el) el.style.display = 'none';
+
   setLoaderNote('');
 }
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-function fetchWithTimeout(url, opts) {
+// ===========================================================================
+// REQUEST HELPERS
+// ===========================================================================
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function fetchWithTimeout(url, opts = {}) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), UI.TIMEOUT_MS);
-  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+
+  const timeout = setTimeout(() => {
+    ctrl.abort();
+  }, UI.TIMEOUT_MS);
+
+  return fetch(url, {
+    ...opts,
+    signal: ctrl.signal
+  }).finally(() => {
+    clearTimeout(timeout);
+  });
 }
 
-// Retries only when it is safe (canRetry) and the server looks like it is still waking up (network error, 502/503/504)
+
+// ===========================================================================
+// AUTOMATIC RETRY
+//
+// Retries:
+// - Network errors
+// - HTTP 502
+// - HTTP 503
+// - HTTP 504
+//
+// Only requests explicitly marked safe/repeatable are retried.
+// ===========================================================================
+
 async function fetchWithRetry(url, opts, canRetry) {
   const started = Date.now();
-  const mayRetry = () => canRetry && (Date.now() - started + UI.RETRY_WAIT_MS) < UI.RETRY_BUDGET_MS;
+
+  const mayRetry = () =>
+    canRetry &&
+    (Date.now() - started + UI.RETRY_WAIT_MS) < UI.RETRY_BUDGET_MS;
+
   for (;;) {
     try {
       const res = await fetchWithTimeout(url, opts);
-      if ([502, 503, 504].includes(res.status) && mayRetry()) { await sleep(UI.RETRY_WAIT_MS); continue; }
+
+      if (
+        [502, 503, 504].includes(res.status) &&
+        mayRetry()
+      ) {
+        await sleep(UI.RETRY_WAIT_MS);
+        continue;
+      }
+
       return res;
+
     } catch (err) {
-      if (err.name === 'AbortError') throw new Error('The server took too long to respond. Please try again.');
-      if (mayRetry()) { await sleep(UI.RETRY_WAIT_MS); continue; }   // a sleeping server can fail fast, so keep trying
-      throw new Error('Could not reach the server. Check your connection and try again.');
+
+      if (err.name === 'AbortError') {
+        throw new Error(
+          'The server took too long to respond. Please try again.'
+        );
+      }
+
+      if (mayRetry()) {
+        await sleep(UI.RETRY_WAIT_MS);
+        continue;
+      }
+
+      throw new Error(
+        'Could not reach the server. Check your connection and try again.'
+      );
     }
   }
 }
 
-// When the API is on another address, start waking it as soon as any page opens,
-// so it is usually ready by the time the user has typed their password.
-if (API_ORIGIN) {
-  try { fetch(`${API_ORIGIN}/api/health`, { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) { /* ignore */ }
+
+// ===========================================================================
+// BACKGROUND SERVER WAKE-UP
+//
+// This executes as soon as the frontend loads.
+// It DOES NOT block the login page or wait for the backend.
+// ===========================================================================
+
+function wakeUpServer() {
+  fetch(`${API}/health`, {
+    method: 'GET',
+    cache: 'no-store'
+  }).catch(() => {
+    // Ignore errors here.
+    // Actual API requests will handle connection errors.
+  });
 }
 
-// options.silent = true: no overlay (used for background refreshes)
+// Start waking up the backend immediately.
+wakeUpServer();
+
+
+// ===========================================================================
+// GENERAL API FETCH
+//
+// options.silent = true disables the loading overlay.
+// Useful for background refreshes.
+// ===========================================================================
+
 async function apiFetch(path, options = {}) {
-  const { silent = false, ...fetchOptions } = options;
+  const {
+    silent = false,
+    ...fetchOptions
+  } = options;
+
   if (!silent) showLoader();
 
   const headers = {
     'Content-Type': 'application/json',
-    ...(getToken() && { Authorization: `Bearer ${getToken()}` }),
+
+    ...(getToken() && {
+      Authorization: `Bearer ${getToken()}`
+    }),
+
     ...(fetchOptions.headers || {})
   };
+
   const method = (fetchOptions.method || 'GET').toUpperCase();
 
   try {
-    const res = await fetchWithRetry(`${API}${path}`, { ...fetchOptions, headers }, method === 'GET');
+    const res = await fetchWithRetry(
+      `${API}${path}`,
+      {
+        ...fetchOptions,
+        headers
+      },
+      method === 'GET'
+    );
 
+    // Unauthorized session
     if (res.status === 401) {
       logout();
       return;
     }
 
+    // Handle API errors
     if (!res.ok) {
       let errorMsg = 'Request failed';
+
       try {
         const errorData = await res.json();
         errorMsg = errorData.error || errorMsg;
-      } catch (e) { /* Ignore JSON parse error */ }
+      } catch (e) {
+        // Ignore JSON parsing errors
+      }
+
       throw new Error(errorMsg);
     }
 
     return await res.json();
+
   } finally {
     if (!silent) hideLoader();
   }
 }
 
+
+// ===========================================================================
+// LOGIN
+//
+// Login uses the backend API.
+// The loading overlay stays visible during authentication.
+// ===========================================================================
+
 async function login(emailOrLrn, password) {
   showLoader();
+
   let leaving = false;
+
   try {
-    const res = await fetchWithRetry(`${API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailOrLrn, password: password })
-    }, true);                                   // safe to repeat while the server wakes up
+    const res = await fetchWithRetry(
+      `${API}/auth/login`,
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type': 'application/json'
+        },
+
+        body: JSON.stringify({
+          email: emailOrLrn,
+          password: password
+        })
+      },
+      true
+    );
 
     if (!res.ok) {
-      if ([400, 401, 403, 404].includes(res.status)) throw new Error('Invalid credentials');
-      throw new Error('The server is not responding right now. Please try again in a moment.');
+
+      if ([400, 401, 403, 404].includes(res.status)) {
+        throw new Error('Invalid credentials');
+      }
+
+      throw new Error(
+        'The server is not responding right now. Please try again in a moment.'
+      );
     }
 
     const data = await res.json();
 
+    // Save authentication token
     localStorage.setItem('token', data.token);
+
+    // Save authenticated user information
     localStorage.setItem('user', JSON.stringify({
       role: data.role,
       name: data.name,
@@ -147,30 +329,62 @@ async function login(emailOrLrn, password) {
       email: data.email
     }));
 
-    leaving = true;                             // keep the spinner up until the next page takes over
-    // Use location.replace so the login page is NOT kept in the browser history
+    leaving = true;
+
+    // Redirect to change password on first login
     if (data.is_first_login) {
+
       window.location.replace('change-password.html');
+
     } else {
+
+      // Redirect based on authenticated user role
       window.location.replace(`${data.role}.html`);
+
     }
+
   } finally {
-    if (!leaving) hideLoader();
+
+    // Keep loading overlay active during page navigation.
+    if (!leaving) {
+      hideLoader();
+    }
+
   }
 }
+
+
+// ===========================================================================
+// LOGOUT
+// ===========================================================================
 
 function logout() {
   localStorage.clear();
-  // Replace history so pressing "Forward" doesn't bypass the logout
+
+  // Prevent navigating back into authenticated pages.
   window.location.replace('index.html');
 }
 
+
+// ===========================================================================
+// AUTHENTICATION / ROLE PROTECTION
+// ===========================================================================
+
 function requireAuth(role) {
   const user = getUser();
+
+  // No authenticated user
   if (!user.role) {
     return window.location.replace('index.html');
   }
+
+  // Prevent access to another role's dashboard
   if (role && user.role !== role) {
     return window.location.replace(`${user.role}.html`);
   }
 }
+
+
+// ===========================================================================
+// END OF API.JS
+// ===========================================================================
