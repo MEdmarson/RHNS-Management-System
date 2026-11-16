@@ -18,24 +18,58 @@ function showToast(message, type = 'success') {
   setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-function showView(name, el) {
+// opts (optional) lets other parts of the page redirect here with filters already applied
+function showView(name, el, opts) {
+  opts = opts || {};
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
   document.getElementById(`view-${name}`).style.display = 'block';
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  el.classList.add('active');
-  
+  if (!el) el = [...document.querySelectorAll('.nav-item')].find(b => (b.getAttribute('onclick') || '').includes(`'${name}'`));
+  if (el) el.classList.add('active');
+
   const titles = {
     'dashboard': 'Administrator Dashboard: School-Wide Oversight', 'users': 'Manage Users', 'subjects': 'Manage Subjects',
-    'atrisk': 'At-Risk Students', 'compliance': 'Teacher Compliance', 'reports': 'Reports'
+    'sections': 'Sections & Transfers', 'atrisk': 'At-Risk Students', 'compliance': 'Teacher Compliance', 'reports': 'Reports'
   };
   document.getElementById('pageTitle').textContent = titles[name] || 'Admin Portal';
+  window.scrollTo({ top: 0 });
 
   if (name === 'dashboard')  loadDashboard();
-  if (name === 'users')      { loadUsersList(); loadDropdowns(); }
-  if (name === 'subjects')   { loadSubjectsList(); loadDropdowns(); }
-  if (name === 'atrisk')     loadAtRisk();
-  if (name === 'compliance') loadCompliance();
+  if (name === 'users') {
+    if (opts.role) setUserFilter(opts.role);
+    if (opts.q !== undefined) document.getElementById('userSearch').value = opts.q;
+    loadUsersList(); loadDropdowns();
+  }
+  if (name === 'subjects') {
+    if (opts.q !== undefined) document.getElementById('subjSearch').value = opts.q;
+    loadSubjectsList(); loadDropdowns();
+  }
+  if (name === 'atrisk') {
+    if (Object.keys(opts).length) {
+      document.getElementById('atRiskSearch').value = opts.q || '';
+      document.getElementById('atRiskSeverity').value = opts.severity || 'all';
+      pendingRiskLevel = opts.level ? String(opts.level) : 'all';
+    }
+    loadAtRisk();
+  }
+  if (name === 'compliance') {
+    if (Object.keys(opts).length) {
+      document.getElementById('compStatus').value = opts.status || 'all';
+      document.getElementById('compSearch').value = opts.q || '';
+    }
+    loadCompliance().then(() => { if (opts.teacherId) openTeacherRecords(opts.teacherId); });
+  }
+  if (name === 'sections') {
+    if (Object.keys(opts).length) {
+      pendingSecLevel = opts.level ? String(opts.level) : 'all';
+      document.getElementById('secSearch').value = opts.q || '';
+    }
+    loadSections().then(() => { if (opts.sectionId) openSectionStudents(opts.sectionId); });
+  }
 }
+
+// Redirect to another tab from anywhere (dashboard cards, bars, rows ...)
+function goTo(view, opts) { showView(view, null, opts); }
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
@@ -137,6 +171,11 @@ function filterUsers(role, el) {
   document.querySelectorAll('.user-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   renderUsers();
+}
+
+function setUserFilter(role) {
+  currentUserFilter = role;
+  document.querySelectorAll('.user-tab').forEach(t => t.classList.toggle('active', (t.getAttribute('onclick') || '').includes(`'${role}'`)));
 }
 
 async function loadSubjectsList() {
@@ -269,6 +308,7 @@ async function loadDashboard() {
 
 // ---------- AT-RISK (all grade levels) ----------
 let atRiskData = [];
+let pendingRiskLevel = null;   // set when another tab redirects here with a grade-level filter
 
 async function loadAtRisk() {
   atRiskData = await apiFetch('/admin/at-risk');
@@ -276,7 +316,9 @@ async function loadAtRisk() {
   const sel = document.getElementById('atRiskLevel');
   const keep = sel.value;
   sel.innerHTML = '<option value="all">All grade levels</option>' + levels.map(l => `<option value="${l}">Grade ${l}</option>`).join('');
-  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  const want = pendingRiskLevel !== null ? pendingRiskLevel : keep;
+  pendingRiskLevel = null;
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
   renderAtRisk();
 }
 
@@ -307,21 +349,284 @@ function renderAtRisk() {
 }
 
 // ---------- TEACHER COMPLIANCE ----------
+let complianceData = [];
+const COMP_BADGE = {
+  on_track: '<span class="badge ok">On track</span>',
+  behind: '<span class="badge warn">Behind</span>',
+  overdue: '<span class="badge danger">Overdue</span>',
+  no_subjects: '<span class="badge" style="background:#e5e7eb;color:#374151">No active subjects</span>'
+};
+
 async function loadCompliance() {
-  const rows = await apiFetch('/admin/compliance');
-  const badge = {
-    on_track: '<span class="badge ok">On track</span>',
-    behind: '<span class="badge warn">Behind</span>',
-    overdue: '<span class="badge danger">Overdue</span>',
-    no_subjects: '<span class="badge" style="background:#e5e7eb;color:#374151">No active subjects</span>'
-  };
-  document.getElementById('complianceBody').innerHTML = rows.map(r => `<tr>
-      <td>${escHtml(r.teacher)}</td>
+  complianceData = await apiFetch('/admin/compliance');
+  renderCompliance();
+}
+
+function renderCompliance() {
+  const q = document.getElementById('compSearch').value.toLowerCase();
+  const st = document.getElementById('compStatus').value;
+  const rows = complianceData.filter(r => (st === 'all' || r.status === st) && (!q || r.teacher.toLowerCase().includes(q)));
+  document.getElementById('compCount').textContent = `Showing ${rows.length} of ${complianceData.length}`;
+  document.getElementById('complianceBody').innerHTML = rows.map(r => `<tr class="clickable" tabindex="0" role="button"
+      onclick="openTeacherRecords(${r.teacher_id})" onkeydown="if(event.key==='Enter')openTeacherRecords(${r.teacher_id})">
+      <td><strong>${escHtml(r.teacher)}</strong></td>
       <td>${r.active_subjects}</td>
       <td>${r.last_update ? new Date(r.last_update).toLocaleDateString() : 'Never'}<br><span style="font-size:12px;color:var(--muted)">${r.last_update ? agoText(r.days_ago) : ''}</span></td>
       <td>${r.last_attendance ? new Date(r.last_attendance).toLocaleDateString() : 'Never'}<br><span style="font-size:12px;color:var(--muted)">${r.last_attendance ? agoText(r.attendance_days_ago) : ''}</span></td>
-      <td>${badge[r.status] || ''}</td>
-    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center; padding: 20px;">No teachers found.</td></tr>';
+      <td>${COMP_BADGE[r.status] || ''}</td>
+      <td><span class="go-hint">View records →</span></td>
+    </tr>`).join('') || '<tr><td colspan="6" style="text-align:center; padding: 20px;">No teachers match.</td></tr>';
+}
+
+// ---------- TEACHER RECORDS (read-only class records) ----------
+let recCtx = { teacherId: null, teacherName: '', subjects: [], record: null, tab: 1 };
+const fmtN = (v, d) => (v === null || v === undefined || v === '' ? '' : (d === undefined ? Number(v) : Number(v).toFixed(d)));
+
+async function openTeacherRecords(teacherId) {
+  const body = document.getElementById('recordBody');
+  body.innerHTML = '<div class="dash-empty">Loading…</div>';
+  openModal('recordModal');
+  try {
+    const r = await apiFetch(`/admin/teachers/${teacherId}/subjects`);
+    recCtx = { teacherId, teacherName: r.teacher.full_name, subjects: r.subjects, record: null, tab: 1 };
+    renderTeacherSubjects();
+  } catch (err) { body.innerHTML = `<div class="error-msg">❌ ${escHtml(err.message)}</div>`; }
+}
+
+function renderTeacherSubjects() {
+  const { teacherName, subjects } = recCtx;
+  document.getElementById('recordBody').innerHTML = `
+    <h3 style="margin-bottom:4px">👩‍🏫 ${escHtml(teacherName)}</h3>
+    <div class="ro-banner">👁 View only — class records can be viewed and downloaded here but only the teacher can edit them.</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Subject</th><th>Section</th><th>Status</th><th>Students graded</th><th>Last update</th><th></th></tr></thead>
+      <tbody>${subjects.map(s => `<tr class="clickable" tabindex="0" onclick="openClassRecord(${s.id})" onkeydown="if(event.key==='Enter')openClassRecord(${s.id})">
+        <td><strong>${escHtml(s.name)}</strong><br><span class="dash-sub">${escHtml(s.code || '')}</span></td>
+        <td>${escHtml(s.section || '—')}</td>
+        <td>${s.status === 'finished' ? '<span class="badge" style="background:#e5e7eb;color:#374151">Finished</span>' : '<span class="badge ok">Active</span>'}</td>
+        <td>${s.graded_count} / ${s.student_count}</td>
+        <td>${s.last_update ? new Date(s.last_update).toLocaleDateString() : 'Never'}</td>
+        <td><span class="go-hint">Open class record →</span></td></tr>`).join('') ||
+        '<tr><td colspan="6" style="text-align:center;padding:20px">This teacher has no subjects.</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+async function openClassRecord(subjectId) {
+  const body = document.getElementById('recordBody');
+  body.innerHTML = '<div class="dash-empty">Loading class record…</div>';
+  try {
+    recCtx.record = await apiFetch(`/admin/class-record/${subjectId}`);
+    recCtx.tab = 1;
+    renderClassRecord();
+  } catch (err) { body.innerHTML = `<div class="error-msg">❌ ${escHtml(err.message)}</div>`; }
+}
+
+function setRecTab(t) { recCtx.tab = t; renderClassRecord(); }
+
+function renderClassRecord() {
+  const rec = recCtx.record, m = rec.meta, tab = recCtx.tab;
+  const tabs = [1, 2, 3, 'final'].map(t => `<button class="rec-tab ${t === tab ? 'active' : ''}" onclick="setRecTab(${typeof t === 'number' ? t : "'final'"})">${t === 'final' ? 'Final Grades' : 'Term ' + t}</button>`).join('');
+  const [wW, wP, wE] = m.weights || [0.2, 0.5, 0.3];
+  let table;
+
+  if (tab === 'final') {
+    table = `<table class="rec-table"><thead><tr><th>#</th><th>Learner</th><th>LRN</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th>Final</th><th>Remarks</th></tr></thead><tbody>` +
+      rec.final.map((r, i) => `<tr><td>${i + 1}</td><td class="name">${escHtml(r.full_name)}</td><td>${escHtml(r.lrn || '')}</td>
+        <td>${fmtN(r.t1)}</td><td>${fmtN(r.t2)}</td><td>${fmtN(r.t3)}</td>
+        <td class="calc ${r.passed === false ? 'fail' : ''}">${fmtN(r.final)}</td>
+        <td>${r.passed === null ? '' : r.passed ? 'Passed' : 'Failed'}</td></tr>`).join('') + '</tbody></table>';
+  } else {
+    const rows = rec.terms[tab] || [];
+    const hps = rows.find(r => r.ww1_hps !== null && r.ww1_hps !== undefined) || {};
+    const WW = [1, 2, 3, 4, 5], PT = [1, 2, 3], EX = [1, 2, 3];
+    const head = `<tr><th rowspan="2">#</th><th rowspan="2">Learner</th><th rowspan="2">LRN</th>
+      <th colspan="${WW.length}">Written Work (${Math.round(wW * 100)}%)</th><th colspan="${PT.length}">Performance Tasks (${Math.round(wP * 100)}%)</th><th colspan="${EX.length}">Exam (${Math.round(wE * 100)}%)</th>
+      <th rowspan="2">Initial</th><th rowspan="2">Term Grade</th><th rowspan="2">Descriptor</th></tr>
+      <tr>${WW.map(i => `<th>WW${i}</th>`).join('')}${PT.map(i => `<th>PT${i}</th>`).join('')}${EX.map(i => `<th>EX${i}</th>`).join('')}</tr>`;
+    const hpsRow = `<tr class="hps"><td></td><td class="name">Highest Possible Score</td><td></td>
+      ${WW.map(i => `<td>${fmtN(hps['ww' + i + '_hps'])}</td>`).join('')}${PT.map(i => `<td>${fmtN(hps['pt' + i + '_hps'])}</td>`).join('')}${EX.map(i => `<td>${fmtN(hps['ex' + i + '_hps'])}</td>`).join('')}
+      <td></td><td></td><td></td></tr>`;
+    const bodyRows = rows.map((r, i) => `<tr><td>${i + 1}</td><td class="name">${escHtml(r.full_name)}</td><td>${escHtml(r.lrn || '')}</td>
+      ${WW.map(n => `<td>${fmtN(r['ww' + n])}</td>`).join('')}${PT.map(n => `<td>${fmtN(r['pt' + n])}</td>`).join('')}${EX.map(n => `<td>${fmtN(r['ex' + n])}</td>`).join('')}
+      <td class="calc">${fmtN(r.initial_grade, 2)}</td>
+      <td class="calc ${r.term_grade !== null && r.term_grade !== undefined && Number(r.term_grade) < 75 ? 'fail' : ''}">${fmtN(r.term_grade)}</td>
+      <td>${escHtml(r.descriptor || '')}</td></tr>`).join('');
+    table = `<table class="rec-table"><thead>${head}</thead><tbody>${hpsRow}${bodyRows}</tbody></table>`;
+  }
+
+  document.getElementById('recordBody').innerHTML = `
+    <div class="crumbs"><button onclick="renderTeacherSubjects()">← ${escHtml(recCtx.teacherName)}</button> / ${escHtml(m.subject_name)}</div>
+    <div class="table-header" style="margin-bottom:6px">
+      <h3>📘 ${escHtml(m.subject_name)} — ${escHtml(m.section)}</h3>
+      <button class="btn" id="recDownload" onclick="downloadClassRecord(${m.id})">⬇ Download Excel</button>
+    </div>
+    <div class="dash-sub">Teacher: ${escHtml(m.teacher_name || '—')} · Type: ${escHtml(m.subject_type)} · ${rec.final.length} learners</div>
+    <div class="ro-banner" style="margin-top:10px">👁 View only — grades cannot be edited from the admin portal.</div>
+    <div class="rec-tabs">${tabs}</div>
+    <div class="rec-wrap">${table}</div>`;
+}
+
+// Binary download: apiFetch only returns JSON, so use fetch with the same token
+async function downloadClassRecord(subjectId) {
+  const btn = document.getElementById('recDownload');
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    const res = await fetch(`${API}/admin/class-record/${subjectId}/export`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (res.status === 401) return logout();
+    if (!res.ok) {
+      let msg = 'Download failed';
+      try { msg = (await res.json()).error || msg; } catch (e) { /* ignore */ }
+      throw new Error(msg);
+    }
+    const cd = res.headers.get('Content-Disposition') || '';
+    const name = (/filename="?([^";]+)"?/.exec(cd) || [])[1] || 'ClassRecord.xlsx';
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Class record downloaded!');
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+// ---------- SECTIONS & TRANSFERS ----------
+let sectionsData = [];
+let pendingSecLevel = null;
+let openSectionId = null;
+let sectionStudents = [];
+
+async function loadSections() {
+  sectionsData = await apiFetch('/admin/sections/summary');
+  const sel = document.getElementById('secLevel');
+  const levels = [...new Set(sectionsData.map(s => s.grade_level).filter(Boolean))].sort((a, b) => a - b);
+  const keep = sel.value;
+  sel.innerHTML = '<option value="all">All grade levels</option>' + levels.map(l => `<option value="${l}">Grade ${l}</option>`).join('');
+  const want = pendingSecLevel !== null ? pendingSecLevel : keep;
+  pendingSecLevel = null;
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
+  renderSections();
+}
+
+function renderSections() {
+  const q = document.getElementById('secSearch').value.toLowerCase();
+  const lvl = document.getElementById('secLevel').value;
+  const rows = sectionsData.filter(s => (lvl === 'all' || String(s.grade_level) === lvl) && (!q || s.name.toLowerCase().includes(q)));
+  document.getElementById('sectionsBody').innerHTML = rows.map(s => `<tr>
+      <td><strong>${escHtml(s.name)}</strong></td>
+      <td>${s.grade_level ? 'Grade ' + escHtml(s.grade_level) : '—'}</td>
+      <td>${s.student_count}</td><td>${s.subject_count}</td>
+      <td>
+        <button class="btn-edit" onclick="openSectionStudents(${s.id})">Students</button>
+        <button class="btn-edit" onclick="openSectionModal(${s.id})">Rename</button>
+        <button class="btn-delete" onclick="deleteSection(${s.id})">Delete</button>
+      </td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px">No sections found.</td></tr>';
+}
+
+function openSectionModal(id) {
+  document.getElementById('sectionForm').reset();
+  document.getElementById('sectionMsg').textContent = '';
+  const s = id ? sectionsData.find(x => x.id === id) : null;
+  document.getElementById('editSectionId').value = s ? s.id : '';
+  document.getElementById('sectionName').value = s ? s.name : '';
+  document.getElementById('sectionModalTitle').textContent = s ? '✏️ Rename Section' : '➕ New Section';
+  openModal('sectionModal');
+}
+
+document.getElementById('sectionForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('sectionMsg');
+  const id = document.getElementById('editSectionId').value;
+  const payload = { name: document.getElementById('sectionName').value };
+  msg.textContent = 'Saving...'; msg.style.color = 'var(--muted)';
+  try {
+    if (id) await apiFetch(`/admin/sections/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    else await apiFetch('/admin/sections', { method: 'POST', body: JSON.stringify(payload) });
+    showToast(id ? 'Section renamed.' : 'Section created!');
+    closeModal('sectionModal');
+    loadSections(); loadDropdowns();
+  } catch (err) { msg.textContent = '❌ ' + err.message; msg.style.color = 'var(--danger)'; }
+});
+
+async function deleteSection(id) {
+  const s = sectionsData.find(x => x.id === id);
+  if (!confirm(`Delete section ${s ? s.name : ''}? Only empty sections can be deleted.`)) return;
+  try {
+    await apiFetch(`/admin/sections/${id}`, { method: 'DELETE' });
+    showToast('Section deleted.');
+    if (openSectionId === id) closeSectionPanel();
+    loadSections(); loadDropdowns();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function openSectionStudents(id) {
+  openSectionId = Number(id);
+  const s = sectionsData.find(x => x.id === openSectionId);
+  document.getElementById('sectionPanelTitle').textContent = `Students — ${s ? s.name : ''}`;
+  document.getElementById('sectionPanel').style.display = 'block';
+  sectionStudents = await apiFetch(`/admin/sections/${openSectionId}/students`);
+  document.getElementById('secSelectAll').checked = false;
+  document.getElementById('sectionStudentsBody').innerHTML = sectionStudents.map(st => `<tr>
+      <td><input type="checkbox" class="sec-check sec-student" value="${st.student_id}" onchange="updateTransferBtn()"></td>
+      <td><strong>${escHtml(st.full_name)}</strong></td><td>${escHtml(st.lrn || '')}</td><td>${escHtml(st.gender || '')}</td></tr>`).join('')
+    || '<tr><td colspan="4" style="text-align:center;padding:20px">No students in this section.</td></tr>';
+  updateTransferBtn();
+  document.getElementById('sectionPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeSectionPanel() { openSectionId = null; document.getElementById('sectionPanel').style.display = 'none'; }
+const selectedStudentIds = () => [...document.querySelectorAll('.sec-student:checked')].map(c => Number(c.value));
+function toggleAllSectionStudents(on) { document.querySelectorAll('.sec-student').forEach(c => { c.checked = on; }); updateTransferBtn(); }
+function updateTransferBtn() {
+  const n = selectedStudentIds().length;
+  const b = document.getElementById('transferBtn');
+  b.disabled = n === 0;
+  b.textContent = n ? `↔ Transfer selected (${n})` : '↔ Transfer selected';
+}
+
+function openTransferModal() {
+  const ids = selectedStudentIds();
+  if (!ids.length) return;
+  const from = sectionsData.find(x => x.id === openSectionId);
+  document.getElementById('transferFrom').textContent = `${ids.length} student(s) from ${from ? from.name : ''}`;
+  const others = sectionsData.filter(x => x.id !== openSectionId);
+  document.getElementById('transferTo').innerHTML = '<option value="">— Choose section —</option>' + others.map(x => `<option value="${x.id}">${escHtml(x.name)}</option>`).join('');
+  document.getElementById('transferPreview').textContent = 'Choose a destination section.';
+  document.getElementById('transferConfirm').disabled = true;
+  document.getElementById('transferMsg').textContent = '';
+  openModal('transferModal');
+}
+
+async function previewTransfer() {
+  const to = document.getElementById('transferTo').value;
+  const box = document.getElementById('transferPreview');
+  const btn = document.getElementById('transferConfirm');
+  btn.disabled = true;
+  if (!to) { box.textContent = 'Choose a destination section.'; return; }
+  box.textContent = 'Checking…';
+  try {
+    const p = await apiFetch('/admin/sections/transfer', { method: 'POST', body: JSON.stringify({ student_ids: selectedStudentIds(), to_section_id: to, preview: true }) });
+    box.innerHTML = `<b>${p.moving}</b> student(s) will move to <b>${escHtml(p.to_section)}</b>, which has <b>${p.destination_subjects}</b> subject(s).` +
+      (p.grade_rows_left_behind ? `<br>⚠ ${p.grade_rows_left_behind} existing grade record(s) belong to subjects of the old section. They are <b>kept, not deleted</b>, but will no longer appear in the new section's class records.` : '') +
+      `<br>Attendance already recorded stays with the old section; new attendance will be counted in the new section.`;
+    btn.disabled = false;
+  } catch (err) { box.textContent = '❌ ' + err.message; }
+}
+
+async function confirmTransfer() {
+  const msg = document.getElementById('transferMsg');
+  const btn = document.getElementById('transferConfirm');
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/admin/sections/transfer', { method: 'POST', body: JSON.stringify({ student_ids: selectedStudentIds(), to_section_id: document.getElementById('transferTo').value }) });
+    showToast(r.message || 'Students transferred.');
+    closeModal('transferModal');
+    await loadSections();
+    openSectionStudents(openSectionId);
+  } catch (err) { msg.textContent = '❌ ' + err.message; msg.style.color = 'var(--danger)'; btn.disabled = false; }
 }
 
 // ---------- REPORTS ----------

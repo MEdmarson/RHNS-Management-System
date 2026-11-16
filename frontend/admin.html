@@ -119,6 +119,38 @@
     .report-grid .form-group { margin: 0; }
     .report-grid select { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
 
+
+    /* ===== Interactive dashboard ===== */
+    .clickable { cursor: pointer; transition: transform .12s, box-shadow .12s, background .12s; }
+    .clickable:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+    .stat-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
+    .bar-row.clickable:hover, .chip.clickable:hover { background: #eef2ff; }
+    .bar-row.clickable { border-radius: 8px; padding: 3px 4px; margin-left: -4px; margin-right: -4px; }
+    tr.clickable:hover td { background: #eef2ff; }
+    .chip.clickable:hover { filter: brightness(.95); }
+    .go-hint { font-size: 11px; color: var(--muted); font-weight: 600; }
+    .filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+
+    /* ===== Read-only class record ===== */
+    .modal-wide { max-width: 1200px; width: 96vw; }
+    .ro-banner { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+    .crumbs button { background: none; border: none; color: var(--primary); cursor: pointer; font-weight: 700; padding: 0; font-size: 13px; }
+    .rec-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+    .rec-tab { padding: 6px 14px; border-radius: 16px; background: #f3f4f6; cursor: pointer; font-weight: 600; font-size: 13px; border: none; }
+    .rec-tab.active { background: var(--primary); color: #fff; }
+    .rec-wrap { overflow: auto; max-height: 55vh; border: 1px solid var(--border); border-radius: 8px; }
+    .rec-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+    .rec-table th, .rec-table td { border: 1px solid #e5e7eb; padding: 5px 7px; text-align: center; white-space: nowrap; }
+    .rec-table th { background: #f3f4f6; position: sticky; top: 0; z-index: 1; }
+    .rec-table td.name { text-align: left; position: sticky; left: 0; background: #fff; font-weight: 600; }
+    .rec-table tr.hps td { background: #fffbeb; font-weight: 700; }
+    .rec-table td.fail { color: #b91c1c; font-weight: 700; }
+    .rec-table td.calc { background: #f9fafb; font-weight: 600; }
+    .sec-check { width: 18px; height: 18px; }
+    .info-box { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-top: 12px; line-height: 1.5; }
+    @media (max-width: 768px) { .modal-content { padding: 16px; } }
+
     @media (max-width: 768px) { .bar-row { grid-template-columns: 96px 1fr 56px; } }
   </style>
 </head>
@@ -146,6 +178,9 @@
     </button>
     <button class="nav-item" onclick="showView('subjects', this)">
       <span class="nav-icon">📚</span><span class="nav-label">Subjects</span>
+    </button>
+    <button class="nav-item" onclick="showView('sections', this)">
+      <span class="nav-icon">🏫</span><span class="nav-label">Sections</span>
     </button>
     <button class="nav-item" onclick="showView('atrisk', this)">
       <span class="nav-icon">🚨</span><span class="nav-label">At-Risk</span>
@@ -338,11 +373,61 @@
     <!-- 5. TEACHER COMPLIANCE -->
     <div class="view" id="view-compliance" style="display:none">
       <div class="card">
-        <h3>✅ Teacher Compliance</h3>
+        <div class="table-header">
+          <h3>✅ Teacher Compliance</h3>
+          <span class="dash-sub" id="compCount"></span>
+        </div>
+        <p class="go-hint" style="margin-bottom:10px">Click a teacher to view their subjects and class records (view only, with Excel download).</p>
+        <div class="filter-row">
+          <input type="text" id="compSearch" class="input" style="flex:1; min-width:200px; max-width:320px;" placeholder="🔍 Search teacher..." oninput="renderCompliance()">
+          <select id="compStatus" class="input" onchange="renderCompliance()">
+            <option value="all">All statuses</option>
+            <option value="overdue">Overdue</option>
+            <option value="behind">Behind</option>
+            <option value="on_track">On track</option>
+            <option value="no_subjects">No active subjects</option>
+          </select>
+        </div>
         <div style="overflow-x: auto;">
           <table>
-            <thead><tr><th>Teacher</th><th>Active Subjects</th><th>Last Grade Update</th><th>Last Attendance</th><th>Status</th></tr></thead>
+            <thead><tr><th>Teacher</th><th>Active Subjects</th><th>Last Grade Update</th><th>Last Attendance</th><th>Status</th><th></th></tr></thead>
             <tbody id="complianceBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5b. SECTIONS -->
+    <div class="view" id="view-sections" style="display:none">
+      <div class="card">
+        <div class="table-header">
+          <h3>🏫 Sections</h3>
+          <button class="btn" onclick="openSectionModal()">+ New Section</button>
+        </div>
+        <div class="filter-row">
+          <input type="text" id="secSearch" class="input" style="flex:1; min-width:200px; max-width:320px;" placeholder="🔍 Search section..." oninput="renderSections()">
+          <select id="secLevel" class="input" onchange="renderSections()"><option value="all">All grade levels</option></select>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead><tr><th>Section</th><th>Grade</th><th>Students</th><th>Subjects</th><th>Action</th></tr></thead>
+            <tbody id="sectionsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="sectionPanel" style="display:none">
+        <div class="table-header">
+          <h3 id="sectionPanelTitle">Students</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" id="transferBtn" onclick="openTransferModal()" disabled>↔ Transfer selected</button>
+            <button class="btn btn-secondary" onclick="closeSectionPanel()">Close</button>
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead><tr><th style="width:36px"><input type="checkbox" class="sec-check" id="secSelectAll" onchange="toggleAllSectionStudents(this.checked)"></th><th>Name</th><th>LRN</th><th>Gender</th></tr></thead>
+            <tbody id="sectionStudentsBody"></tbody>
           </table>
         </div>
       </div>
@@ -436,6 +521,47 @@
       <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Save Subject</button>
       <div id="subjMsg" class="error-msg" style="margin-top: 10px;"></div>
     </form>
+  </div>
+</div>
+
+<!-- Section Modal -->
+<div class="modal" id="sectionModal">
+  <div class="modal-content" style="max-width:440px">
+    <span class="close-btn" onclick="closeModal('sectionModal')">&times;</span>
+    <h3 id="sectionModalTitle" style="margin-bottom: 20px;">➕ New Section</h3>
+    <form id="sectionForm">
+      <input type="hidden" id="editSectionId">
+      <div class="form-group">
+        <label>Section name</label>
+        <input type="text" id="sectionName" required placeholder="e.g. G11 - MAGALANG">
+      </div>
+      <button type="submit" class="btn" style="margin-top: 10px; width: 100%;">Save Section</button>
+      <div id="sectionMsg" class="error-msg" style="margin-top: 10px;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Transfer Students Modal -->
+<div class="modal" id="transferModal">
+  <div class="modal-content" style="max-width:520px">
+    <span class="close-btn" onclick="closeModal('transferModal')">&times;</span>
+    <h3 style="margin-bottom: 6px;">↔ Transfer Students</h3>
+    <div class="dash-sub" id="transferFrom" style="margin-bottom:14px"></div>
+    <div class="form-group">
+      <label>Move to section</label>
+      <select id="transferTo" onchange="previewTransfer()"></select>
+    </div>
+    <div class="info-box" id="transferPreview">Choose a destination section.</div>
+    <button class="btn" id="transferConfirm" style="margin-top: 16px; width: 100%;" onclick="confirmTransfer()" disabled>Confirm transfer</button>
+    <div id="transferMsg" class="error-msg" style="margin-top: 10px;"></div>
+  </div>
+</div>
+
+<!-- Teacher records / read-only class record -->
+<div class="modal" id="recordModal">
+  <div class="modal-content modal-wide">
+    <span class="close-btn" onclick="closeModal('recordModal')">&times;</span>
+    <div id="recordBody"></div>
   </div>
 </div>
 

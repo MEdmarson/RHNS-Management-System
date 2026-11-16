@@ -488,4 +488,251 @@ router.get('/sections', async (req, res) => {
   res.json(rows);
 });
 
+// ==========================================
+// 5. TEACHER COMPLIANCE DRILL-DOWN: READ-ONLY CLASS RECORDS
+//    (GET only - the admin can look at and download a class record, never edit it)
+// ==========================================
+const fs = require('fs');
+const path = require('path');
+const { buildClassRecord, SUBJECT_WEIGHTS } = require('../utils/classRecordBuilder');
+
+const TEMPLATE_PATH = path.join(__dirname, '..', 'templates', 'class-record-template.xlsx');
+let templateCache = null;
+const getTemplate = () => templateCache || (templateCache = fs.readFileSync(TEMPLATE_PATH));
+
+const GRADE_COLS = `g.ww1, g.ww2, g.ww3, g.ww4, g.ww5, g.pt1, g.pt2, g.pt3, g.ex1, g.ex2, g.ex3,
+  g.ww1_hps, g.ww2_hps, g.ww3_hps, g.ww4_hps, g.ww5_hps, g.pt1_hps, g.pt2_hps, g.pt3_hps,
+  g.ex1_hps, g.ex2_hps, g.ex3_hps, g.initial_grade, g.term_grade, g.descriptor, g.missing_requirements`;
+
+async function termRowsFor(subjectId, term) {
+  const [rows] = await pool.query(`
+    SELECT u.id AS student_id, u.full_name, s.lrn, s.gender, ${GRADE_COLS}
+    FROM subjects sub
+    JOIN students s ON s.section_id = sub.section_id
+    JOIN users u ON u.id = s.user_id
+    LEFT JOIN grades g ON g.student_id = u.id AND g.subject_id = sub.id AND g.term = ?
+    WHERE sub.id = ?
+    ORDER BY u.full_name
+  `, [term, subjectId]);
+  return rows;
+}
+
+async function subjectMeta(subjectId) {
+  const [[meta]] = await pool.query(`
+    SELECT sub.id, sub.name AS subject_name, sub.code, sub.status, sub.subject_type,
+           sec.name AS section, u.full_name AS teacher_name, u.id AS teacher_id
+    FROM subjects sub
+    JOIN sections sec ON sec.id = sub.section_id
+    LEFT JOIN users u ON u.id = sub.teacher_id
+    WHERE sub.id = ?
+  `, [subjectId]);
+  return meta;
+}
+
+// Subjects of one teacher, with how many students and how many have grades
+router.get('/teachers/:id/subjects', async (req, res) => {
+  try {
+    const [[teacher]] = await pool.query("SELECT id, full_name FROM users WHERE id = ? AND role = 'teacher'", [req.params.id]);
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    const [subjects] = await pool.query(`
+      SELECT sub.id, sub.name, sub.code, sub.status, sub.subject_type, sec.name AS section,
+             (SELECT COUNT(*) FROM students st WHERE st.section_id = sub.section_id) AS student_count,
+             (SELECT COUNT(DISTINCT g.student_id) FROM grades g WHERE g.subject_id = sub.id AND g.term_grade IS NOT NULL) AS graded_count,
+             (SELECT MAX(g.updated_at) FROM grades g WHERE g.subject_id = sub.id) AS last_update
+      FROM subjects sub
+      LEFT JOIN sections sec ON sec.id = sub.section_id
+      WHERE sub.teacher_id = ?
+      ORDER BY sub.name
+    `, [teacher.id]).catch(async () => {
+      // older schema without grades.updated_at
+      return pool.query(`
+        SELECT sub.id, sub.name, sub.code, sub.status, sub.subject_type, sec.name AS section,
+               (SELECT COUNT(*) FROM students st WHERE st.section_id = sub.section_id) AS student_count,
+               (SELECT COUNT(DISTINCT g.student_id) FROM grades g WHERE g.subject_id = sub.id AND g.term_grade IS NOT NULL) AS graded_count,
+               NULL AS last_update
+        FROM subjects sub LEFT JOIN sections sec ON sec.id = sub.section_id
+        WHERE sub.teacher_id = ? ORDER BY sub.name
+      `, [teacher.id]);
+    });
+    res.json({ teacher, subjects });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// One subject's class record for all three terms + final grade (view only)
+router.get('/class-record/:subjectId', async (req, res) => {
+  try {
+    const meta = await subjectMeta(Number(req.params.subjectId));
+    if (!meta) return res.status(404).json({ error: 'Subject not found' });
+    const terms = {};
+    for (const t of [1, 2, 3]) terms[t] = await termRowsFor(meta.id, t);
+
+    const final = terms[1].map((r, i) => {
+      const tg = [1, 2, 3].map(t => terms[t][i] && terms[t][i].term_grade).map(v => (v === null || v === undefined ? null : Number(v)));
+      const present = tg.filter(v => v !== null && v > 0);
+      const fg = present.length ? Math.round(present.reduce((a, b) => a + b, 0) / present.length) : null;
+      return { student_id: r.student_id, full_name: r.full_name, lrn: r.lrn, gender: r.gender,
+               t1: tg[0], t2: tg[1], t3: tg[2], final: fg, passed: fg === null ? null : fg >= 75 };
+    });
+    const type = SUBJECT_WEIGHTS[meta.subject_type] ? meta.subject_type : 'Core Subjects';
+    res.json({ meta: { ...meta, subject_type: type, weights: SUBJECT_WEIGHTS[type] }, terms, final });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Excel download - same template and builder the teacher uses
+router.get('/class-record/:subjectId/export', async (req, res) => {
+  try {
+    const meta = await subjectMeta(Number(req.params.subjectId));
+    if (!meta) return res.status(404).json({ error: 'Subject not found' });
+    const termRows = {};
+    for (const t of [1, 2, 3]) termRows[t] = await termRowsFor(meta.id, t);
+    const buffer = await buildClassRecord({
+      templateBuf: getTemplate(),
+      meta: { subject_name: meta.subject_name, section: meta.section, teacher_name: meta.teacher_name || '' },
+      subjectType: SUBJECT_WEIGHTS[meta.subject_type] ? meta.subject_type : 'Core Subjects',
+      termRows
+    });
+    const safe = (s) => String(s).replace(/[^a-z0-9]+/gi, '_');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="ClassRecord_${safe(meta.subject_name)}_${safe(meta.section)}.xlsx"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (err) {
+    console.error('Admin export error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 6. SECTIONS & TRANSFERRING STUDENTS
+// ==========================================
+// Sections with student / subject counts
+router.get('/sections/summary', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT sec.id, sec.name,
+             (SELECT MAX(st.grade_level) FROM students st WHERE st.section_id = sec.id) AS grade_level,
+             (SELECT COUNT(*) FROM students st WHERE st.section_id = sec.id) AS student_count,
+             (SELECT COUNT(*) FROM subjects sb WHERE sb.section_id = sec.id) AS subject_count
+      FROM sections sec ORDER BY sec.name
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/sections', async (req, res) => {
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  if (!name) return res.status(400).json({ error: 'Section name is required' });
+  try {
+    const [[dup]] = await pool.query('SELECT id FROM sections WHERE LOWER(name) = LOWER(?)', [name]);
+    if (dup) return res.status(400).json({ error: 'A section with that name already exists' });
+    const [r] = await pool.query('INSERT INTO sections (name) VALUES (?)', [name]);
+    res.json({ ok: true, id: r.insertId, message: 'Section created' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/sections/:id', async (req, res) => {
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  if (!name) return res.status(400).json({ error: 'Section name is required' });
+  try {
+    const [[dup]] = await pool.query('SELECT id FROM sections WHERE LOWER(name) = LOWER(?) AND id <> ?', [name, req.params.id]);
+    if (dup) return res.status(400).json({ error: 'A section with that name already exists' });
+    await pool.query('UPDATE sections SET name = ? WHERE id = ?', [name, req.params.id]);
+    res.json({ ok: true, message: 'Section renamed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Only an empty section (no students, no subjects) can be deleted, so no records are ever lost
+router.delete('/sections/:id', async (req, res) => {
+  try {
+    const [[c]] = await pool.query(
+      `SELECT (SELECT COUNT(*) FROM students WHERE section_id = ?) AS students,
+              (SELECT COUNT(*) FROM subjects WHERE section_id = ?) AS subjects`, [req.params.id, req.params.id]);
+    if (c.students > 0 || c.subjects > 0) {
+      return res.status(400).json({ error: `Cannot delete: the section still has ${c.students} student(s) and ${c.subjects} subject(s). Move or remove them first.` });
+    }
+    await pool.query('DELETE FROM sections WHERE id = ?', [req.params.id]);
+    res.json({ ok: true, message: 'Section deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Students of a section
+router.get('/sections/:id/students', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.id AS student_id, u.full_name, s.lrn, s.gender, s.grade_level
+      FROM students s JOIN users u ON u.id = s.user_id
+      WHERE s.section_id = ? ORDER BY u.full_name
+    `, [req.params.id]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Transfer students to another section.
+// POST /api/admin/sections/transfer { student_ids: [..], to_section_id, preview?: true }
+// Nothing is deleted: grades stay stored under the old subjects and attendance under the old section.
+router.post('/sections/transfer', async (req, res) => {
+  const ids = [...new Set((req.body.student_ids || []).map(Number).filter(Boolean))];
+  const toId = Number(req.body.to_section_id);
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one student' });
+  if (!toId) return res.status(400).json({ error: 'Choose the destination section' });
+  try {
+    const [[target]] = await pool.query('SELECT id, name FROM sections WHERE id = ?', [toId]);
+    if (!target) return res.status(404).json({ error: 'Destination section not found' });
+
+    const [students] = await pool.query(
+      'SELECT s.user_id, u.full_name, s.section_id FROM students s JOIN users u ON u.id = s.user_id WHERE s.user_id IN (?)', [ids]);
+    const moving = students.filter(s => s.section_id !== toId);
+    if (!moving.length) return res.status(400).json({ error: 'Those students are already in that section' });
+
+    // How many existing grade rows will no longer be reachable (they belong to the old section's subjects)
+    const [[g]] = await pool.query(`
+      SELECT COUNT(*) AS n FROM grades gr
+      JOIN subjects sb ON sb.id = gr.subject_id
+      WHERE gr.student_id IN (?) AND sb.section_id <> ?`, [moving.map(s => s.user_id), toId]);
+    const [[tsub]] = await pool.query('SELECT COUNT(*) AS n FROM subjects WHERE section_id = ?', [toId]);
+
+    if (req.body.preview) {
+      return res.json({
+        ok: true, preview: true, to_section: target.name,
+        moving: moving.length, skipped: students.length - moving.length,
+        grade_rows_left_behind: g.n, destination_subjects: tsub.n
+      });
+    }
+
+    const [[lvl]] = await pool.query(
+      "SELECT grade_level FROM students WHERE section_id = ? AND grade_level IS NOT NULL LIMIT 1", [toId]);
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      for (const s of moving) {
+        if (lvl && lvl.grade_level) {
+          await conn.query('UPDATE students SET section_id = ?, grade_level = ? WHERE user_id = ?', [toId, lvl.grade_level, s.user_id]);
+        } else {
+          await conn.query('UPDATE students SET section_id = ? WHERE user_id = ?', [toId, s.user_id]);
+        }
+      }
+      await conn.commit();
+    } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+
+    res.json({ ok: true, moved: moving.length, to_section: target.name, grade_rows_left_behind: g.n,
+               message: `${moving.length} student(s) moved to ${target.name}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
