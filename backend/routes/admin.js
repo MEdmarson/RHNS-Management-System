@@ -117,6 +117,26 @@ async function computeAtRisk() {
   return { students: result, attendance: { attended, counted } };
 }
 
+// ---- Short cache for the school-wide at-risk calculation ----
+// computeAtRisk() loads every student, grade and recent attendance row into memory, which is heavy
+// (memory + TiDB Request Units) once the school is large. Several admin requests inside the cache window
+// share one calculation. The number is how long results may be out of date. Change it with
+// ADMIN_AT_RISK_CACHE_SECONDS in .env / Render Environment (set 0 to turn the cache off).
+const AT_RISK_CACHE_MS = envNum('ADMIN_AT_RISK_CACHE_SECONDS', 300) * 1000;
+let atRiskCache = { at: 0, promise: null };
+function computeAtRiskCached() {
+  if (AT_RISK_CACHE_MS <= 0) return computeAtRisk();
+  if (!atRiskCache.promise || Date.now() - atRiskCache.at > AT_RISK_CACHE_MS) {
+    const entry = { at: Date.now(), promise: null };
+    entry.promise = computeAtRisk().catch((e) => {
+      if (atRiskCache === entry) atRiskCache = { at: 0, promise: null };   // never keep a failed result
+      throw e;
+    });
+    atRiskCache = entry;
+  }
+  return atRiskCache.promise;
+}
+
 function complianceStatus(r) {
   if (!r.active_subjects) return 'no_subjects';
   if (r.days_ago === null || r.days_ago === undefined) return 'overdue';           // has subjects, never saved a grade
@@ -165,7 +185,7 @@ async function computeCompliance() {
 router.get('/overview', async (req, res) => {
   try {
     const PASS = risk.AT_RISK.PASSING_GRADE;
-    const [atRisk, compliance] = await Promise.all([computeAtRisk(), computeCompliance()]);
+    const [atRisk, compliance] = await Promise.all([computeAtRiskCached(), computeCompliance()]);
 
     const [[counts]] = await pool.query(`
       SELECT (SELECT COUNT(*) FROM users WHERE role = 'student') AS students,
@@ -287,7 +307,7 @@ router.get('/dashboard', async (req, res) => {
     const [[{ avg_grade }]] = await pool.query(
       `SELECT ROUND(AVG(term_grade),2) AS avg_grade FROM grades WHERE term_grade > 0`
     );
-    const { students } = await computeAtRisk();
+    const { students } = await computeAtRiskCached();
     res.json({ total_students, avg_grade, at_risk: students.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -298,7 +318,7 @@ router.get('/dashboard', async (req, res) => {
 // (id, full_name, section, avg_grade, absences) plus grade_level, severity and reasons.
 router.get('/at-risk', async (req, res) => {
   try {
-    const { students } = await computeAtRisk();
+    const { students } = await computeAtRiskCached();
     res.json(students);
   } catch (err) {
     res.status(500).json({ error: err.message });
