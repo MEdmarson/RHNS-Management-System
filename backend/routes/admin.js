@@ -351,6 +351,15 @@ router.get('/all-users', async (req, res) => {
   }
 });
 
+// A section's grade level comes from its name ("G12 - MELCHORA AQUINO" = Grade 12). The sections table has no
+// grade column, so this is the source of truth; students.grade_level is kept in step with it.
+const gradeFromName = (name) => { const m = /\bG(?:RADE)?\s*-?\s*(\d{1,2})\b/i.exec(String(name || '')); const n = m ? Number(m[1]) : null; return n >= 1 && n <= 12 ? n : null; };
+async function levelForSection(conn, sectionId, fallback) {
+  if (!sectionId) return fallback;
+  const [[sec]] = await conn.query('SELECT name FROM sections WHERE id = ?', [sectionId]);
+  return (sec && gradeFromName(sec.name)) || fallback;
+}
+
 // Students log in with their LRN, so their email is optional (stored as NULL, never as an empty string,
 // so several students without an email do not clash on the unique index). Teachers still need one.
 const cleanEmail = (v) => { const t = String(v || '').trim(); return t === '' ? null : t; };
@@ -360,6 +369,14 @@ pool.query(`SELECT COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'email'`)
   .then(([[c]]) => c && c.IS_NULLABLE === 'NO' ? pool.query(`ALTER TABLE users MODIFY email ${c.COLUMN_TYPE} NULL`) : null)
   .catch((e) => console.error('Could not make users.email nullable:', e.message));
+
+// Fix existing rows once at startup: set every student's grade level from their section's name
+pool.query('SELECT id, name FROM sections').then(async ([secs]) => {
+  for (const sec of secs) {
+    const lvl = gradeFromName(sec.name);
+    if (lvl) await pool.query('UPDATE students SET grade_level = ? WHERE section_id = ? AND (grade_level IS NULL OR grade_level <> ?)', [lvl, sec.id, lvl]);
+  }
+}).catch((e) => console.error('Could not sync student grade levels:', e.message));
 
 router.post('/users', async (req, res) => {
   const { password, full_name, role, lrn, section_id, grade_level } = req.body;
@@ -380,7 +397,7 @@ router.post('/users', async (req, res) => {
     if (role === 'student') {
       await pool.query(
         'INSERT INTO students (user_id, lrn, section_id, grade_level) VALUES (?, ?, ?, ?)',
-        [newUserId, String(lrn).trim(), section_id || null, grade_level || 10]
+        [newUserId, String(lrn).trim(), section_id || null, await levelForSection(pool, section_id, grade_level || 10)]
       );
     }
     res.json({ ok: true, message: 'User created successfully' });
@@ -410,9 +427,10 @@ router.put('/users/:id', async (req, res) => {
 
     const [user] = await pool.query('SELECT role FROM users WHERE id = ?', [userId]);
     if (user[0].role === 'student') {
+      const lvl = await levelForSection(pool, section_id, null);
       await pool.query(
-        'UPDATE students SET lrn = ?, section_id = ? WHERE user_id = ?',
-        [lrn, section_id || null, userId]
+        'UPDATE students SET lrn = ?, section_id = ?, grade_level = COALESCE(?, grade_level) WHERE user_id = ?',
+        [lrn, section_id || null, lvl, userId]
       );
     }
     res.json({ ok: true, message: 'User updated successfully' });
@@ -639,7 +657,7 @@ router.get('/sections/summary', async (req, res) => {
              (SELECT COUNT(*) FROM subjects sb WHERE sb.section_id = sec.id) AS subject_count
       FROM sections sec ORDER BY sec.name
     `);
-    res.json(rows);
+    res.json(rows.map(r => ({ ...r, grade_level: gradeFromName(r.name) || r.grade_level })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -665,6 +683,8 @@ router.put('/sections/:id', async (req, res) => {
     const [[dup]] = await pool.query('SELECT id FROM sections WHERE LOWER(name) = LOWER(?) AND id <> ?', [name, req.params.id]);
     if (dup) return res.status(400).json({ error: 'A section with that name already exists' });
     await pool.query('UPDATE sections SET name = ? WHERE id = ?', [name, req.params.id]);
+    const lvl = gradeFromName(name);
+    if (lvl) await pool.query('UPDATE students SET grade_level = ? WHERE section_id = ?', [lvl, req.params.id]);
     res.json({ ok: true, message: 'Section renamed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -733,14 +753,13 @@ router.post('/sections/transfer', async (req, res) => {
       });
     }
 
-    const [[lvl]] = await pool.query(
-      "SELECT grade_level FROM students WHERE section_id = ? AND grade_level IS NOT NULL LIMIT 1", [toId]);
+    const lvl = gradeFromName(target.name);   // e.g. "G12 - ..." -> 12 (null if the name has no grade)
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       for (const s of moving) {
-        if (lvl && lvl.grade_level) {
-          await conn.query('UPDATE students SET section_id = ?, grade_level = ? WHERE user_id = ?', [toId, lvl.grade_level, s.user_id]);
+        if (lvl) {
+          await conn.query('UPDATE students SET section_id = ?, grade_level = ? WHERE user_id = ?', [toId, lvl, s.user_id]);
         } else {
           await conn.query('UPDATE students SET section_id = ? WHERE user_id = ?', [toId, s.user_id]);
         }
