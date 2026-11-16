@@ -363,7 +363,7 @@
         </div>
         <div style="overflow-x: auto;">
           <table>
-            <thead><tr><th>Student</th><th>Level / Section</th><th>Concern</th><th>Avg Grade</th><th>Absences</th><th>Severity</th></tr></thead>
+            <thead style="color: black;"><tr><th>Student</th><th>Level / Section</th><th>Concern</th><th>Avg Grade</th><th>Absences</th><th>Severity</th></tr></thead>
             <tbody id="atRiskBody"></tbody>
           </table>
         </div>
@@ -381,7 +381,7 @@
         <div class="filter-row">
           <input type="text" id="compSearch" class="input" style="flex:1; min-width:200px; max-width:320px;" placeholder="🔍 Search teacher..." oninput="renderCompliance()">
           <select id="compStatus" class="input" onchange="renderCompliance()">
-            <option value="all">All statuses</option>
+            <option value="all">All</option>
             <option value="overdue">Overdue</option>
             <option value="behind">Behind</option>
             <option value="on_track">On track</option>
@@ -390,7 +390,7 @@
         </div>
         <div style="overflow-x: auto;">
           <table>
-            <thead><tr><th>Teacher</th><th>Active Subjects</th><th>Last Grade Update</th><th>Last Attendance</th><th>Status</th><th></th></tr></thead>
+            <thead style="color: black;"><tr><th>Teacher</th><th>Active Subjects</th><th>Last Grade Update</th><th>Last Attendance</th><th>Status</th><th></th></tr></thead>
             <tbody id="complianceBody"></tbody>
           </table>
         </div>
@@ -437,7 +437,7 @@
     <div class="view" id="view-reports" style="display:none">
       <div class="card">
         <h3>📄 Report Generator</h3>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Download a full CSV of all students and their grades. For filtered reports (by grade level, at-risk, compliance), use the Custom Report Generator on the Dashboard.</p>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 15px;">Download a full CSV of all students and their grades.</p>
         <button class="btn" onclick="exportCSV()">⬇ Download CSV</button>
         <button class="btn btn-secondary" onclick="window.print()">🖨 Print</button>
       </div>

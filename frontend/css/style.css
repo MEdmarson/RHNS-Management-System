@@ -93,6 +93,7 @@ body {
   padding: 40px;
   text-align: center;
 }
+.go-hint { display: none; }
 
 .login-left img {
   width: 220px;
