@@ -5,7 +5,7 @@
   --primary-dark: #172554;
   --accent: #b82626;
   /* Deep Red */
-  --accent-dark: #b82626;
+  --accent-dark: #7f1d1d;
   --warning: #f59e0b;
   /* Sun yellow */
   --success: #16A34A;
@@ -84,7 +84,7 @@ body {
 
 .login-left {
   flex: 1;
-  background: linear-gradient(135deg, #7f1d1d 0%, #1e3a8a 100%);
+  background: linear-gradient(135deg, #b82626 0%, #1e3a8a 100%);
   display: flex;
   flex-direction: column;
   justify-content: center;
