@@ -358,7 +358,7 @@ router.get('/export', async (req, res) => {
 router.get('/all-users', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id, u.full_name, u.email, u.role, s.lrn, s.section_id, sec.name AS section 
+      SELECT u.id, u.full_name, u.email, u.role, u.is_first_login, s.lrn, s.section_id, sec.name AS section 
       FROM users u
       LEFT JOIN students s ON s.user_id = u.id
       LEFT JOIN sections sec ON sec.id = s.section_id
@@ -456,6 +456,34 @@ router.put('/users/:id', async (req, res) => {
     res.json({ ok: true, message: 'User updated successfully' });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Email or LRN already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reset a user to the "just created" state: password back to its starting value and is_first_login = 1,
+// so they must set their own password at the next login.
+//   student: password becomes their LRN (same default as when the account is created)
+//   teacher: there is no default, so the admin sends a temporary password in the body
+router.post('/users/:id/reset', async (req, res) => {
+  try {
+    const [[u]] = await pool.query(
+      `SELECT u.id, u.role, s.lrn FROM users u LEFT JOIN students s ON s.user_id = u.id
+       WHERE u.id = ? AND u.role != 'admin'`, [req.params.id]);
+    if (!u) return res.status(404).json({ error: 'User not found' });
+
+    let plain;
+    if (u.role === 'student') {
+      plain = String(u.lrn || '').trim();
+      if (!plain) return res.status(400).json({ error: 'This student has no LRN to use as the password. Save an LRN first.' });
+    } else {
+      plain = String(req.body.password || '').trim();
+      if (!plain) return res.status(400).json({ error: 'Enter a temporary password for this user.' });
+    }
+
+    const password_hash = await bcrypt.hash(plain, 10);
+    await pool.query('UPDATE users SET password_hash = ?, is_first_login = 1 WHERE id = ?', [password_hash, u.id]);
+    res.json({ ok: true, message: u.role === 'student' ? 'Password reset to the LRN.' : 'Password reset to the temporary password.' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

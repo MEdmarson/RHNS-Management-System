@@ -303,9 +303,20 @@
           <div class="user-tab" onclick="filterUsers('student', this)">Students</div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 15px;">
-          <input type="text" id="userSearch" class="input" style="width: 100%; max-width: 400px;" placeholder="🔍 Search by name, email, or LRN..." oninput="renderUsers()">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
+          <input type="text" id="userSearch" class="input" style="flex: 1; min-width: 220px; max-width: 360px;" placeholder="🔍 Search by name, email, LRN, or section..." oninput="renderUsers()">
+          <select id="userSectionFilter" class="input" style="min-width: 150px;" title="Filter students by section" onchange="renderUsers()">
+            <option value="">All sections</option>
+            <option value="none">No section</option>
+          </select>
+          <select id="userStatusFilter" class="input" style="min-width: 170px;" title="Filter by password status" onchange="renderUsers()">
+            <option value="">Any password status</option>
+            <option value="pending">First login pending</option>
+            <option value="changed">Password changed</option>
+          </select>
+          <button type="button" class="btn btn-secondary" id="userClearFilters" onclick="clearUserFilters()" style="display: none;">✕ Clear filters</button>
         </div>
+        <div id="userCount" style="font-size: 12px; color: var(--muted); margin-bottom: 10px;"></div>
 
         <div style="overflow-x: auto;">
           <table>
@@ -488,6 +499,8 @@
       </div>
 
       <button type="submit" class="btn" style="margin-top: 20px; width: 100%;">Save User</button>
+      <button type="button" class="btn btn-secondary" id="resetUserBtn" onclick="resetUserToInitial()" style="display: none; margin-top: 10px; width: 100%;"
+              title="Password goes back to its starting value and the user must set a new one at next login">🔄 Reset to initial state</button>
       <div id="userMsg" class="error-msg" style="margin-top: 10px;"></div>
     </form>
   </div>

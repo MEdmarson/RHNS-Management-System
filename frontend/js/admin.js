@@ -8,6 +8,7 @@ const agoText = (d) => (d === null || d === undefined ? 'Never' : d === 0 ? 'Tod
 let allUsersData = []; 
 let allSubjectsData = []; 
 let currentUserFilter = 'all'; 
+let userFormInitial = null;   // snapshot of the user form when it was opened, used to detect unsaved changes
 
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
@@ -20,6 +21,7 @@ function showToast(message, type = 'success') {
 
 // opts (optional) lets other parts of the page redirect here with filters already applied
 function showView(name, el, opts) {
+  if (!confirmDiscardUserEdits()) return;   // asks first if the user form has unsaved changes
   opts = opts || {};
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
   document.getElementById(`view-${name}`).style.display = 'block';
@@ -72,8 +74,39 @@ function showView(name, el, opts) {
 function goTo(view, opts) { showView(view, null, opts); }
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-window.onclick = function(event) { if (event.target.classList.contains('modal')) event.target.style.display = 'none'; }
+// --- Unsaved-change protection for the user form ---
+const USER_FIELDS = {
+  fullName: ['userFullName', 'Name'], email: ['userEmail', 'Email'], role: ['userRole', 'Role'],
+  password: ['userPassword', 'Password'], lrn: ['studentLRN', 'LRN'], section: ['studentSection', 'Section']
+};
+const userFormSnapshot = () => Object.fromEntries(Object.entries(USER_FIELDS).map(([k, [id]]) => [k, document.getElementById(id).value]));
+const userModalOpen = () => document.getElementById('userModal').style.display === 'flex';
+// Labels of the fields that differ from when the form was opened (empty list = nothing changed)
+function userFormChanges() {
+  if (!userFormInitial || !userModalOpen()) return [];
+  const now = userFormSnapshot();
+  return Object.keys(USER_FIELDS).filter(k => {
+    if ((k === 'lrn' || k === 'section') && document.getElementById('userRole').value !== 'student' && userFormInitial.role !== 'student') return false;
+    return now[k] !== userFormInitial[k];
+  }).map(k => USER_FIELDS[k][1]);
+}
+function confirmDiscardUserEdits() {
+  const changes = userFormChanges();
+  if (!changes.length) return true;
+  if (!confirm(`You have unsaved changes (${changes.join(', ')}). Discard them and leave?`)) return false;
+  closeModal('userModal', true);
+  return true;
+}
+
+function closeModal(id, force = false) {
+  if (id === 'userModal' && !force && userFormChanges().length) {
+    if (!confirm(`You have unsaved changes (${userFormChanges().join(', ')}). Discard them and close?`)) return;
+  }
+  document.getElementById(id).style.display = 'none';
+}
+// Clicking the dark area outside a window closes it (the user form asks first if something was changed)
+window.onclick = function(event) { if (event.target.classList.contains('modal')) closeModal(event.target.id); }
+window.addEventListener('beforeunload', (e) => { if (userFormChanges().length) { e.preventDefault(); e.returnValue = ''; } });
 
 function toggleStudentFields() {
   const isStudent = document.getElementById('userRole').value === 'student';
@@ -94,8 +127,10 @@ function openUserModal() {
   document.getElementById('userPassword').required = true;
   document.getElementById('userMsg').textContent = '';
   document.getElementById('studentFields').style.display = 'none';
+  document.getElementById('resetUserBtn').style.display = 'none';   // nothing to reset on a new user
   toggleStudentFields();
   openModal('userModal');
+  userFormInitial = userFormSnapshot();
 }
 
 function openSubjectModal() {
@@ -126,7 +161,39 @@ function editUser(id) {
   document.getElementById('userMsg').textContent = '';
   toggleStudentFields();
   document.getElementById('userPassword').required = false;
+  document.getElementById('resetUserBtn').style.display = 'block';
   openModal('userModal');
+  userFormInitial = userFormSnapshot();
+}
+
+// Reset to the initial state: password back to its starting value + is_first_login = true
+async function resetUserToInitial() {
+  const id = document.getElementById('editUserId').value;
+  const user = allUsersData.find(u => String(u.id) === String(id));
+  if (!user) return;
+  const isStudent = user.role === 'student';
+  const typed = document.getElementById('userPassword').value.trim();
+
+  if (!isStudent && !typed) {
+    showToast('Type a temporary password in the Password box first, then press Reset.', 'warning');
+    document.getElementById('userPassword').focus();
+    return;
+  }
+  const otherEdits = userFormChanges().filter(l => l !== 'Password');
+  const how = isStudent ? `Their password goes back to their LRN (${user.lrn || 'none on file'}).`
+                        : 'Their password is replaced by the temporary password you typed.';
+  const msg = `Reset ${user.full_name} to the initial state?\n\n• ${how}\n• They must set a new password the next time they log in.`
+            + (otherEdits.length ? `\n\nUnsaved edits (${otherEdits.join(', ')}) will be discarded.` : '');
+  if (!confirm(msg)) return;
+
+  try {
+    await apiFetch(`/admin/users/${id}/reset`, { method: 'POST', body: JSON.stringify(isStudent ? {} : { password: typed }) });
+    showToast(`${user.full_name} was reset to the initial state.`);
+    closeModal('userModal', true);
+    loadUsersList();
+  } catch (err) {
+    showToast('Reset failed: ' + err.message, 'error');
+  }
 }
 
 function editSubject(id) {
@@ -147,15 +214,31 @@ async function loadUsersList() {
   renderUsers();
 }
 
+const isFirstLoginPending = (u) => Number(u.is_first_login) === 1;
+
 function renderUsers() {
-  const searchQuery = document.getElementById('userSearch').value.toLowerCase();
+  const searchQuery = document.getElementById('userSearch').value.trim().toLowerCase();
+  const secFilter = currentUserFilter === 'teacher' ? '' : document.getElementById('userSectionFilter').value;   // sections only apply to students
+  const statusFilter = document.getElementById('userStatusFilter').value;
+  document.getElementById('userSectionFilter').disabled = currentUserFilter === 'teacher';
+
   let filtered = allUsersData;
   if (currentUserFilter !== 'all') filtered = filtered.filter(u => u.role === currentUserFilter);
+  if (secFilter === 'none') filtered = filtered.filter(u => u.role === 'student' && !u.section_id);
+  else if (secFilter)       filtered = filtered.filter(u => String(u.section_id) === secFilter);
+  if (statusFilter === 'pending') filtered = filtered.filter(isFirstLoginPending);
+  if (statusFilter === 'changed') filtered = filtered.filter(u => !isFirstLoginPending(u));
   if (searchQuery) {
-    filtered = filtered.filter(u => 
-      u.full_name.toLowerCase().includes(searchQuery) || (u.email || '').toLowerCase().includes(searchQuery) || (u.lrn && u.lrn.includes(searchQuery))
+    filtered = filtered.filter(u =>
+      u.full_name.toLowerCase().includes(searchQuery) || (u.email || '').toLowerCase().includes(searchQuery) ||
+      (u.lrn && u.lrn.includes(searchQuery)) || (u.section || '').toLowerCase().includes(searchQuery)
     );
   }
+
+  const filtersOn = !!(searchQuery || secFilter || statusFilter || currentUserFilter !== 'all');
+  document.getElementById('userClearFilters').style.display = (searchQuery || secFilter || statusFilter) ? '' : 'none';
+  document.getElementById('userCount').textContent = allUsersData.length
+    ? (filtersOn ? `Showing ${filtered.length} of ${allUsersData.length} users` : `${allUsersData.length} users`) : '';
 
   if (filtered.length === 0) {
     document.getElementById('usersListBody').innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">No users found.</td></tr>';
@@ -164,7 +247,7 @@ function renderUsers() {
 
   document.getElementById('usersListBody').innerHTML = filtered.map(u => `
     <tr>
-      <td><strong>${escHtml(u.full_name)}</strong></td>
+      <td><strong>${escHtml(u.full_name)}</strong>${isFirstLoginPending(u) ? ' <span class="chip chip-warn" style="font-size:10px; padding:1px 7px;" title="Has not set their own password yet">First login pending</span>' : ''}</td>
       <td>${u.email ? escHtml(u.email) : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${u.role === 'teacher' ? '<span class="badge ok">Teacher</span>' : '<span class="badge warn">Student</span>'}</td>
       <td>${u.role === 'student' ? `${escHtml(u.section || 'No Section')} / ${escHtml(u.lrn)}` : '—'}</td>
@@ -174,6 +257,15 @@ function renderUsers() {
       </td>
     </tr>
   `).join('');
+}
+
+// Resets the search box and both dropdowns, and goes back to the "All Users" tab
+function clearUserFilters() {
+  document.getElementById('userSearch').value = '';
+  document.getElementById('userSectionFilter').value = '';
+  document.getElementById('userStatusFilter').value = '';
+  setUserFilter('all');
+  renderUsers();
 }
 
 function filterUsers(role, el) {
@@ -228,6 +320,12 @@ async function loadDropdowns() {
     document.getElementById('subjTeacher').innerHTML = teachers.map(t => `<option value="${t.id}">${escHtml(t.full_name)}</option>`).join('');
     document.getElementById('subjSection').innerHTML = sections.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
     document.getElementById('studentSection').innerHTML = sections.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+    const sf = document.getElementById('userSectionFilter');                       // filter list on the Users tab
+    if (sf) {
+      const keep = sf.value;
+      sf.innerHTML = '<option value="">All sections</option><option value="none">No section</option>' + sections.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+      sf.value = keep;
+    }
   } catch (err) { console.error("Failed to load dropdowns", err); }
 }
 
@@ -235,6 +333,12 @@ document.getElementById('userForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const msgDiv = document.getElementById('userMsg');
   const editId = document.getElementById('editUserId').value;
+
+  if (editId) {   // confirm before saving changes to an existing user
+    const changes = userFormChanges();
+    if (!changes.length) { showToast('No changes to save.', 'warning'); return; }
+    if (!confirm(`Save changes to ${document.getElementById('userFullName').value}?\n\nChanged: ${changes.join(', ')}`)) return;
+  }
   msgDiv.textContent = 'Saving...'; msgDiv.style.color = 'var(--muted)';
 
   const payload = {
@@ -255,7 +359,8 @@ document.getElementById('userForm')?.addEventListener('submit', async (e) => {
       showToast('User created successfully!');
     }
     loadUsersList(); loadDropdowns();
-    setTimeout(() => closeModal('userModal'), 1000);
+    userFormInitial = userFormSnapshot();            // saved: nothing left to warn about
+    setTimeout(() => closeModal('userModal', true), 1000);
   } catch (err) {
     msgDiv.textContent = '❌ ' + err.message; msgDiv.style.color = 'var(--danger)';
   }
