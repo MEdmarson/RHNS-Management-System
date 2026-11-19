@@ -181,7 +181,8 @@ const SUBJECT_FILTERS = {
 };
 
 // A grade only counts once all 3 terms are graded, there is no INC, and the subject is final
-const hasFinalGrade = s => s.is_final && !s.has_inc && s.graded_count === TERM_IDS.length && s.term_grade != null;
+const hasFinalGrade = s => s.is_final && !s.has_inc && s.graded_count === TERM_IDS.length && (s.term_grade != null || s.final_letter != null);
+const finalGradeText = s => s.term_grade ?? s.final_letter;   // number when scores are shown, otherwise the letter
 
 function priority(s) {
   if (s.has_inc) return 4;
@@ -240,14 +241,18 @@ function renderTiles() {
   const p = state.progress, a = state.attendance;
   const attention = p.failed + p.inc;
   const graded = state.subjects.filter(hasFinalGrade);
-  const avg = graded.length ? Math.round(graded.reduce((t, s) => t + s.term_grade, 0) / graded.length) : null;
+  const hasNumbers = graded.length > 0 && graded.every(s => s.term_grade != null);
+  const avgNum = hasNumbers ? Math.round(graded.reduce((t, s) => t + s.term_grade, 0) / graded.length) : null;
+  const avgLetter = !hasNumbers && graded.length ? (state.finalAverageLetter || null) : null;
+  const avg = avgNum ?? avgLetter;                                   // what the tile shows
+  const avgBad = avgNum != null ? avgNum < 75 : (avgLetter === 'D' || avgLetter === 'E');
   const unread = unreadTotal();
 
   $('stats').innerHTML = `
     <button class="tile" data-go="subjects" data-filter="active"><span class="go">→</span>
       <span>Active subjects</span><strong>${state.subjects.filter(s => s.is_active).length}</strong>
       <small>Tap to view</small></button>
-    <button class="tile ${avg != null && avg < 75 ? 'alert' : avg != null ? 'good' : ''}" data-go="subjects" data-filter="${graded.length ? 'past' : 'active'}"><span class="go">→</span>
+    <button class="tile ${avg != null && avgBad ? 'alert' : avg != null ? 'good' : ''}" data-go="subjects" data-filter="${graded.length ? 'past' : 'active'}"><span class="go">→</span>
       <span>Final average</span><strong>${avg ?? '—'}</strong>
       <small>${avg != null ? `Across ${plural(graded.length, 'completed subject')}` : 'Shows once a subject has a final grade'}</small></button>
     <button class="tile ${attention ? 'alert' : ''}" data-go="subjects" data-filter="${attention ? 'attention' : 'passed'}"><span class="go">→</span>
@@ -325,7 +330,7 @@ function termChip(n, s) {
 function subjectCard(s) {
   const hint = subjectHint(s);
   const avg = hasFinalGrade(s)
-    ? `Final grade: <strong>${s.term_grade}</strong>`
+    ? `Final grade: <strong>${finalGradeText(s)}</strong>`
     : s.has_inc ? 'Final grade held by INC' : 'Final grade not yet available';
   return `
     <article class="subj" tabindex="0" role="button" data-open="${s.subject_id}" aria-label="Open ${escapeHtml(s.subject)} details">
@@ -616,7 +621,7 @@ async function openSubjectModal(subjectId, trigger) {
     const hint = subjectHint(s);
     head = `<div class="modal-summary">
         ${statusPill(s.status)}
-        ${hasFinalGrade(s) ? `<span>Final grade: <strong>${s.term_grade}</strong></span>` : ''}
+        ${hasFinalGrade(s) ? `<span>Final grade: <strong>${finalGradeText(s)}</strong></span>` : ''}
         <span>${escapeHtml(s.teacher)}</span>
       </div>
       ${hint ? `<p class="hint ${hint.cls}" style="margin: 0 0 14px;">${escapeHtml(hint.text)}</p>` : ''}`;
@@ -627,13 +632,22 @@ async function openSubjectModal(subjectId, trigger) {
     const descColor = { Advancing: 'green', Benchmarking: '#1e3a8a', Connecting: '#0369a1', Developing: '#b45309', Emerging: 'red' };
     const qualColor = { 'Passed': '#166534', 'Failed': '#991b1b', 'INC / Not Submitted': '#92400e', 'In Progress': '#1e3a8a' };
 
+    // With raw scores on: "14 / 15". With them off (default): "Submitted" / "Not submitted" per item.
     const formatGroup = (g, prefix) => {
       if (!g.activities) return '—';
+      const finished = !!(s && s.finished_by_teacher);
       return g.activities.filter(a => a.field.startsWith(prefix)).map(a => {
-        if (a.score !== null && a.score !== undefined) {
-          return `<div><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps}</span></div>`;
+        const planned = a.planned ?? (a.hps > 0);
+        if (!planned) return null;
+        if (a.score !== undefined) {                      // raw mode
+          if (a.score !== null) {
+            return `<div><strong style="color:var(--primary);">${a.score}</strong> <span style="color:#374151; font-size:12px; font-weight:600;">/ ${a.hps}</span></div>`;
+          }
+          return `<div style="color:${finished ? '#6b7280' : '#92400e'}; font-size:12px; font-weight:600;">— / ${a.hps}</div>`;
         }
-        return a.hps > 0 ? `<div style="color:${s && s.finished_by_teacher ? '#6b7280' : '#92400e'}; font-size:12px; font-weight:600;">— / ${a.hps}</div>` : null;
+        return a.submitted
+          ? `<div style="color:#166534; font-size:12px; font-weight:700;">✓ Submitted</div>`
+          : `<div style="color:${finished ? '#6b7280' : '#92400e'}; font-size:12px; font-weight:600;">Not submitted</div>`;
       }).filter(Boolean).join('') || '—';
     };
 
@@ -645,10 +659,12 @@ async function openSubjectModal(subjectId, trigger) {
         <td class="bg-ww">${formatGroup(g, 'ww')}</td>
         <td class="bg-pt">${formatGroup(g, 'pt')}</td>
         <td class="bg-ex">${formatGroup(g, 'ex')}</td>
-        <td style="font-weight:bold; font-size:16px; background:#f9fafb;">
+        ${g.term_grade != null || !g.letter
+          ? `<td style="font-weight:bold; font-size:16px; background:#f9fafb;">
           ${done && g.term_grade != null ? g.term_grade : '—'}<br>
           <span style="font-size:11px; color:${descColor[g.descriptor] || 'inherit'}; font-weight:600;">${done ? escapeHtml(g.descriptor || '') : ''}</span>
-        </td>
+        </td>`
+          : `<td style="font-weight:800; font-size:20px; background:#f9fafb; color:${descColor[g.descriptor] || 'inherit'};" title="${escapeHtml(g.descriptor || '')}">${escapeHtml(g.letter)}</td>`}
         <td style="background:#f9fafb; font-weight:700; color:${qualColor[g.qualitative] || 'inherit'};">${escapeHtml(qual)}</td>
       </tr>`;
     }).join('');
@@ -666,7 +682,9 @@ async function openSubjectModal(subjectId, trigger) {
           </tr></thead><tbody>${rows}</tbody>
         </table>
       </div>
-      <p class="modal-note">Scores are shown as <strong>your score</strong> / highest possible score. ${s && s.finished_by_teacher ? 'A dash means no score was recorded.' : 'An orange “— /” means the item is not submitted yet.'}</p>`;
+      <p class="modal-note">${grades.some(g => (g.activities || []).some(a => a.score !== undefined))
+        ? `Scores are shown as <strong>your score</strong> / highest possible score. ${s && s.finished_by_teacher ? 'A dash means no score was recorded.' : 'An orange “— /” means the item is not submitted yet.'}`
+        : `Each item shows <strong>Submitted</strong> once your teacher has recorded it, or <strong>Not submitted</strong> if it is still missing. Term grades are letters: A Advancing, B Benchmarking, C Connecting, D Developing, E Emerging.`}</p>`;
   } catch (err) {
     $('modalContent').innerHTML = `${head}<p class="empty" style="color:var(--danger);">Could not load details: ${escapeHtml(err.message)}</p>`;
   }
@@ -730,6 +748,7 @@ async function loadAll({ silent = false } = {}) {
   try {
     const d = await apiFetch('/student/overview', { silent });   // apiFetch shows/hides the loading overlay itself
     state.subjects = d.subjects;
+    state.finalAverageLetter = d.final_average_letter;
     state.progress = d.progress;
     state.attendance = d.attendance;
     state.alerts = d.notifications.alerts;

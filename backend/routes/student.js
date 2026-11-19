@@ -17,7 +17,27 @@ const LATES_PER_ABSENCE = risk.AT_RISK.LATES_PER_ABSENCE;    // same rule as the
 // The school year (for the attendance totals) is picked automatically from today's date.
 // To change the months or pin exact dates, see the school-year settings in routes/atRisk.js (or .env).
 
-const showRaw = () => process.env.STUDENT_SHOW_RAW !== 'false';
+// Students see Passed / Not submitted and a letter grade (A-E) instead of raw scores and numeric grades.
+// To show the numbers again, set STUDENT_SHOW_RAW=true in .env
+const showRaw = () => process.env.STUDENT_SHOW_RAW === 'true';
+
+// Same bands as the descriptors: Advancing A, Benchmarking B, Connecting C, Developing D, Emerging E
+const letterOf = (grade) => {
+  const n = Number(grade);
+  if (!(n > 0)) return null;
+  return n > 89 ? 'A' : n > 79 ? 'B' : n > 74 ? 'C' : n > 64 ? 'D' : 'E';
+};
+
+// Applied to subject lists right before they are sent to the browser. Server-side logic keeps the real numbers.
+const forStudent = (list) => list.map(s => ({
+  ...s,
+  final_letter: letterOf(s.term_grade),
+  term_grade: showRaw() ? s.term_grade : null,
+}));
+const finalAverageLetter = (list) => {
+  const done = list.filter(s => s.is_final && !s.has_inc && s.graded_count === TERMS.length && s.term_grade != null);
+  return done.length ? letterOf(Math.round(done.reduce((t, s) => t + s.term_grade, 0) / done.length)) : null;
+};
 const QUALITATIVE = {
   passed: 'Passed', failed: 'Failed', inc: 'INC / Not Submitted',
   'in-progress': 'In Progress', pending: '—',
@@ -323,7 +343,7 @@ function buildRiskAlert(r) {
   return {
     id: 'risk-status',
     // changes whenever the reasons change, so the student is notified again
-    sig: r.failing.map(f => [f.subject_id, f.term, f.cause, f.term_grade, f.missing.count].join(':')).join('|') +
+    sig: r.failing.map(f => [f.subject_id, f.term, f.cause, showRaw() ? f.term_grade : letterOf(f.term_grade), f.missing.count].join(':')).join('|') +
          `|a${r.dropping ? r.dropping.effective_absences : 0}`,
     type: r.severity === 'high' ? 'error' : 'warning',
     category: 'atrisk', risk: kind,
@@ -407,7 +427,7 @@ function buildAlerts(list, att, atRisk = null) {
       if (st === 'failed') {
         const g = s[`term${t}`];
         add({
-          ...ctx, id: `fail-${s.subject_id}-${t}`, sig: String(g ?? 'failed'), type: 'error', category: 'failing',
+          ...ctx, id: `fail-${s.subject_id}-${t}`, sig: String(showRaw() ? (g ?? 'failed') : (letterOf(g) ?? 'failed')), type: 'error', category: 'failing',
           title: `Below passing: ${s.subject} (Term ${t})`,
           body: (g != null ? `Your grade is ${g}; passing is ${PASSING}. ` : `Your grade is below the passing mark of ${PASSING}. `) +
                 'Ask your teacher about make-up work.',
@@ -490,7 +510,7 @@ router.get('/overview', async (req, res) => {
       loadAttendance(req.user.id),
     ]);
     const notifications = await loadNotifications(req.user.id, subjects, attendance);
-    res.json({ subjects, progress: buildProgress(subjects), attendance, notifications });
+    res.json({ subjects: forStudent(subjects), final_average_letter: finalAverageLetter(subjects), progress: buildProgress(subjects), attendance, notifications });
   } catch (err) {
     console.error('Student Overview Error:', err);
     res.status(500).json({ error: err.message });
@@ -502,7 +522,7 @@ router.get('/overview', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/subjects', async (req, res) => {
   try {
-    res.json(await loadSubjects(req.user.id));
+    res.json(forStudent(await loadSubjects(req.user.id)));
   } catch (err) {
     console.error('Student Subjects Error:', err);
     res.status(500).json({ error: err.message });
@@ -536,18 +556,21 @@ router.get('/subjects/:subjectId/details', async (req, res) => {
       const ts = termSummary(g, finished);
       const done = ts.status === 'passed' || ts.status === 'failed';
 
-      const activities = g ? ACTIVITIES.map(a => ({
-        field:   a,
-        score:   g[a],
-        hps:     Number(g[`${a}_hps`]) || 0,
-        missing: Number(g[`${a}_hps`]) > 0 && (g[a] === null || g[a] === undefined),
-      })) : [];
+      // Always says whether each planned item was submitted; the score and max score are only sent when raw scores are enabled
+      const activities = g ? ACTIVITIES.map(a => {
+        const hps = Number(g[`${a}_hps`]) || 0;
+        const submitted = g[a] !== null && g[a] !== undefined;
+        const item = { field: a, planned: hps > 0, submitted, missing: hps > 0 && !submitted };
+        if (raw) { item.score = g[a]; item.hps = hps; }
+        return item;
+      }) : [];
 
       return {
         term:               t,
-        activities:         raw ? activities : undefined,
+        activities,
         initial_grade:      raw && g ? g.initial_grade : undefined,
         term_grade:         raw && g ? g.term_grade : undefined,
+        letter:             done ? letterOf(ts.grade) : null,
         descriptor:         done && g ? g.descriptor : null,
         qualitative:        QUALITATIVE[ts.status],
         missing_activities: activities.filter(x => x.missing).map(x => x.field.toUpperCase()),
