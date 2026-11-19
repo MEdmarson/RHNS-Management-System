@@ -377,13 +377,8 @@ async function uploadGrades(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  const term = document.getElementById('termSelect').value;
-  if (term === 'final') {
-    showToast('Cannot import grades for Final Term.', 'error');
-    return;
-  }
-
-  if (!confirm(`Are you sure you want to import grades for Term ${term}? This will overwrite existing scores.`)) {
+  // The .xlsx holds TERM 1, TERM 2 and TERM 3: one upload imports all of them (works from any term/Final view)
+  if (!confirm('Import grades for Term 1, Term 2 and Term 3 from this file? This will overwrite existing scores for the terms found in the file.')) {
     event.target.value = '';
     return;
   }
@@ -391,7 +386,7 @@ async function uploadGrades(event) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('subject_id', currentSubjectId);
-  formData.append('term', term);
+  formData.append('term', 'all');
   formData.append('subject_type', currentSubjectType);
 
   try {

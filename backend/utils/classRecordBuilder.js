@@ -469,7 +469,7 @@ function buildFinalSheet(xml, ctx) {
 // ───────────────────────── data preparation ─────────────────────────
 function normalizeGender(g) {
   const v = String(g || '').trim().toLowerCase();
-  return (v === 'female' || v === 'f') ? 'female' : 'male';
+  return v.startsWith('f') ? 'female' : 'male';   // same rule as routes/teacher.js and the website
 }
 function pickHps(rows) {
   const keys = ['ww1', 'ww2', 'ww3', 'ww4', 'ww5', 'pt1', 'pt2', 'pt3', 'ex1', 'ex2', 'ex3'];

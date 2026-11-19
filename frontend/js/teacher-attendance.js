@@ -57,7 +57,7 @@ function renderAttendance() {
     return;
   }
 
-  document.getElementById('attendanceBody').innerHTML = filtered.map(r => {
+  document.getElementById('attendanceBody').innerHTML = renderByGender(filtered, currentAttendanceData, 6, (r, num) => {
     const t = computeAttendance({ present: r.days_present, late: r.days_late, excused: r.days_excused, absent: r.days_absent });
     const lateNote = t.converted > 0 ? ` <span title="${LATES_PER_ABSENCE} lates = 1 absence" style="font-size:10px;">(${t.converted} from lates)</span>` : '';
     const lateLeft = t.late % LATES_PER_ABSENCE;
@@ -70,7 +70,7 @@ function renderAttendance() {
     return `
     <tr>
       <td style="text-align:left;">
-        <strong>${r.full_name}</strong>
+        <span class="stu-no">${num}.</span> <strong>${r.full_name}</strong>
         <div class="mobile-stats" style="display: none;">
           <span class="badge ok">P: ${t.present}</span>
           <span class="badge warn">L: ${t.late}</span>
@@ -84,7 +84,7 @@ function renderAttendance() {
       <td class="hide-mobile"><span class="badge danger" style="font-size: 13px;">${t.absent} Days</span>${lateNote}</td>
       <td><div class="att-btns">${buttons}</div></td>
     </tr>`;
-  }).join('');
+  });
 }
 
 async function mark(student_id, status) {
@@ -138,7 +138,7 @@ async function loadAttendanceHistory() {
   document.getElementById('historyHeaderRow').innerHTML = headerHtml;
 
   const studentMap = {};
-  students.forEach(s => studentMap[s.student_id] = { name: s.full_name, days: {}, counts: { present: 0, late: 0, excused: 0, absent: 0 } });
+  students.forEach(s => studentMap[s.student_id] = { name: s.full_name, gender: s.gender, days: {}, counts: { present: 0, late: 0, excused: 0, absent: 0 } });
 
   records.forEach(r => {
     const day = new Date(r.date).getDate();
@@ -156,9 +156,10 @@ async function loadAttendanceHistory() {
     absent:  { mark: '❌', color: '#fee2e2' }
   };
 
-  document.getElementById('historyBody').innerHTML = Object.values(studentMap).map(s => {
+  const historyRows = Object.values(studentMap);
+  document.getElementById('historyBody').innerHTML = renderByGender(historyRows, historyRows, daysInMonth + 3, (s, num) => {
     const t = computeAttendance(s.counts);
-    let rowHtml = `<tr><td style="text-align:left;">${s.name}</td>`;
+    let rowHtml = `<tr><td style="text-align:left;"><span class="stu-no">${num}.</span> ${s.name}</td>`;
     for (let i = 1; i <= daysInMonth; i++) {
       const c = CELL[s.days[i]];
       rowHtml += `<td style="background: ${c ? c.color : ''};" title="${s.days[i] || ''}">${c ? c.mark : ''}</td>`;
@@ -167,7 +168,7 @@ async function loadAttendanceHistory() {
     rowHtml += `<td title="${tip}"><span class="badge ok">${t.present}</span></td>`;
     rowHtml += `<td title="${tip}"><span class="badge danger">${t.absent}</span>${t.converted ? '*' : ''}</td></tr>`;
     return rowHtml;
-  }).join('');
+  });
 }
 
 // ---------- At-Risk (early warning) ----------
@@ -464,7 +465,7 @@ async function loadSF2() {
       `/teacher/sf2/${subj.section_id}?month=${month}&year=${year}`
     );
 
-    document.getElementById('sf2Body').innerHTML = rows.map(r => {
+    document.getElementById('sf2Body').innerHTML = renderByGender(rows, rows, 7, (r, num) => {
       const t = computeAttendance({
         present: r.days_present,
         late: r.days_late,
@@ -477,14 +478,14 @@ async function loadSF2() {
       return `
       <tr>
         <td>${r.lrn}</td>
-        <td>${r.full_name}</td>
+        <td><span class="stu-no">${num}.</span> ${r.full_name}</td>
         <td>${t.present}</td>
         <td>${t.late}</td>
         <td>${t.excused}</td>
         <td>${t.absent}${note}</td>
         <td>${t.absent > 4 ? 'Needs Intervention' : 'Good Standing'}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" style="text-align:center;">No attendance recorded for this month.</td></tr>';
+    }) || '<tr><td colspan="7" style="text-align:center;">No attendance recorded for this month.</td></tr>';
 
   } catch (err) {
     console.error("SF2 Error:", err);

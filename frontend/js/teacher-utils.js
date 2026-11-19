@@ -58,3 +58,18 @@ function computeAttendance({ present = 0, late = 0, excused = 0, absent = 0 } = 
     late, excused, converted
   };
 }
+
+// --- MALE / FEMALE GROUPING (mirrors the class-record .xlsx) ---
+const normalizeGender = g => String(g || '').trim().toLowerCase().startsWith('f') ? 'female' : 'male'; // same rule as routes/teacher.js
+
+// rows = rows to show (after search), allRows = full class list (keeps numbering stable while searching)
+function renderByGender(rows, allRows, colspan, rowFn) {
+  const isF = r => normalizeGender(r.gender) === 'female';
+  return [['MALE', r => !isF(r), 'male'], ['FEMALE', isF, 'female']].map(([label, test, cls]) => {
+    const shown = rows.filter(test);
+    if (!shown.length) return '';
+    const all = allRows.filter(test);
+    return `<tr class="gender-row ${cls}"><td colspan="${colspan}">${label} <span class="gender-count">(${shown.length})</span></td></tr>`
+         + shown.map(r => rowFn(r, all.indexOf(r) + 1)).join('');
+  }).join('');
+}

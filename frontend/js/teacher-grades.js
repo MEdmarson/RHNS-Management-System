@@ -167,7 +167,7 @@ function renderGradebook() {
     return;
   }
 
-  document.getElementById('gradebookBody').innerHTML = filtered.map((r) => {
+  document.getElementById('gradebookBody').innerHTML = renderByGender(filtered, currentGradebookData, 24, (r, num) => {
     const originalIndex = currentGradebookData.findIndex(item => item.student_id === r.student_id || item.full_name === r.full_name);
     const rowId = r.student_id || `idx-${originalIndex}`;
     
@@ -192,7 +192,7 @@ function renderGradebook() {
     return `
     <tr id="row-${rowId}">
       <td style="text-align:left;">
-        ${r.full_name}
+        <span class="stu-no">${num}.</span> ${r.full_name}
         ${!r.student_id ? '<span style="color:var(--danger); font-size:10px;">(Missing DB ID)</span>' : ''}
       </td>
       <td>${makeInput('ww1')}</td><td>${makeInput('ww2')}</td><td>${makeInput('ww3')}</td>
@@ -215,7 +215,7 @@ function renderGradebook() {
       <td class="term-grade-cell" id="term-${rowId}"></td>
       <td class="descriptor-cell" id="desc-${rowId}"></td>
     </tr>`;
-  }).join('');
+  });
 
   recalcAllRows();
 }
@@ -340,7 +340,7 @@ function renderFinalGrades() {
 
   const fmt = v => (v === null || v === undefined || v === '') ? '' : v;
 
-  document.getElementById('gradebookBody').innerHTML = filtered.map(r => {
+  document.getElementById('gradebookBody').innerHTML = renderByGender(filtered, currentFinalGradeData, 7, (r, num) => {
     const final = r.final_grade;
     const hasFinal = final !== null && final !== undefined && final !== '';
     const remarks = hasFinal ? (Number(final) >= 75 ? 'PASSED' : 'FAILED') : '';
@@ -354,7 +354,7 @@ function renderFinalGrades() {
 
     return `
     <tr>
-      <td style="text-align:left; font-weight:500;">${r.full_name} ${incBadge}</td>
+      <td style="text-align:left; font-weight:500;"><span class="stu-no">${num}.</span> ${r.full_name} ${incBadge}</td>
       <td class="initial-cell">${fmt(r.term1)}</td>
       <td class="initial-cell">${fmt(r.term2)}</td>
       <td class="initial-cell">${fmt(r.term3)}</td>
@@ -362,7 +362,7 @@ function renderFinalGrades() {
       <td class="descriptor-cell${descClass}">${descriptor}</td>
       <td class="${remarkClass}" style="text-align:center;">${remarks}</td>
     </tr>`;
-  }).join('');
+  });
 }
 
 function onGradebookSearch() {
@@ -414,8 +414,8 @@ async function saveAllGrades() {
   });
 
   try {
-    const promises = Object.values(payload).map(data => apiFetch('/teacher/grades', { method: 'POST', body: JSON.stringify(data) }));
-    await Promise.all(promises);
+    const rows = Object.values(payload);
+    if (rows.length) await apiFetch('/teacher/grades/batch', { method: 'POST', body: JSON.stringify({ rows }) });
     showToast('All grades saved successfully!');
     hasUnsavedChanges = false;
     document.getElementById('unsavedIndicator').style.display = 'none';
