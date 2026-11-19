@@ -6,6 +6,28 @@ const risk = require('./atRisk');   // same at-risk rules as the teacher and stu
 
 router.use(authenticate, authorize('admin'));
 
+// Subject codes are not used by the school, so they are generated automatically and never shown in the UI.
+// The "code" column stays in the database (it is UNIQUE), so we still need to fill it in.
+function generateSubjectCode() {
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `SUBJ-${Date.now().toString(36).toUpperCase()}${rand}`;
+}
+
+// INSERT a subject with an auto-generated code (retries on the rare duplicate)
+async function insertSubject(fields, values) {
+  for (let i = 0; i < 5; i++) {
+    try {
+      return await pool.query(
+        `INSERT INTO subjects (code, ${fields.join(', ')}) VALUES (?, ${fields.map(() => '?').join(', ')})`,
+        [generateSubjectCode(), ...values]
+      );
+    } catch (err) {
+      if (err.code !== 'ER_DUP_ENTRY') throw err;
+    }
+  }
+  throw new Error('Could not generate a unique subject code. Please try again.');
+}
+
 // ==========================================
 // 1. DASHBOARD & ANALYTICS
 // ==========================================
@@ -516,29 +538,24 @@ router.get('/subjects', async (req, res) => {
 });
 
 router.post('/subjects', async (req, res) => {
-  const { code, name, teacher_id, section_id } = req.body;
+  const { name, teacher_id, section_id } = req.body;
   try {
-    await pool.query(
-      'INSERT INTO subjects (code, name, teacher_id, section_id) VALUES (?, ?, ?, ?)',
-      [code, name, teacher_id, section_id]
-    );
+    await insertSubject(['name', 'teacher_id', 'section_id'], [name, teacher_id, section_id]);
     res.json({ ok: true, message: 'Subject created and assigned' });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
     res.status(500).json({ error: err.message });
   }
 });
 
 router.put('/subjects/:id', async (req, res) => {
-  const { code, name, teacher_id, section_id } = req.body;
+  const { name, teacher_id, section_id } = req.body;
   try {
     await pool.query(
-      'UPDATE subjects SET code = ?, name = ?, teacher_id = ?, section_id = ? WHERE id = ?',
-      [code, name, teacher_id, section_id, req.params.id]
+      'UPDATE subjects SET name = ?, teacher_id = ?, section_id = ? WHERE id = ?',
+      [name, teacher_id, section_id, req.params.id]
     );
     res.json({ ok: true, message: 'Subject updated successfully' });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Subject code already exists' });
     res.status(500).json({ error: err.message });
   }
 });

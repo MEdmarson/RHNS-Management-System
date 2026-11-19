@@ -138,7 +138,6 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
   msgDiv.textContent = 'Saving...'; msgDiv.style.color = 'var(--muted)';
 
   const payload = {
-    code: document.getElementById('subjCode').value.trim(),
     name: document.getElementById('subjName').value.trim(),
     section_id: document.getElementById('subjSection').value
   };
@@ -154,13 +153,12 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
 });
 
 // --- EDIT SUBJECT ---
-async function openEditSubjectModal(event, subjectId, currentCode, currentName, currentSectionId) {
+async function openEditSubjectModal(event, subjectId, currentName, currentSectionId) {
   event.stopPropagation();
   
   document.getElementById('editSubjectForm').reset();
   document.getElementById('editSubjMsg').textContent = '';
   document.getElementById('editSubjId').value = subjectId;
-  document.getElementById('editSubjCode').value = currentCode;
   document.getElementById('editSubjName').value = currentName;
   
   try {
@@ -186,7 +184,6 @@ document.getElementById('editSubjectForm')?.addEventListener('submit', async (e)
   
   const subjectId = document.getElementById('editSubjId').value;
   const payload = {
-    code: document.getElementById('editSubjCode').value.trim(),
     name: document.getElementById('editSubjName').value.trim(),
     section_id: document.getElementById('editSubjSection').value
   };
@@ -258,7 +255,6 @@ async function initDashboard() {
 
   grid.innerHTML = subjects.map(s => {
     const safeName = s.name.replace(/'/g, "\\'");
-    const safeCode = (s.code || '').replace(/'/g, "\\'");
     const finishedOn = s.finished_at ? new Date(s.finished_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
     
     const statusBtn = isPast
@@ -269,7 +265,7 @@ async function initDashboard() {
     <div class="subject-card ${isPast ? 'is-finished' : ''}" onclick="openClassRecord(${s.id})" style="position: relative;">
       ${statusBtn}
 
-      <button onclick="openEditSubjectModal(event, ${s.id}, '${safeCode}', '${safeName}', ${s.section_id})" 
+      <button onclick="openEditSubjectModal(event, ${s.id}, '${safeName}', ${s.section_id})" 
               style="${iconBtn} right: 45px; background: #e0e7ff; color: #3730a3;"
               title="Edit Subject">
         ✏️

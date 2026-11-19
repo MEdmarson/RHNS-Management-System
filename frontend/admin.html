@@ -340,14 +340,14 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 15px;">
-          <input type="text" id="subjSearch" class="input" style="width: 100%; max-width: 400px;" placeholder="🔍 Search by subject code, name, or teacher..." oninput="renderSubjects()">
+          <input type="text" id="subjSearch" class="input" style="width: 100%; max-width: 400px;" placeholder="🔍 Search by subject name or teacher..." oninput="renderSubjects()">
         </div>
 
         <div style="overflow-x: auto;">
           <table>
             <thead>
               <tr>
-                <th>Code</th><th>Subject Name</th><th>Teacher</th><th>Section</th><th>Action</th>
+                <th>Subject Name</th><th>Teacher</th><th>Section</th><th>Action</th>
               </tr>
             </thead>
             <tbody id="subjectsListBody"></tbody>
@@ -514,11 +514,7 @@
     <form id="subjectForm">
       <input type="hidden" id="editSubjectId">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-        <div class="form-group">
-          <label>Subject Code</label>
-          <input type="text" id="subjCode" required placeholder="e.g. MATH10">
-        </div>
-        <div class="form-group">
+        <div class="form-group" style="grid-column: 1 / -1;">
           <label>Subject Name</label>
           <input type="text" id="subjName" required placeholder="e.g. Mathematics 10">
         </div>

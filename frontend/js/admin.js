@@ -200,7 +200,6 @@ function editSubject(id) {
   const subj = allSubjectsData.find(s => s.id === id);
   if (!subj) return;
   document.getElementById('editSubjectId').value = subj.id;
-  document.getElementById('subjCode').value = subj.code;
   document.getElementById('subjName').value = subj.name;
   document.getElementById('subjTeacher').value = subj.teacher_id || '';
   document.getElementById('subjSection').value = subj.section_id || '';
@@ -290,19 +289,18 @@ function renderSubjects() {
   let filtered = allSubjectsData;
   if (searchQuery) {
     filtered = filtered.filter(s => 
-      s.name.toLowerCase().includes(searchQuery) || (s.code || '').toLowerCase().includes(searchQuery) || (s.teacher_name && s.teacher_name.toLowerCase().includes(searchQuery))
+      s.name.toLowerCase().includes(searchQuery) || (s.teacher_name && s.teacher_name.toLowerCase().includes(searchQuery))
     );
   }
 
   if (filtered.length === 0) {
-    document.getElementById('subjectsListBody').innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">No subjects found.</td></tr>';
+    document.getElementById('subjectsListBody').innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">No subjects found.</td></tr>';
     return;
   }
 
   document.getElementById('subjectsListBody').innerHTML = filtered.map(s => `
     <tr>
-      <td><strong>${escHtml(s.code)}</strong></td>
-      <td>${escHtml(s.name)}</td>
+      <td><strong>${escHtml(s.name)}</strong></td>
       <td>${s.teacher_name ? escHtml(s.teacher_name) : '<span style="color:red;">Unassigned</span>'}</td>
       <td>${s.section_name ? escHtml(s.section_name) : '<span style="color:red;">Unassigned</span>'}</td>
       <td>
@@ -373,7 +371,6 @@ document.getElementById('subjectForm')?.addEventListener('submit', async (e) => 
   msgDiv.textContent = 'Saving...'; msgDiv.style.color = 'var(--muted)';
 
   const payload = {
-    code: document.getElementById('subjCode').value,
     name: document.getElementById('subjName').value,
     teacher_id: document.getElementById('subjTeacher').value,
     section_id: document.getElementById('subjSection').value
@@ -516,7 +513,7 @@ function renderTeacherSubjects() {
     <div style="overflow-x:auto"><table>
       <thead><tr><th>Subject</th><th>Section</th><th>Status</th><th>Students graded</th><th>Last update</th><th></th></tr></thead>
       <tbody>${subjects.map(s => `<tr class="clickable" tabindex="0" onclick="openClassRecord(${s.id})" onkeydown="if(event.key==='Enter')openClassRecord(${s.id})">
-        <td><strong>${escHtml(s.name)}</strong><br><span class="dash-sub">${escHtml(s.code || '')}</span></td>
+        <td><strong>${escHtml(s.name)}</strong></td>
         <td>${escHtml(s.section || '—')}</td>
         <td>${s.status === 'finished' ? '<span class="badge" style="background:#e5e7eb;color:#374151">Finished</span>' : '<span class="badge ok">Active</span>'}</td>
         <td>${s.graded_count} / ${s.student_count}</td>
